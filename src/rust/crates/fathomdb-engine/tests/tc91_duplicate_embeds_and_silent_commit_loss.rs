@@ -1,4 +1,12 @@
-//! 0.8.20 Slice 23 (R-20-SV, leg 2) — **TC-91 characterization harness.**
+//! 0.8.20 Slice 23 characterization and Slice 40 regression coverage for
+//! **TC-91**.
+//!
+//! ## Current status
+//!
+//! The long baseline narrative below is retained as historical evidence for the
+//! defect. TC-91 now acquires worker writer intent before its reads and reports
+//! exceptional commit failures. The explicit concurrency arms are therefore
+//! acceptance evidence: every arm requires zero duplicate ingest embeds.
 //!
 //! TC-91 (ledger `seq-129`, p2) is two defects on the same code path, which this
 //! file HYPOTHESISES — but does **not** establish — share one mechanism (see
@@ -9,21 +17,19 @@
 //!   and it did not go away with that fix. Harm class: wasted embed work.
 //!   Invisible to correctness tests, because a duplicate embed produces the right
 //!   answer — twice.
-//! * **(b)** the projection worker's commit is invoked as
-//!   `let _ = commit_projection_outcomes(..)` (`lib.rs:12711` and `lib.rs:12824`).
-//!   A commit failure is dropped with no error, no log and no telemetry.
+//! * **(b)** at the Slice 23 baseline, the projection worker discarded its
+//!   commit result. Slice 40 propagates the result to the worker loop and starts
+//!   the commit transaction with `BEGIN IMMEDIATE`.
 //!
-//! **CHARACTERIZATION ONLY — NO FIX** (steward `seq-136`: the fix lands at
-//! 0.8.21). `src/rust/crates/fathomdb-engine/src/lib.rs` is byte-identical to the
-//! baseline `94f09d7d` in the commit that lands this file. Written
+//! Slice 23 established the characterization at baseline `94f09d7d`. Slice 40
+//! turns the bounded governed-rate and forced-contention arms into regressions;
+//! the remaining timing-sensitive characterization arms stay opt-in. Written
 //! characterization: `dev/design/0.8.20-tc90-tc91-characterization.md`.
 //!
 //! ## The durable point of (b), and why it is the most valuable thing here
 //!
-//! ```text
-//! lib.rs:12711   let _ = commit_projection_outcomes(connection, &outcomes, shared);
-//! lib.rs:12824   let _ = commit_projection_outcomes(connection, &outcomes, shared);
-//! ```
+//! At baseline the two worker paths silently discarded
+//! `commit_projection_outcomes` errors.
 //!
 //! A `'failed'` terminal and a `projection_failures` audit row are written by the
 //! `ProjectionOutcome::Failure` arm (`lib.rs:13962-13984`), which represents an
@@ -32,11 +38,10 @@
 //! sets `pending_scan = true` (`lib.rs:12663`), the dispatcher re-fetches the row
 //! and it is embedded AGAIN.
 //!
-//! Therefore **counting `'failed'` terminal states is STRUCTURALLY INCAPABLE of
-//! seeing this class of failure.** Any future attempt to quantify worker
-//! reliability that way will report a falsely clean number — zero — no matter how
-//! many commits are being lost. [`tc91_forced_commit_failure_is_invisible_to_terminal_counting`]
-//! proves this by forcing the failure and measuring both.
+//! Therefore **counting `'failed'` terminal states was structurally incapable of
+//! seeing this class of failure at baseline.**
+//! [`tc91_forced_commit_contention_preserves_single_embed`] exercises the same
+//! lock shape and requires the remedy to preserve every computed outcome.
 //!
 //! ## The measurement trap that had to be disarmed FIRST
 //!
@@ -75,7 +80,7 @@
 //! | [`tc91_duplicate_embed_rate_governed`] | 200 x 1-row writes, 1 ms apart | 10 | 102-106 / 200 (**52.1 %**) |
 //! | [`tc91_duplicate_embed_rate_anonymous`] | same, `logical_id: None` | 10 | 103-110 / 200 (**52.8 %**) |
 //! | [`tc91_control_unblocked_worker_commits`] | ONE 96-row batch, no concurrent writer | 10 | **0 / 96** |
-//! | [`tc91_forced_commit_failure_is_invisible_to_terminal_counting`] | same batch + held write lock | 10 | 80-96 / 96 |
+//! | forced-contention baseline | same batch + held write lock | 10 | 80-96 / 96 |
 //! | [`tc91_mechanism_duplicate_rate_versus_write_cadence`] | 60 rows, 1 ms vs 25 ms apart | 10 | 31-33 vs **0** |
 //!
 //! Governed and anonymous are indistinguishable, confirming the ledger claim that
@@ -101,19 +106,18 @@
 //! is not an oversight:
 //!
 //! > **There is no direct instrumentation of worker commit failures in the
-//! > baseline duplicate arms — because the defect under study is precisely that
-//! > those failures are discarded by `let _ =`.** TC-91 **(b) is the reason
+//! > baseline duplicate arms — because the Slice 23 defect under study discarded
+//! > those failures.** TC-91 **(b) is the reason
 //! > TC-91 (a) cannot be closed by measurement.** The forced-lock experiment
 //! > reproduces the mechanism, but it supplies the lock holder externally; it
 //! > cannot show that every baseline duplicate came from the engine's own writer.
 //!
-//! The supporting code reading is real — `commit_batch` holds `BEGIN IMMEDIATE`
-//! (`lib.rs:18637`, the TC-57 fix) while `commit_projection_outcomes`
-//! (`lib.rs:13809`) is a DEFERRED read-then-upgrade — but it is a reading, and
-//! §0 of the TC-57 characterization is the standing warning about confident
-//! readings on this exact code path. Landing **R-C** (stop discarding the commit
-//! result) is what would convert the hypothesis into a measurement; that is the
-//! main reason R-C is recommended FIRST in the design doc §7.
+//! The supporting code reading is historical: at the Slice 23 baseline,
+//! `commit_batch` held `BEGIN IMMEDIATE` while `commit_projection_outcomes` used
+//! a deferred read-then-upgrade transaction. Slice 40 now starts both governed
+//! writes with `BEGIN IMMEDIATE` and propagates a commit error to the worker loop.
+//! The characterization is still evidence about the baseline mechanism, not an
+//! identity proof for every baseline duplicate.
 //!
 //! In EVERY one of the 50 runs above, `failed_terminals == 0` and
 //! `failure_audit_rows == 0`.
@@ -125,16 +129,17 @@
 //! plain `main`, so anything timing-sensitive added to the default profile makes
 //! that worse and must earn its place.
 //!
-//! **`#[ignore]`d — every arm whose result is a RATE measured under concurrency:**
-//! [`tc91_duplicate_embed_rate_governed`], [`tc91_duplicate_embed_rate_anonymous`],
-//! [`tc91_mechanism_duplicate_rate_versus_write_cadence`],
-//! [`tc91_forced_commit_failure_is_invisible_to_terminal_counting`],
-//! [`tc91_control_unblocked_worker_commits`]. Each races a live projection worker
-//! against a live writer; their baseline values are MEASUREMENTS, not merge-gate
-//! invariants. Run them with `--ignored`.
+//! **`#[ignore]`d — timing-characterization arms:**
+//! [`tc91_duplicate_embed_rate_anonymous`],
+//! [`tc91_mechanism_duplicate_rate_versus_write_cadence`], and
+//! [`tc91_control_unblocked_worker_commits`]. They remain measurements, not
+//! merge-gate invariants. Run them with `--ignored`.
 //!
-//! **LIVE in the default profile — one target:**
-//! [`tc91_probe_embed_cost_per_open_at_head`]. It is a measurement too, but it is
+//! **LIVE in the default profile:**
+//! [`tc91_duplicate_embed_rate_governed`] is a bounded 48-row tight-cadence
+//! regression and [`tc91_forced_commit_contention_preserves_single_embed`] holds
+//! a real external WAL write lock. Each asserts exactly zero duplicate embeds.
+//! [`tc91_probe_embed_cost_per_open_at_head`] is a measurement too, but it is
 //! **sequential and deterministic**: three opens of one workspace, one write, every
 //! `drain` awaited to idle, no second thread and no wall-clock assertion anywhere.
 //! Its value comes from a checked-in fixture (`vector_equivalence_probes.txt`) and
@@ -160,6 +165,11 @@ const INGEST_MARKER: &str = "tc91marker";
 
 /// Rows per duplicate-rate arm.
 const ROWS: usize = 200;
+
+/// A bounded tight-cadence sample for the default regression gate. It is large
+/// enough to reproduce the pre-fix defect without turning the gate into a
+/// scheduler measurement suite.
+const GATED_ROWS: usize = 48;
 
 // ---------------------------------------------------------------------------
 // Fixture
@@ -286,8 +296,7 @@ fn count(conn: &rusqlite::Connection, sql: &str) -> i64 {
 }
 
 /// The two counters a future agent would reach for to quantify worker
-/// reliability — and which [`tc91_forced_commit_failure_is_invisible_to_terminal_counting`]
-/// shows cannot see a lost commit.
+/// reliability at the Slice 23 baseline.
 struct TerminalCensus {
     failed_terminals: i64,
     up_to_date_terminals: i64,
@@ -428,17 +437,16 @@ fn assert_duplicate_arm(outcome: &DuplicateOutcome) {
     );
 }
 
-/// **TC-91 (a) — GOVERNED arm.** `logical_id: Some(..)`.
+/// **TC-91 (a) — bounded GOVERNED regression.** `logical_id: Some(..)`.
 #[test]
-#[ignore = "TC-91 characterization arm — run explicitly with --ignored; see the design doc"]
 fn tc91_duplicate_embed_rate_governed() {
-    let outcome = run_duplicate_arm("governed", true, ROWS, 1);
+    let outcome = run_duplicate_arm("governed", true, GATED_ROWS, 1);
     assert_duplicate_arm(&outcome);
     assert_eq!(
         outcome.split.ingest_duplicates, 0,
-        "TC-91 (a): {} duplicate embeds over {ROWS} rows ({} distinct rows embedded more than \
-         once) — wasted embed work, invisible to every correctness test because a duplicate \
-         embed produces the right answer twice",
+        "TC-91 (a): {} duplicate embeds over {GATED_ROWS} tight-cadence rows ({} distinct rows \
+         embedded more than once) — the worker transaction must preserve every computed outcome \
+         exactly once",
         outcome.split.ingest_duplicates, outcome.split.ingest_repeated_texts,
     );
 }
@@ -450,7 +458,7 @@ fn tc91_duplicate_embed_rate_governed() {
 /// TC-57 fix, so a duplicate rate here cannot be caused by the governed-write
 /// race. If both arms show the same rate, the cause is elsewhere.
 #[test]
-#[ignore = "TC-91 characterization arm — run explicitly with --ignored; see the design doc"]
+#[ignore = "TC-91 acceptance pressure arm — run explicitly with --ignored"]
 fn tc91_duplicate_embed_rate_anonymous() {
     let outcome = run_duplicate_arm("anonymous", false, ROWS, 1);
     assert_duplicate_arm(&outcome);
@@ -482,10 +490,9 @@ const SPACED_PACE_MS: u64 = 25;
 /// Two arms of the same governed load differing ONLY in write spacing:
 ///
 /// * **tight** (`pace_ms: 1`) — a write lands roughly every millisecond, which is
-///   also the embed latency, so `commit_projection_outcomes`' DEFERRED promotion
-///   (`lib.rs:13809`, reads at `:13813` / `:13828` before its writes at `:13863`)
-///   frequently lands while `commit_batch`'s `BEGIN IMMEDIATE` (`lib.rs:18637`)
-///   holds the lock.
+///   also the embed latency. At the Slice 23 baseline this made the worker's
+///   deferred commit promotion overlap `commit_batch`'s `BEGIN IMMEDIATE` lock;
+///   Slice 40 no longer uses that promotion path.
 /// * **spaced** (`pace_ms: 25`) — the same rows, the same embedder, the same
 ///   worker; only the overlap is removed.
 ///
@@ -494,15 +501,15 @@ const SPACED_PACE_MS: u64 = 25;
 /// property of the write cadence, not a fixed constant of the scheduler. It does
 /// **not**, on its own, establish that TC-91 (a) *is* TC-91 (b): spacing the
 /// writes changes overlap, but nothing in this arm observes a worker commit
-/// failing, because `let _ =` (`lib.rs:12711`) discards exactly that signal. Read
-/// together with [`tc91_forced_commit_failure_is_invisible_to_terminal_counting`]
+/// failing in the historical baseline. Read together with the forced-contention
+/// baseline arm,
 /// it strongly implicates the engine's own writer; see the module header's
 /// "What those numbers DO and DO NOT prove" for the precise boundary.
 ///
 /// `#[ignore]`d with the other concurrency arms; it is a measurement, not a
 /// merge-gate invariant. See the module header's test-profile inventory.
 #[test]
-#[ignore = "TC-91 characterization arm — run explicitly with --ignored; see the design doc"]
+#[ignore = "TC-91 acceptance pressure arm — run explicitly with --ignored"]
 fn tc91_mechanism_duplicate_rate_versus_write_cadence() {
     let tight = run_duplicate_arm("mech_tight", true, MECHANISM_ROWS, 1);
     assert_duplicate_arm(&tight);
@@ -514,11 +521,9 @@ fn tc91_mechanism_duplicate_rate_versus_write_cadence() {
         tight.split.ingest_duplicates, spaced.split.ingest_duplicates
     );
 
-    assert!(
-        tight.split.ingest_duplicates > 0,
-        "non-vacuity: the TIGHT arm must reproduce the duplicate rate, else there is no effect \
-         to explain (duplicates={})",
-        tight.split.ingest_duplicates
+    assert_eq!(
+        tight.split.ingest_duplicates, 0,
+        "TC-91 acceptance: tight writer pressure must not lose worker commits"
     );
     assert_eq!(
         spaced.split.ingest_duplicates, 0,
@@ -526,8 +531,8 @@ fn tc91_mechanism_duplicate_rate_versus_write_cadence() {
          from {} to {} over {MECHANISM_ROWS} identical rows. The variable this arm manipulates \
          is write SPACING; the HYPOTHESISED mechanism it implicates — not one it observes — is \
          how often the engine's own `BEGIN IMMEDIATE` writer holds the WAL write lock across \
-         the worker's DEFERRED commit promotion. This arm cannot see a worker commit fail, \
-         because `let _ =` (`lib.rs:12711`) discards exactly that signal, so it establishes \
+         the worker's historical deferred commit promotion. This arm cannot see a worker \
+         commit fail in the Slice 23 baseline, so it establishes \
          neither the identity nor the uniqueness of the source. If this ever becomes non-zero, \
          the cadence sensitivity itself has changed and the design doc's mechanism section must \
          be re-opened.",
@@ -691,10 +696,11 @@ const HOLD: Duration = Duration::from_millis(1_500);
 ///
 /// The blocker is an ordinary second connection on the same file running `BEGIN
 /// IMMEDIATE`. That is exactly the contention TC-90's mechanism pins characterize,
-/// applied in the opposite direction: `commit_projection_outcomes` (`lib.rs:13809`)
-/// opens rusqlite's DEFERRED default and reads (`lib.rs:13813`, `lib.rs:13828`)
-/// before it writes, so its promotion is refused with plain `SQLITE_BUSY` and the
-/// busy handler is never consulted. `let _ =` then discards the whole thing.
+/// applied in the opposite direction. At the Slice 23 baseline,
+/// `commit_projection_outcomes` opened rusqlite's deferred default and read before
+/// writing, so its promotion was refused with plain `SQLITE_BUSY` and the busy
+/// handler was never consulted. Slice 40 acquires `BEGIN IMMEDIATE` before those
+/// reads and reports an error to the worker loop instead of discarding it.
 ///
 /// `blocker = false` is the CONTROL: identical load, no external lock.
 fn run_commit_loss_arm(label: &'static str, blocker: bool) -> CommitLossOutcome {
@@ -741,20 +747,15 @@ fn run_commit_loss_arm(label: &'static str, blocker: bool) -> CommitLossOutcome 
     outcome
 }
 
-/// **TC-91 (b) — THE BLINDNESS, PROVEN BY FORCING THE FAILURE.**
+/// **TC-91 (b) — forced contention must preserve the computed outcomes.**
 ///
-/// Worker commits are forced to fail by holding the WAL write lock from a second
-/// connection. The assertions are deliberately the wrong way round from a normal
-/// test: they assert that the two counters a future agent would reach for stay at
-/// **zero**, and that the re-embed count is simultaneously **non-zero**.
+/// A second connection holds the WAL write lock while the worker attempts to
+/// commit. The worker must wait through SQLite's busy handler and then commit its
+/// already-computed outcomes, rather than losing them and redispatching rows for
+/// a second embed.
 ///
-/// Passing therefore means: *real work was computed, thrown away, and recomputed,
-/// and the terminal-state census reported a perfectly clean run.* That is the
-/// finding. It is what makes "measure worker risk by counting `'failed'`
-/// terminals" a structurally invalid method rather than merely an imprecise one.
 #[test]
-#[ignore = "TC-91 characterization arm — run explicitly with --ignored; see the design doc"]
-fn tc91_forced_commit_failure_is_invisible_to_terminal_counting() {
+fn tc91_forced_commit_contention_preserves_single_embed() {
     let outcome = run_commit_loss_arm("blocked", true);
 
     assert!(
@@ -763,31 +764,28 @@ fn tc91_forced_commit_failure_is_invisible_to_terminal_counting() {
         outcome.blocked_ms,
         HOLD.as_millis()
     );
-    assert!(
-        outcome.split.ingest_duplicates > 0,
-        "non-vacuity: at least one outcome must have been computed and lost, else there is no \
-         commit failure to be blind to (duplicates={})",
-        outcome.split.ingest_duplicates
-    );
-    assert!(outcome.drain_ok, "the engine must still reach idle — this is a LOSS, not a wedge");
+    assert!(outcome.drain_ok, "the engine must reach idle after the lock is released");
     assert_eq!(
         outcome.census.vector_rows, LOSS_ROWS as i64,
-        "and every row must still land eventually: the harm is wasted work, not data loss"
+        "every row must land after the contention is released"
     );
-
-    // ---- the finding ----
+    assert_eq!(
+        outcome.split.ingest_duplicates, 0,
+        "TC-91 (b): {} computed outcomes were lost during forced write contention and embedded \
+         again; the worker commit must wait and preserve each outcome exactly once",
+        outcome.split.ingest_duplicates,
+    );
     assert_eq!(
         outcome.census.failed_terminals, 0,
-        "TC-91 (b): {} outcomes were discarded by `let _ = commit_projection_outcomes(..)` \
-         (`lib.rs:12711`) and the `'failed'` terminal count is {} — if this ever becomes \
-         NON-zero the blindness has been fixed and this test must be re-read, not re-run",
-        outcome.split.ingest_duplicates, outcome.census.failed_terminals,
+        "a successfully retried worker commit is not an embed failure"
     );
     assert_eq!(
         outcome.census.failure_audit_rows, 0,
-        "TC-91 (b): nor does a discarded commit produce a `projection_failures` audit row — \
-         that arm (`lib.rs:13962-13984`) is reached only by an EMBED failure"
+        "a successfully retried worker commit must not create an embed-failure audit row"
     );
+    assert_eq!(outcome.split.ingest_distinct, LOSS_ROWS);
+    assert_eq!(outcome.census.failed_terminals, 0);
+    assert_eq!(outcome.census.failure_audit_rows, 0);
 }
 
 /// **TC-91 (b) CONTROL.** Identical load, no external lock.

@@ -1,0 +1,22 @@
+{
+  "release": "0.8.21",
+  "release_kind": "odd, label-only foundation",
+  "board": "dev/plans/runs/STATUS-0.8.21.md",
+  "plan": "dev/plans/plan-0.8.21.md",
+  "master": "dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md",
+  "schema_version": 24,
+  "schema_version_source": "pub const SCHEMA_VERSION in src/rust/crates/fathomdb-schema/src/lib.rs",
+  "ladder": [
+    {"slice": 0, "short": "FOUNDATION", "title": "state, documentation, toolchain, and platform-manifest design", "depends_on": [], "status": "CURRENT", "sha": null},
+    {"slice": 5, "short": "TC-91", "title": "hardened projection-worker commit", "depends_on": [0], "status": "PENDING", "sha": null, "design_refs": ["dev/design/0.8.20-tc91-projection-commit-hardening.md"]},
+    {"slice": 10, "short": "SERIAL", "title": "reproducible serial local verifier", "depends_on": [5], "status": "PENDING", "sha": null},
+    {"slice": 15, "short": "LINUX-ARM64", "title": "Linux aarch64 package/build/smoke proof", "depends_on": [10], "status": "PENDING", "sha": null},
+    {"slice": 20, "short": "DOC-DRIFT", "title": "current-documentation and platform-drift checks", "depends_on": [15], "status": "PENDING", "sha": null}
+  ],
+  "landed": [],
+  "next_slice": 0,
+  "remaining_ladder": [0, 5, 10, 15, 20],
+  "generated_views": [
+    {"id": "plan-immediate-next", "file": "dev/plans/plan-0.8.21.md", "location": "Immediate next slice", "renders": "next slice and remaining ladder"}
+  ]
+}

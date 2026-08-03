@@ -1243,6 +1243,8 @@ Every REQ in `requirements.md` has ≥1 AC:
 | REQ-065  | AC-069                |
 | REQ-066  | AC-070                |
 | REQ-067  | AC-077 (RESERVED — IR-eval IR-1/IR-2; thresholds TBD) |
+| R-20-AC | AC-079                |
+| R-20-E1, R-20-E5 | AC-080       |
 
 ## Lock-blocking dependencies
 
@@ -1303,3 +1305,29 @@ measurements per the parameter table.
 > `dev/notes/recall-eval-framework-assessment-20260607T174821Z.md`,
 > `dev/plans/prompts/0.8.x-IR-1-recall-measure.md`,
 > `dev/plans/prompts/0.8.x-IR-2-recall-gate.md`.
+
+## AC-079: Signed 0.8.20 governed-surface delta
+
+**Requirement ref:** R-20-AC / REQ-053
+**Test id:** T-079 (`test_public_surface_is_allowlist`, `test_surface_parity_py_matches_ts`, `governed_surface`, `no_recovery_surface`)
+**Mirrors:** AC-074.
+**Status:** HITL-SIGNED — the accumulated delta was pre-signed 2026-07-25 and the batched decision was signed 2026-07-29 (steward seq-157); minted at Slice 40. The permitted 2026-08-01 `_comment` correction is re-signed by HITL seq-232 and leaves the governed arrays byte-identical.
+**Assertion:** The governed SDK surface remains governed rather than capped. Four falsifiable properties hold:
+
+1. **P1, allowlist membership:** every live public Python and TypeScript application command is a member of `src/conformance/governed-surface-allowlist.json`; its counts remain exactly 30 `allowlist`, 5 `core`, and 5 `recovery_denylist` members.
+2. **P2, Python/TypeScript parity:** the Python and TypeScript governed command sets are membership-identical.
+3. **P3, recovery denylist:** `allowlist ∩ {recover, restore, repair, fix, rebuild} = ∅`; `excise_source` remains CLI-only and unallowlisted.
+4. **P4, typed boundary:** no public SDK entrypoint accepts raw SQL or an arbitrary query DSL; the typed-write boundary remains in force.
+
+The signed delta is exactly seven net-new allowlist members, representing four logical verbs: `erase_source` / `eraseSource`, `read.crossed_boundary_since` / `read.crossedBoundarySince`, `configure_projections` / `configureProjections`, and `read.projections`. It also records the associated public types `EraseReport`, `SourceId`, always-present `ExciseReport`, `ReadView`, `BoundaryCrossing`, `ProjectionSpec`, `ProjectionDelta`, `ProjectionRole`, and `ProjectionDestructiveError`. The Rust facade is separately governed as its typed consumer contract; it is parity-consistent with, but not membership-equal to, the Python/TypeScript command set.
+
+**Measurement:** run the binding introspection/parity suites, the byte pin `scripts/check-governed-surface-pin.sh`, and the Rust-facade governed-surface suite. The pin compares raw-byte hashes, member lists, and all 30 / 5 / 5 counts; the recovery denylist is independently fixed to the five REQ-054 names.
+**Fixture:** `src/conformance/governed-surface-allowlist.json` and its T1e pin.
+
+## AC-080: Erasure completeness at rest
+
+**Requirement ref:** R-20-E1, R-20-E5
+**Test id:** T-080 (`erasure_completeness`)
+**Assertion:** After erasure, the erased body is absent from every row-owned projection and from raw database and `-wal` bytes. The proof is registry-driven, includes `search_index_v2`, and asserts raw table contents/raw file bytes rather than search results. A retained control body remains present; WAL-truncation busy conditions surface typed incompleteness rather than a false success.
+**Measurement:** run `cargo test -p fathomdb-engine --features operator --test erasure_completeness`; all ten tests must execute and pass.
+**Fixture:** operator-feature erasure-completeness fixture with raw-table and raw-byte witnesses.

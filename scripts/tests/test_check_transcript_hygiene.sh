@@ -1465,6 +1465,27 @@ zc_fixture() {  # zc_fixture <dir> <file> <builder-args...>
   } >"$d/$f"
 }
 
+# zc_ansi_fixture — the older Codex CLI renderer decorated its record markers,
+# command echo, and status line with SGR escapes. Those bytes are presentation,
+# not a different transcript grammar: the hygiene predicate must inspect the
+# record after stripping presentation while preserving the original bytes until
+# the canonical redactor replaces only the exposed output block.
+zc_ansi_fixture() {  # zc_ansi_fixture <dir> <file> [output-line...]
+  local d="$1" f="$2"
+  shift 2
+  mkdir -p "$d"
+  {
+    printf 'line-before-untouched\n'
+    printf '\033[35m\033[3mexec\033[0m\033[0m\n'
+    printf '\033[1m/bin/bash -c '\''ls -a ..'\''\033[0m in %s\n' "$ZC_WT"
+    printf '\033[32m succeeded in 0ms:\033[0m\n'
+    local l
+    for l in "$@"; do printf '%s\n' "$l"; done
+    printf '\n\033[35m\033[3mcodex\033[0m\033[0m\n'
+    printf 'verdict: no [P1] findings\n'
+  } >"$d/$f"
+}
+
 # ---- ZC1: THE REAL SHAPE. `ls /home/coreyt/projects` + its listing ---------
 # The block that was actually exposed, reproduced byte-for-byte in structure with
 # invented names. This is the arm that says fix-4 would have caught the thing it
@@ -1475,6 +1496,41 @@ run_checker --root "$ZC1_DIR"
 expect_rc 1 "an \`ls\` of the user's whole projects directory HARD-FAILS the gate (the shape that leaked)"
 expect_out 'FAIL  transcript-hygiene: .*out-of-repo' "the failure names the out-of-repo directory-inventory predicate, not the agent-state one"
 expect_out 'projects\.log' "the failure names the offending FILE"
+
+# ---- ZC1A: ANSI-rendered legacy Codex records are the SAME grammar --------
+# The real STEWARD-COLDSTART transcript was emitted by an older CLI that
+# colourised `exec`, its echo, and its status separator. Treating the escape
+# bytes as semantic makes the gate falsely certify the exact portfolio listing
+# it was written to prevent. The redactor must detect it, preserve the command
+# echo and verdict, and replace the listing visibly in place.
+ZC1A_DIR="$TMPROOT/oor-ansi-projects-listing"
+# The actual legacy record ran from the primary checkout, so `..` resolves to
+# the user's projects directory (outside). This is intentionally unlike ZC6,
+# where the same spelling runs from a linked worktree and remains inside.
+ZC_WT_SAVED="$ZC_WT"
+ZC_WT='/home/coreyt/projects/fathomdb'
+zc_ansi_fixture "$ZC1A_DIR" 'ansi-projects.log' "${ZC_NAMES[@]}"
+ZC_WT="$ZC_WT_SAVED"
+ZC1A_FILE="$ZC1A_DIR/ansi-projects.log"
+run_checker --root "$ZC1A_DIR"
+expect_rc 1 "an ANSI-rendered Codex out-of-repo directory listing HARD-fails too"
+run_checker --root "$ZC1A_DIR" --redact
+expect_rc 0 "--redact removes an ANSI-rendered Codex directory listing"
+if grep -qF -- 'ls -a ..' "$ZC1A_FILE" && grep -qF -- 'verdict: no [P1] findings' "$ZC1A_FILE"; then
+  pass "ANSI redaction preserves the command echo and terminal verdict"
+else
+  fail "ANSI redaction lost the command echo or terminal verdict: $(cat "$ZC1A_FILE")"
+fi
+if grep -qE 'alpha-widget|beta-domain|gamma-proto|delta-mesh|epsilon-render' "$ZC1A_FILE"; then
+  fail "ANSI redaction left an enumerated name behind: $(cat "$ZC1A_FILE")"
+else
+  pass "ANSI redaction removes every enumerated directory name"
+fi
+if grep -qF -- '[REDACTED TC-86]' "$ZC1A_FILE"; then
+  pass "ANSI redaction records a visible in-place marker"
+else
+  fail "ANSI redaction silently dropped the listing: $(cat "$ZC1A_FILE")"
+fi
 
 # ---- ZC2/ZC3/ZC4: the other spellings of "somewhere outside this repo" -----
 ZC2_DIR="$TMPROOT/oor-tilde"

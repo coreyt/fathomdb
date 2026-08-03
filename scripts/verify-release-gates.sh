@@ -2,8 +2,8 @@
 # scripts/verify-release-gates.sh — release-time preflight.
 #
 # Asserts (in order, fail-fast):
-#   1. GITHUB_REF_NAME is set and looks like `v<axis-W-version>`, and the
-#      bare version matches Axis W (Cargo.toml [workspace.package].version).
+#   1. The canonical release tag looks like `v<axis-W-version>`, and the bare
+#      version matches Axis W (Cargo.toml [workspace.package].version).
 #   2. set-version.sh --check-files passes (two-axis lockstep + inheritance).
 #   3. HEAD commit is reachable from `main` (overridable via env for tests).
 #   4. CHANGELOG.md has a section heading matching the tag's Axis-W version.
@@ -15,6 +15,9 @@
 #   RELEASE_GATES_SKIP_GIT_REACH=1  Skip check 3 entirely.
 #   RELEASE_GATES_HEAD_REF=<ref>    Compare against this ref instead of main.
 #   RELEASE_GATES_CHANGELOG=<path>  Use this CHANGELOG file instead of repo root.
+#   RELEASE_GATES_TAG=<tag>          Canonical release tag supplied by CI.
+#   RELEASE_DISPATCH_VERSION=<semver> workflow_dispatch release_version input.
+#   RELEASE_GATES_REQUIRE_TAG_CHECKOUT=1  Require HEAD to resolve to the tag.
 #
 # Owner: dev/design/release.md § Tiered publish order (entry gate to T1).
 set -euo pipefail
@@ -44,10 +47,10 @@ read_workspace_version() {
 }
 
 # --- Check 1: tag presence + Axis W match -----------------------------------
-# workflow_dispatch fires from a branch ref (refs/heads/...), so there is no
-# v-tag to validate. Skip the tag check on dispatch but keep every other gate;
-# dispatch with dry_run=false is an emergency-republish path that still
-# benefits from --check-files / CHANGELOG / metadata enforcement.
+# workflow_dispatch fires from a branch ref (refs/heads/...), so the workflow
+# supplies a required semver input and derives RELEASE_GATES_TAG=v<input>.
+# Validate both values here before any publish job. dry_run=false remains an
+# emergency-republish path that also needs typed confirmation.
 
 EVENT_NAME="${GITHUB_EVENT_NAME:-push}"
 WS_VERSION="$(read_workspace_version)"
@@ -56,15 +59,41 @@ if [ -z "$WS_VERSION" ]; then
 fi
 
 if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+  DISPATCH_VERSION="${RELEASE_DISPATCH_VERSION:-}"
+  TAG="${RELEASE_GATES_TAG:-}"
+  numeric_identifier='(0|[1-9][0-9]*)'
+  prerelease_identifier="(${numeric_identifier}|[A-Za-z-][0-9A-Za-z-]*)"
+  build_identifier='[0-9A-Za-z-]+'
+  semver_pattern="^${numeric_identifier}\\.${numeric_identifier}\\.${numeric_identifier}(-${prerelease_identifier}(\\.${prerelease_identifier})*)?(\\+${build_identifier}(\\.${build_identifier})*)?$"
+  if ! [[ "$DISPATCH_VERSION" =~ $semver_pattern ]]; then
+    die "workflow_dispatch release_version must be a semantic version; got '$DISPATCH_VERSION'"
+  fi
+  if [ "$TAG" != "v$DISPATCH_VERSION" ]; then
+    die "workflow_dispatch canonical tag mismatch — expected 'v$DISPATCH_VERSION', got '$TAG'"
+  fi
+  if [ "$DISPATCH_VERSION" != "$WS_VERSION" ]; then
+    die "dispatch/workspace version mismatch — release_version is '$DISPATCH_VERSION', Cargo.toml [workspace.package].version is '$WS_VERSION'"
+  fi
+  if [ "${RELEASE_GATES_REQUIRE_TAG_CHECKOUT:-0}" = "1" ]; then
+    tag_commit="$(git -C "$REPO_ROOT" rev-parse --verify "refs/tags/$TAG^{commit}" 2>/dev/null)" \
+      || die "workflow_dispatch canonical tag '$TAG' does not exist or cannot resolve to a commit"
+    head_commit="$(git -C "$REPO_ROOT" rev-parse HEAD)"
+    if [ "$head_commit" != "$tag_commit" ]; then
+      die "workflow_dispatch checkout mismatch — HEAD is '$head_commit', canonical tag '$TAG' is '$tag_commit'"
+    fi
+  fi
   if [ "${DRY_RUN:-}" != "true" ]; then
+    if [ "${RELEASE_CONFIRM_VERSION:-}" != "$WS_VERSION" ]; then
+      die "workflow_dispatch with dry_run=false requires confirm_release_version to exactly match Axis-W version '$WS_VERSION'"
+    fi
     printf 'release-gate: WARNING — dispatch with dry_run=false is an emergency-republish path; verify the dispatched ref matches the intended tag manually before approving.\n' >&2
   fi
 else
-  if [ -z "${GITHUB_REF_NAME:-}" ]; then
+  TAG="${RELEASE_GATES_TAG:-${GITHUB_REF_NAME:-}}"
+  if [ -z "$TAG" ]; then
     die "GITHUB_REF_NAME is not set; this script must run under a tag push (refs/tags/v*)"
   fi
 
-  TAG="$GITHUB_REF_NAME"
   case "$TAG" in
     v*) ;;
     *) die "tag '$TAG' does not start with 'v'; release tags must look like v<axis-W-version>" ;;

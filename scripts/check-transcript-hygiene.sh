@@ -341,7 +341,7 @@ if [ "$REDACT" -eq 1 ]; then
   # exec status line (the necessary condition for a block at all, fix-4). A
   # candidate is only a candidate — redact_file is a no-op unless it actually
   # finds something, so widening the set costs a scan and never a rewrite.
-  collect_hits "$AGENT_STATE_PROJECTS_DIR_RE|$AGENT_STATE_EXEC_STATUS_RE"
+  collect_hits "$AGENT_STATE_PROJECTS_DIR_RE|$AGENT_STATE_EXEC_STATUS_RE|$AGENT_STATE_RENDERED_EXEC_STATUS_RE"
   REDACTED=0
   for p in "${HITS[@]+"${HITS[@]}"}"; do
     if redact_file "$p"; then REDACTED=$((REDACTED + 1)); fi
@@ -391,7 +391,9 @@ if [ "${#FILES[@]}" -gt 0 ]; then
   while IFS= read -r -d '' p; do
     [ -n "$p" ] && OOR_CANDIDATES+=("$p")
   done < <(printf '%s\0' "${FILES[@]}" \
-             | xargs -0 --no-run-if-empty grep -IlZE -e "$AGENT_STATE_EXEC_STATUS_RE" -- 2>/dev/null \
+             | xargs -0 --no-run-if-empty grep -IlZE \
+                 -e "$AGENT_STATE_EXEC_STATUS_RE" \
+                 -e "$AGENT_STATE_RENDERED_EXEC_STATUS_RE" -- 2>/dev/null \
              || true)
 fi
 

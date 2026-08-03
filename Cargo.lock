@@ -461,10 +461,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1e748733b7cbc798e1434b6ac524f0c1ff2ab456fe201501e6497c8417a4fc33"
 
 [[package]]
-name = "candle-core"
+name = "candle-core-fathomdb"
 version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6bd9895436c1ba5dc1037a19935d084b838db066ff4e15ef7dded020b7c12a4a"
+checksum = "431cdbc7c41f42ed470170df28daf3c5343aa8317931872e68294dbd9a39cbf1"
 dependencies = [
  "byteorder",
  "candle-kernels",
@@ -515,12 +515,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "candle-nn"
+name = "candle-nn-fathomdb"
 version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a9317a09d6530b758990ed7f625ac69ff43653bc9ee28b0464644ad1169ada87"
+checksum = "8e1584d8f0f59f39c08862d1386b9cc44fa51b2542ba1f99d7ff6c86e12e3684"
 dependencies = [
- "candle-core",
+ "candle-core-fathomdb",
  "candle-metal-kernels",
  "half",
  "libc",
@@ -533,14 +533,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "candle-transformers"
+name = "candle-transformers-fathomdb"
 version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f59d08c89e9f4af9c464e2f3a8e16199e7cc601e6f34538c2cfbb42b623b1783"
+checksum = "b5cf5cada15a4168b859bc27e58f2243321182d3a609fee1f8fdcfb615f21ba2"
 dependencies = [
  "byteorder",
- "candle-core",
- "candle-nn",
+ "candle-core-fathomdb",
+ "candle-nn-fathomdb",
  "fancy-regex 0.17.0",
  "num-traits",
  "rand 0.9.4",
@@ -1134,7 +1134,7 @@ checksum = "9f1f227452a390804cdb637b74a86990f2a7d7ba4b7d5693aac9b4dd6defd8d6"
 
 [[package]]
 name = "fathomdb"
-version = "0.8.9"
+version = "0.8.20"
 dependencies = [
  "fathomdb-engine",
  "tempfile",
@@ -1143,7 +1143,7 @@ dependencies = [
 
 [[package]]
 name = "fathomdb-cli"
-version = "0.8.9"
+version = "0.8.20"
 dependencies = [
  "clap",
  "fathomdb",
@@ -1156,11 +1156,11 @@ dependencies = [
 
 [[package]]
 name = "fathomdb-embedder"
-version = "0.8.9"
+version = "0.8.20"
 dependencies = [
- "candle-core",
- "candle-nn",
- "candle-transformers",
+ "candle-core-fathomdb",
+ "candle-nn-fathomdb",
+ "candle-transformers-fathomdb",
  "dirs",
  "fathomdb-embedder-api",
  "fs2",
@@ -1180,7 +1180,7 @@ version = "0.6.1"
 
 [[package]]
 name = "fathomdb-engine"
-version = "0.8.9"
+version = "0.8.20"
 dependencies = [
  "fathomdb-embedder",
  "fathomdb-embedder-api",
@@ -1198,7 +1198,7 @@ dependencies = [
 
 [[package]]
 name = "fathomdb-napi"
-version = "0.8.9"
+version = "0.8.20"
 dependencies = [
  "fathomdb-embedder",
  "fathomdb-embedder-api",
@@ -1215,7 +1215,7 @@ dependencies = [
 
 [[package]]
 name = "fathomdb-py"
-version = "0.8.9"
+version = "0.8.20"
 dependencies = [
  "fathomdb-embedder",
  "fathomdb-embedder-api",
@@ -1228,14 +1228,14 @@ dependencies = [
 
 [[package]]
 name = "fathomdb-query"
-version = "0.8.9"
+version = "0.8.20"
 dependencies = [
  "proptest",
 ]
 
 [[package]]
 name = "fathomdb-schema"
-version = "0.8.9"
+version = "0.8.20"
 dependencies = [
  "proptest",
  "rusqlite",

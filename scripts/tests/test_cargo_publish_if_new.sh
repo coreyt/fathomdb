@@ -214,6 +214,22 @@ else
   fi
 fi
 
+# 6b) --help must describe the real dry-run split. The behavioral cases below
+# exercise all seven crates with a fake cargo; this keeps the operator-facing
+# contract aligned with those exact semantics instead of claiming every crate
+# forwards to cargo.
+if out="$("$HELPER" --help 2>&1)"; then
+  if printf '%s' "$out" | grep -qi 'leaf crates' \
+     && printf '%s' "$out" | grep -qi 'dependent crates' \
+     && printf '%s' "$out" | grep -qi 'skipped'; then
+    pass "--help distinguishes leaf dry-runs from dependent-crate skips"
+  else
+    fail "help-case: missing leaf/dependent dry-run semantics: $out"
+  fi
+else
+  fail "help-case: --help exited non-zero: $out"
+fi
+
 # 7) Regression guard: helper must set a User-Agent header (crates.io
 # returns HTTP 403 without one — same constraint as assert-co-tagging.sh).
 if grep -q 'User-Agent:' "$HELPER"; then

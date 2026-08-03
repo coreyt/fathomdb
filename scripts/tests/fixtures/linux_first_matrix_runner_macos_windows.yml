@@ -1,0 +1,9 @@
+  forbidden-matrix-runner-probe:
+    strategy:
+      matrix:
+        include:
+          - runner: macos-latest
+          - runner: windows-latest
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - run: echo "must be rejected by the Linux-first scope guard"

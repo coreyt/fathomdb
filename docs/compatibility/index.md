@@ -1,7 +1,7 @@
 # Compatibility
 
 Supported platforms, toolchains, and version-alignment policy for the
-**0.8.20** release.
+published **0.8.20** release.
 
 > **Pre-1.0 = beta.** FathomDB is on a pre-1.0 line. The surface may
 > change between micro releases, and 0.8.20 carries breaking changes
@@ -16,34 +16,31 @@ targets those three interpreters explicitly.
 
 ## Supported Node versions
 
-Node **18** or later. CI and the release build run on Node **22**.
+Node **18** or later. CI and the release build use the exact Node **25.9.0**
+toolchain (which bundles npm **11.12.1**).
 
 ## Supported Rust toolchain
 
-Rust **stable**. There is no declared MSRV; the toolchain step uses
-`dtolnay/rust-toolchain@stable`.
+Rust **1.95.0**. This is the declared MSRV and the exact compiler used by CI
+and release jobs.
 
 ## Prebuilt artifacts — one platform in 0.8.20
 
 ⚠ **The 0.8.20 wheel and npm platform binary are built for
-`x86_64-unknown-linux-gnu` only.** The other four targets are supported
-in the sense that the code builds and CI exercises them, but the
-release matrix that produces publishable artifacts is deliberately
-gated to one target on this tag; the remaining legs are staged for a
-follow-on release.
+`x86_64-unknown-linux-gnu` only.** This is the sole supported prebuilt-artifact
+platform for this release; do not expect the published npm package to install
+on macOS, Windows, Linux arm64, or Linux musl.
 
 | OS      | Architecture                | Prebuilt in 0.8.20? |
 | ------- | --------------------------- | ------------------- |
 | Linux   | `x86_64-unknown-linux-gnu`  | **yes** (manylinux 2_28) |
-| Linux   | `aarch64-unknown-linux-gnu` | no — build from source |
-| macOS   | `x86_64-apple-darwin`       | no — build from source |
-| macOS   | `aarch64-apple-darwin`      | no — build from source |
-| Windows | `x86_64-pc-windows-msvc`    | no — build from source |
+| Linux   | `aarch64-unknown-linux-gnu` | no — unsupported published artifact |
+| macOS   | `x86_64-apple-darwin`       | no — unsupported published artifact |
+| macOS   | `aarch64-apple-darwin`      | no — unsupported published artifact |
+| Windows | `x86_64-pc-windows-msvc`    | no — unsupported published artifact |
 
-CI does run the Rust workspace on Windows and macOS runners, so a
-source build on those platforms is exercised — it is the *published
-binary* that is Linux-only on this tag. Platforms outside this table
-are unsupported.
+Platforms outside the one Linux x86_64/glibc artifact are unsupported for the
+published Python and npm packages in this release.
 
 ## SQLite + sqlite-vec
 

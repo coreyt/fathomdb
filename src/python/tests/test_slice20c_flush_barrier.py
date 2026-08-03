@@ -29,8 +29,11 @@ ZERO net-new governed commands: this rides the already-governed
 
 from __future__ import annotations
 
+import json
 import os
 import sqlite3
+import subprocess
+import sys
 import time
 
 import pytest
@@ -48,11 +51,64 @@ _WEDGE_TIMEOUT_S = 30.0
 # no-embedder arm waits it out so its terminal/audit probes are FALSIFYING at
 # baseline rather than merely early.
 _LADDER_SETTLE_S = 24.0
+_READ_ONLY_SQL_CHILD = """
+import json
+import sqlite3
+import sys
+
+path, sql, parameters = sys.argv[1:]
+conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+try:
+    row = conn.execute(sql, json.loads(parameters)).fetchone()
+    print(json.dumps(None if row is None else row[0]))
+finally:
+    conn.close()
+"""
 
 
 def _skip_if_no_network() -> None:
     if os.environ.get("FATHOMDB_SKIP_NETWORK_TESTS"):
         pytest.skip("FATHOMDB_SKIP_NETWORK_TESTS set; skipping default-embedder test")
+
+
+def _read_only_scalar(
+    path: str, sql: str, parameters: tuple[str | int, ...] = ()
+) -> int | str | None:
+    """Run one raw SQLite scalar query outside the engine's process."""
+
+    result = subprocess.run(
+        [sys.executable, "-c", _READ_ONLY_SQL_CHILD, path, sql, json.dumps(parameters)],
+        capture_output=True,
+        check=True,
+        text=True,
+    )
+    scalar = json.loads(result.stdout)
+    if scalar is None or type(scalar) in (int, str):
+        return scalar
+    raise TypeError(f"unexpected raw SQLite scalar type: {type(scalar).__name__}")
+
+
+def _read_only_int(path: str, sql: str, parameters: tuple[str | int, ...] = ()) -> int:
+    scalar = _read_only_scalar(path, sql, parameters)
+    assert type(scalar) is int, f"expected integer raw SQLite result, got {scalar!r}"
+    return scalar
+
+
+def test_read_only_sql_oracle_preserves_scalar_types_and_parameters(tmp_path) -> None:
+    """The isolated raw-SQL oracle retains its query and result semantics."""
+
+    path = str(tmp_path / "oracle.sqlite")
+    conn = sqlite3.connect(path)
+    try:
+        conn.execute("CREATE TABLE oracle (state TEXT, is_ready INTEGER)")
+        conn.execute("INSERT INTO oracle VALUES ('ready', 1)")
+        conn.commit()
+    finally:
+        conn.close()
+
+    assert _read_only_scalar(path, "SELECT state FROM oracle") == "ready"
+    assert _read_only_scalar(path, "SELECT is_ready FROM oracle") == 1
+    assert _read_only_scalar(path, "SELECT state FROM oracle WHERE state = ?", ("missing",)) is None
 
 
 def _node(logical_id: str, body_json: str) -> dict:
@@ -75,11 +131,7 @@ def _readiness(engine: Engine, name: str = "summary") -> str | None:
 
 
 def _query(path: str, sql: str) -> int:
-    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
-    try:
-        return conn.execute(sql).fetchone()[0]
-    finally:
-        conn.close()
+    return _read_only_int(path, sql)
 
 
 def _vector_rows(path: str) -> int:
@@ -122,43 +174,32 @@ def _leaf_rows_of_kind_without_vectors(path: str, kind: str) -> int:
     still does not join ``_fathomdb_vector_kinds``.
     """
 
-    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
-    try:
-        row = conn.execute(
-            "SELECT COUNT(*) FROM canonical_nodes n"
-            " LEFT JOIN _fathomdb_vector_rows v ON v.write_cursor = n.write_cursor"
-            " WHERE n.row_kind IN ('leaf', 'coverage') AND n.kind = ?"
-            " AND v.write_cursor IS NULL",
-            (kind,),
-        ).fetchone()
-        return int(row[0])
-    finally:
-        conn.close()
+    return _read_only_int(
+        path,
+        "SELECT COUNT(*) FROM canonical_nodes n"
+        " LEFT JOIN _fathomdb_vector_rows v ON v.write_cursor = n.write_cursor"
+        " WHERE n.row_kind IN ('leaf', 'coverage') AND n.kind = ?"
+        " AND v.write_cursor IS NULL",
+        (kind,),
+    )
 
 
 def _vector_kind_registered(path: str, kind: str = "doc") -> bool:
-    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
-    try:
-        row = conn.execute(
-            "SELECT COUNT(*) FROM _fathomdb_vector_kinds WHERE kind = ?", (kind,)
-        ).fetchone()
-        return row[0] > 0
-    finally:
-        conn.close()
+    return (
+        _read_only_int(path, "SELECT COUNT(*) FROM _fathomdb_vector_kinds WHERE kind = ?", (kind,))
+        > 0
+    )
 
 
 def _active_cursor(path: str, logical_id: str) -> int:
-    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
-    try:
-        row = conn.execute(
-            "SELECT write_cursor FROM canonical_nodes"
-            " WHERE logical_id = ? AND superseded_at IS NULL",
-            (logical_id,),
-        ).fetchone()
-        assert row is not None, f"no active row for {logical_id}"
-        return int(row[0])
-    finally:
-        conn.close()
+    cursor = _read_only_scalar(
+        path,
+        "SELECT write_cursor FROM canonical_nodes WHERE logical_id = ? AND superseded_at IS NULL",
+        (logical_id,),
+    )
+    assert cursor is not None, f"no active row for {logical_id}"
+    assert type(cursor) is int, f"expected integer active cursor, got {cursor!r}"
+    return cursor
 
 
 def _terminal_state(path: str, cursor: int) -> str | None:
@@ -171,26 +212,20 @@ def _terminal_state(path: str, cursor: int) -> str | None:
     recording one here LOSES the write.
     """
 
-    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
-    try:
-        row = conn.execute(
-            "SELECT state FROM _fathomdb_projection_terminal WHERE write_cursor = ?",
-            (cursor,),
-        ).fetchone()
-        return None if row is None else str(row[0])
-    finally:
-        conn.close()
+    state = _read_only_scalar(
+        path,
+        "SELECT state FROM _fathomdb_projection_terminal WHERE write_cursor = ?",
+        (cursor,),
+    )
+    assert state is None or type(state) is str, f"expected terminal state, got {state!r}"
+    return state
 
 
 def _fts_row_exists(path: str, cursor: int) -> bool:
-    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
-    try:
-        row = conn.execute(
-            "SELECT COUNT(*) FROM search_index WHERE write_cursor = ?", (cursor,)
-        ).fetchone()
-        return int(row[0]) > 0
-    finally:
-        conn.close()
+    return (
+        _read_only_int(path, "SELECT COUNT(*) FROM search_index WHERE write_cursor = ?", (cursor,))
+        > 0
+    )
 
 
 def _projection_failure_rows(path: str) -> int:
@@ -619,36 +654,29 @@ def _edge(logical_id: str, from_id: str, to_id: str, body: str) -> dict:
 
 
 def _active_edge_cursor(path: str, logical_id: str) -> int:
-    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
-    try:
-        row = conn.execute(
-            "SELECT write_cursor FROM canonical_edges"
-            " WHERE logical_id = ? AND superseded_at IS NULL",
-            (logical_id,),
-        ).fetchone()
-        assert row is not None, f"no active edge for {logical_id}"
-        return int(row[0])
-    finally:
-        conn.close()
+    cursor = _read_only_scalar(
+        path,
+        "SELECT write_cursor FROM canonical_edges WHERE logical_id = ? AND superseded_at IS NULL",
+        (logical_id,),
+    )
+    assert cursor is not None, f"no active edge for {logical_id}"
+    assert type(cursor) is int, f"expected integer active edge cursor, got {cursor!r}"
+    return cursor
 
 
 def _pending_node_rows_below(path: str, cursor: int) -> int:
-    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
-    try:
-        row = conn.execute(
-            "SELECT COUNT(*) FROM canonical_nodes n"
-            " JOIN _fathomdb_vector_kinds k ON k.kind = n.kind"
-            " LEFT JOIN _fathomdb_projection_terminal t"
-            "   ON t.write_cursor = n.write_cursor"
-            " WHERE n.row_kind IN ('leaf', 'coverage')"
-            "   AND n.superseded_at IS NULL"
-            "   AND t.write_cursor IS NULL"
-            "   AND n.write_cursor < ?",
-            (cursor,),
-        ).fetchone()
-        return int(row[0])
-    finally:
-        conn.close()
+    return _read_only_int(
+        path,
+        "SELECT COUNT(*) FROM canonical_nodes n"
+        " JOIN _fathomdb_vector_kinds k ON k.kind = n.kind"
+        " LEFT JOIN _fathomdb_projection_terminal t"
+        "   ON t.write_cursor = n.write_cursor"
+        " WHERE n.row_kind IN ('leaf', 'coverage')"
+        "   AND n.superseded_at IS NULL"
+        "   AND t.write_cursor IS NULL"
+        "   AND n.write_cursor < ?",
+        (cursor,),
+    )
 
 
 def _poll_until(timeout_s: float, probe) -> bool:

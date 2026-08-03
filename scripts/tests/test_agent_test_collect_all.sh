@@ -41,6 +41,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 AGENT_TEST="$REPO_ROOT/scripts/agent-test.sh"
 AGENT_OUTPUT_LIB="$REPO_ROOT/scripts/lib/agent-output.sh"
 AGENT_SUITE_RUN_LIB="$REPO_ROOT/scripts/lib/agent-suite-run.sh"
+AGENT_PYTHON_ENV_LIB="$REPO_ROOT/scripts/lib/agent-python-env.sh"
 
 FAILED=0
 pass() { printf 'PASS  %s\n' "$1"; }
@@ -254,6 +255,18 @@ else
   fail "arm C: the last executable line of agent-test.sh is NOT suite_summary_and_exit: [$LAST_EXEC_LINE]"
 fi
 
+if grep -qE '^run_suite test-rust bash scripts/test-rust-workspace\.sh --serial$' "$AGENT_TEST"; then
+  pass "arm C: test-rust delegates to the canonical serial workspace runner"
+else
+  fail "arm C: test-rust must delegate to scripts/test-rust-workspace.sh --serial"
+fi
+
+if grep -qE '^run_suite test-cargo-publish-if-new bash scripts/tests/test_cargo_publish_if_new\.sh$' "$AGENT_TEST"; then
+  pass "arm C: normal agent-test runs cargo publish helper behavior coverage"
+else
+  fail "arm C: agent-test must run test_cargo_publish_if_new.sh"
+fi
+
 # ============================================================================
 # Arm D: scripts/lib/agent-suite-run.sh is sourced by scripts/agent-test.sh
 # and by NO other script in the repo.
@@ -344,6 +357,113 @@ if grep -qE 'exclude_suite.*\$(\{)?(AGENT_|FATHOMDB_)' "$AGENT_TEST"; then
   fail "arm E: agent-test.sh appears to read an exclusion from an environment variable"
 else
   pass "arm E: agent-test.sh does not read --exclude-suite from any environment variable"
+fi
+
+# ============================================================================
+# Arm F: a checkout-local virtualenv must be selected BEFORE any registered
+# shell suite runs. CI installs PyYAML into .venv, while several shell suites
+# invoke bare python3 for static workflow and frontmatter parsing. Drive the
+# REAL environment selector and REAL run_suite wrapper with a disposable
+# checkout and shell suite; this is deliberately not a full agent-test run.
+# ============================================================================
+FIXTURE_CHECKOUT="$TMPROOT/python-path-checkout"
+mkdir -p "$FIXTURE_CHECKOUT/.venv/bin"
+
+cat >"$FIXTURE_CHECKOUT/.venv/bin/python3" <<'EOF'
+#!/bin/sh
+printf 'fixture checkout venv python3\n'
+EOF
+chmod +x "$FIXTURE_CHECKOUT/.venv/bin/python3"
+
+# The selector identifies a valid venv by its canonical `python` executable.
+ln -s python3 "$FIXTURE_CHECKOUT/.venv/bin/python"
+
+PROBE_SUITE="$FIXTURE_CHECKOUT/probe-shell-suite.sh"
+cat >"$PROBE_SUITE" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+if [ "$(command -v python3)" != "$1/.venv/bin/python3" ]; then
+  printf 'wrong python3: %s\n' "$(command -v python3)" >&2
+  exit 1
+fi
+python3 >"$1/probe-result"
+EOF
+chmod +x "$PROBE_SUITE"
+
+DRIVER_F="$TMPROOT/driver_f.sh"
+cat >"$DRIVER_F" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+. "$AGENT_OUTPUT_LIB"
+. "$AGENT_SUITE_RUN_LIB"
+. "$AGENT_PYTHON_ENV_LIB"
+cd "$FIXTURE_CHECKOUT"
+use_checkout_venv_python_path "$PWD"
+run_suite fixture-shell-suite bash "$PROBE_SUITE" "$PWD"
+suite_summary_and_exit
+EOF
+chmod +x "$DRIVER_F"
+
+set +e
+F_OUT="$(PATH=/usr/bin:/bin \
+  AGENT_OUTPUT_LIB="$AGENT_OUTPUT_LIB" \
+  AGENT_SUITE_RUN_LIB="$AGENT_SUITE_RUN_LIB" \
+  AGENT_PYTHON_ENV_LIB="$AGENT_PYTHON_ENV_LIB" \
+  FIXTURE_CHECKOUT="$FIXTURE_CHECKOUT" \
+  PROBE_SUITE="$PROBE_SUITE" \
+  AGENT_VERBOSE=1 \
+  bash "$DRIVER_F" 2>&1)"
+F_RC=$?
+set -e
+
+if [ "$F_RC" -eq 0 ] && grep -qE '^PASS fixture-shell-suite rc=0 ' <<<"$F_OUT" \
+  && [ "$(cat "$FIXTURE_CHECKOUT/probe-result" 2>/dev/null || true)" = "fixture checkout venv python3" ]; then
+  pass "arm F: registered shell suites receive checkout .venv/bin/python3"
+else
+  fail "arm F: registered shell suite did not receive checkout venv python3 (rc=$F_RC): $F_OUT"
+fi
+
+FALLBACK_CHECKOUT="$TMPROOT/python-path-fallback-checkout"
+FALLBACK_BIN="$TMPROOT/system-bin"
+mkdir -p "$FALLBACK_CHECKOUT" "$FALLBACK_BIN"
+cat >"$FALLBACK_BIN/python3" <<'EOF'
+#!/bin/sh
+printf 'fixture system python3\n'
+EOF
+chmod +x "$FALLBACK_BIN/python3"
+
+DRIVER_F_FALLBACK="$TMPROOT/driver_f_fallback.sh"
+cat >"$DRIVER_F_FALLBACK" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+. "$AGENT_PYTHON_ENV_LIB"
+before="$PATH"
+use_checkout_venv_python_path "$FALLBACK_CHECKOUT"
+[ "$PATH" = "$before" ]
+python3
+EOF
+chmod +x "$DRIVER_F_FALLBACK"
+
+set +e
+F_FALLBACK_OUT="$(PATH="$FALLBACK_BIN" \
+  AGENT_PYTHON_ENV_LIB="$AGENT_PYTHON_ENV_LIB" \
+  FALLBACK_CHECKOUT="$FALLBACK_CHECKOUT" \
+  /bin/bash "$DRIVER_F_FALLBACK" 2>&1)"
+F_FALLBACK_RC=$?
+set -e
+
+if [ "$F_FALLBACK_RC" -eq 0 ] && [ "$F_FALLBACK_OUT" = "fixture system python3" ]; then
+  pass "arm F: absent checkout venv preserves the system-python fallback"
+else
+  fail "arm F: absent checkout venv did not preserve system-python fallback (rc=$F_FALLBACK_RC): $F_FALLBACK_OUT"
+fi
+
+FIRST_SUITE_LINE="$(grep -nE '^[[:space:]]*run_suite[[:space:]]' "$AGENT_TEST" | head -n1 | cut -d: -f1)"
+SELECTOR_LINE="$(grep -nF 'use_checkout_venv_python_path' "$AGENT_TEST" | head -n1 | cut -d: -f1 || true)"
+if [ -n "$SELECTOR_LINE" ] && [ "$SELECTOR_LINE" -lt "$FIRST_SUITE_LINE" ]; then
+  pass "arm F: agent-test selects the checkout venv before its first shell-suite registration"
+else
+  fail "arm F: agent-test does not select the checkout venv before its first shell suite"
 fi
 
 if [ "$FAILED" -gt 0 ]; then

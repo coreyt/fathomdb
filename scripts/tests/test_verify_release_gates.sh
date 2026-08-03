@@ -26,7 +26,15 @@ FAILED=0
 TMPDIR_ROOT="$(mktemp -d)"
 SNAP="$TMPDIR_ROOT/snap"
 mkdir -p "$SNAP"
-trap 'restore; rm -rf "$TMPDIR_ROOT"' EXIT
+TEMP_TAGS=()
+
+cleanup_temp_tags() {
+  for tag in "${TEMP_TAGS[@]}"; do
+    git -C "$REPO_ROOT" tag -d "$tag" >/dev/null 2>&1 || true
+  done
+}
+
+trap 'cleanup_temp_tags; restore; rm -rf "$TMPDIR_ROOT"' EXIT
 
 cp "$CARGO" "$SNAP/Cargo.toml"
 cp "$EMBAPI" "$SNAP/embedder-api.toml"
@@ -182,35 +190,93 @@ else
 fi
 restore
 
-# 9. workflow_dispatch + dry_run=true: tag-format check skipped, other
-#    gates still run. GITHUB_REF_NAME is a branch name, no v-prefix.
+# 9. workflow_dispatch + dry_run=true: the required semver input derives a
+#    canonical v-tag, while GITHUB_REF_NAME remains a branch name.
 restore
 printf '# Changelog\n\n## %s\n' "$WS" > "$CL_PATH"
 GITHUB_EVENT_NAME="workflow_dispatch" DRY_RUN="true" \
+  RELEASE_DISPATCH_VERSION="$WS" RELEASE_GATES_TAG="v${WS}" \
   GITHUB_REF_NAME="phase-11d-release-workflow" "$VRG" >/dev/null 2>&1 \
-  && pass "dispatch+dry_run=true skips tag check and passes" \
-  || fail "dispatch+dry_run=true should pass on otherwise-clean state"
+  && pass "dispatch+dry_run=true validates its derived canonical tag and passes" \
+  || fail "dispatch+dry_run=true should pass with a matching semver input"
 
-# 10. workflow_dispatch + dry_run=false: emergency-republish path emits
-#     an explicit warning to stderr but does not fail on clean state.
+# 10. workflow_dispatch rejects a non-semver release input before a dry run
+#     can exercise any publisher.
+restore
+printf '# Changelog\n\n## %s\n' "$WS" > "$CL_PATH"
+if out="$(GITHUB_EVENT_NAME="workflow_dispatch" DRY_RUN="true" \
+    RELEASE_DISPATCH_VERSION="not-semver" RELEASE_GATES_TAG="vnot-semver" \
+    GITHUB_REF_NAME="phase-11d-release-workflow" "$VRG" 2>&1)"; then
+  fail "dispatch with a non-semver release version should fail; got: $out"
+else
+  printf '%s' "$out" | grep -qi 'semver' \
+    && pass "dispatch rejects a non-semver release version" \
+    || fail "wrong diagnostic for a non-semver dispatch version; got: $out"
+fi
+
+# 11. workflow_dispatch rejects a tag that is not exactly v<release_version>.
+restore
+printf '# Changelog\n\n## %s\n' "$WS" > "$CL_PATH"
+if out="$(GITHUB_EVENT_NAME="workflow_dispatch" DRY_RUN="true" \
+    RELEASE_DISPATCH_VERSION="$WS" RELEASE_GATES_TAG="v9.9.9" \
+    GITHUB_REF_NAME="phase-11d-release-workflow" "$VRG" 2>&1)"; then
+  fail "dispatch with a mismatched derived tag should fail; got: $out"
+else
+  printf '%s' "$out" | grep -qiE 'tag.*mismatch|canonical' \
+    && pass "dispatch rejects a mismatched derived tag" \
+    || fail "wrong diagnostic for a mismatched dispatch tag; got: $out"
+fi
+
+# 12. workflow_dispatch + dry_run=false without the typed confirmation must
+#     fail before the emergency-republish path can proceed.
 restore
 printf '# Changelog\n\n## %s\n' "$WS" > "$CL_PATH"
 if out="$(GITHUB_EVENT_NAME="workflow_dispatch" DRY_RUN="false" \
+    RELEASE_DISPATCH_VERSION="$WS" RELEASE_GATES_TAG="v${WS}" \
     GITHUB_REF_NAME="phase-11d-release-workflow" "$VRG" 2>&1)"; then
-  printf '%s' "$out" | grep -qi 'emergency-republish' \
-    && pass "dispatch+dry_run=false emits emergency-republish warning" \
-    || fail "dispatch+dry_run=false missing emergency-republish warning; got: $out"
+  fail "dispatch+dry_run=false without confirmation should fail; got: $out"
 else
-  fail "dispatch+dry_run=false should not fail on otherwise-clean state; got: $out"
+  printf '%s' "$out" | grep -qi 'confirm' \
+    && pass "dispatch+dry_run=false without confirmation rejected" \
+    || fail "wrong diagnostic for missing dispatch confirmation; got: $out"
 fi
 
-# 11. workflow_dispatch + dry_run=true + crate metadata broken: still fails.
+# 13. workflow_dispatch + dry_run=false with a mismatched typed confirmation
+#     must fail rather than accepting any non-empty second factor.
+restore
+printf '# Changelog\n\n## %s\n' "$WS" > "$CL_PATH"
+if out="$(GITHUB_EVENT_NAME="workflow_dispatch" DRY_RUN="false" \
+    RELEASE_CONFIRM_VERSION="9.9.9" RELEASE_DISPATCH_VERSION="$WS" RELEASE_GATES_TAG="v${WS}" \
+    GITHUB_REF_NAME="phase-11d-release-workflow" "$VRG" 2>&1)"; then
+  fail "dispatch+dry_run=false with mismatched confirmation should fail; got: $out"
+else
+  printf '%s' "$out" | grep -qi 'confirm' \
+    && pass "dispatch+dry_run=false with mismatched confirmation rejected" \
+    || fail "wrong diagnostic for mismatched dispatch confirmation; got: $out"
+fi
+
+# 14. workflow_dispatch + dry_run=false with matching typed confirmation
+#     proceeds and retains its emergency-republish warning.
+restore
+printf '# Changelog\n\n## %s\n' "$WS" > "$CL_PATH"
+if out="$(GITHUB_EVENT_NAME="workflow_dispatch" DRY_RUN="false" \
+    RELEASE_CONFIRM_VERSION="$WS" RELEASE_DISPATCH_VERSION="$WS" RELEASE_GATES_TAG="v${WS}" \
+    GITHUB_REF_NAME="phase-11d-release-workflow" "$VRG" 2>&1)"; then
+  printf '%s' "$out" | grep -qi 'emergency-republish' \
+    && pass "dispatch+dry_run=false with matching confirmation emits emergency-republish warning" \
+    || fail "dispatch+dry_run=false missing emergency-republish warning; got: $out"
+else
+  fail "dispatch+dry_run=false with matching confirmation should pass; got: $out"
+fi
+
+# 15. workflow_dispatch + dry_run=true + crate metadata broken: still fails.
 #     Non-tag gates must keep running on dispatch.
 restore
 printf '# Changelog\n\n## %s\n' "$WS" > "$CL_PATH"
 ENG="$REPO_ROOT/src/rust/crates/fathomdb-engine/Cargo.toml"
 sed -i '/^description[[:space:]]*=/d' "$ENG"
 if out="$(GITHUB_EVENT_NAME="workflow_dispatch" DRY_RUN="true" \
+    RELEASE_DISPATCH_VERSION="$WS" RELEASE_GATES_TAG="v${WS}" \
     GITHUB_REF_NAME="phase-11d-release-workflow" "$VRG" 2>&1)"; then
   cp "$SNAP_CRATES/fathomdb-engine.toml" "$ENG"
   fail "dispatch+broken metadata should still fail crate-metadata check"
@@ -220,6 +286,45 @@ else
     && pass "dispatch keeps non-tag gates enforced" \
     || fail "wrong diagnostic on dispatch metadata break; got: $out"
 fi
+
+# 16. workflow_dispatch must be checked out at its canonical tag, not the
+#     branch/ref selected in the GitHub UI. Exercise the real git resolution:
+#     a tag at HEAD passes, while a tag at HEAD^ must fail before publishing.
+CHECKOUT_TEST_ID="${BASHPID:-$$}"
+CHECKOUT_OK_VERSION="0.997.${CHECKOUT_TEST_ID}"
+CHECKOUT_OK_TAG="v${CHECKOUT_OK_VERSION}"
+restore
+bash "$REPO_ROOT/scripts/set-version.sh" --workspace "$CHECKOUT_OK_VERSION" >/dev/null
+printf '# Changelog\n\n## %s\n' "$CHECKOUT_OK_VERSION" > "$CL_PATH"
+git -C "$REPO_ROOT" tag "$CHECKOUT_OK_TAG" HEAD
+TEMP_TAGS+=("$CHECKOUT_OK_TAG")
+if out="$(GITHUB_EVENT_NAME="workflow_dispatch" DRY_RUN="true" \
+    RELEASE_GATES_REQUIRE_TAG_CHECKOUT=1 \
+    RELEASE_DISPATCH_VERSION="$CHECKOUT_OK_VERSION" RELEASE_GATES_TAG="$CHECKOUT_OK_TAG" \
+    GITHUB_REF_NAME="main" "$VRG" 2>&1)"; then
+  pass "dispatch accepts a checkout whose HEAD is the canonical tag"
+else
+  fail "dispatch should accept a canonical-tag checkout; got: $out"
+fi
+
+CHECKOUT_BAD_VERSION="0.996.${CHECKOUT_TEST_ID}"
+CHECKOUT_BAD_TAG="v${CHECKOUT_BAD_VERSION}"
+restore
+bash "$REPO_ROOT/scripts/set-version.sh" --workspace "$CHECKOUT_BAD_VERSION" >/dev/null
+printf '# Changelog\n\n## %s\n' "$CHECKOUT_BAD_VERSION" > "$CL_PATH"
+git -C "$REPO_ROOT" tag "$CHECKOUT_BAD_TAG" HEAD^
+TEMP_TAGS+=("$CHECKOUT_BAD_TAG")
+if out="$(GITHUB_EVENT_NAME="workflow_dispatch" DRY_RUN="true" \
+    RELEASE_GATES_REQUIRE_TAG_CHECKOUT=1 \
+    RELEASE_DISPATCH_VERSION="$CHECKOUT_BAD_VERSION" RELEASE_GATES_TAG="$CHECKOUT_BAD_TAG" \
+    GITHUB_REF_NAME="main" "$VRG" 2>&1)"; then
+  fail "dispatch must reject a UI-selected checkout that differs from its canonical tag; got: $out"
+else
+  printf '%s' "$out" | grep -qi 'checkout mismatch' \
+    && pass "dispatch rejects a checkout whose HEAD differs from the canonical tag" \
+    || fail "wrong diagnostic for a dispatch checkout mismatch; got: $out"
+fi
+restore
 
 # 12. RC version (hyphen in WS_VERSION) + non-existent main ref:
 #     HEAD-on-main check is SKIPPED per HITL 2026-05-17. Gate emits a

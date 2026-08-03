@@ -14,7 +14,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$SCRIPT_DIR/lib/agent-output.sh"
 # shellcheck source=lib/agent-suite-run.sh
 . "$SCRIPT_DIR/lib/agent-suite-run.sh"
+# shellcheck source=lib/agent-python-env.sh
+. "$SCRIPT_DIR/lib/agent-python-env.sh"
 cd_repo_root
+use_checkout_venv_python_path "$PWD"
 
 # ---------------------------------------------------------------------------
 # Arg parsing — BEFORE anything runs. Supports ONLY --exclude-suite=LABEL,
@@ -71,6 +74,10 @@ fi
 # Scripts (bash): set-version.sh two-axis enforcement.
 run_suite test-set-version bash scripts/tests/test_set_version.sh
 
+# Scripts (bash): release-cut fields deliberately outside set-version.sh.
+run_suite test-release-version-surfaces bash scripts/tests/test_release_version_surfaces.sh
+run_suite test-platform-capabilities bash scripts/tests/test_platform_capabilities.sh
+
 # Scripts (bash): 0.8.20 R-20-HARNESS ("Slice 39.5", no ladder slot) —
 # recurrence guard for the collect-all conversion of THIS script: proves
 # run_suite/skip_suite record all four states (PASS/FAIL/SKIP/EXCL), a crash
@@ -84,6 +91,16 @@ run_suite test-agent-test-collect-all bash scripts/tests/test_agent_test_collect
 
 # Scripts (bash): release-time preflight (tag/--check-files/CHANGELOG/metadata).
 run_suite test-verify-release-gates bash scripts/tests/test_verify_release_gates.sh
+
+# Exact Rust, npm, actionlint, and dispatch-tag alignment between local
+# prework and the release workflow.
+run_suite test-runtime-release-alignment bash scripts/tests/test_runtime_release_alignment.sh
+
+# Scripts (bash): offline fake-Cargo coverage for every release Rust tier. The
+# helper executes Cargo dry-runs for the three leaf crates and explicitly skips
+# the four dependent crates whose sibling registry dependencies cannot resolve
+# until real preceding tiers publish.
+run_suite test-cargo-publish-if-new bash scripts/tests/test_cargo_publish_if_new.sh
 
 # Scripts (bash): 0.8.20 Slice 39 (R-20-DOC) — the license type + license-
 # SHIPPING gate (scripts/check-license-consistency.sh). Closes an 0.8.x-long
@@ -202,6 +219,20 @@ run_suite test-smoke-scripts bash scripts/tests/test_smoke_scripts.sh
 # dist-tag). Pure python3+PyYAML parse; never runs the workflow.
 run_suite test-release-workflow-scope bash scripts/tests/test_release_workflow_scope.sh
 
+# Slice 40 / seq-234: Linux x86_64 is the 0.8.20 native-artifact scope.
+# Static assertions here complement actionlint's workflow syntax/schema check.
+run_suite test-linux-first-platform-scope bash scripts/tests/test_linux_first_platform_scope.sh
+run_suite test-linux-aarch64-release-artifacts bash scripts/tests/test_linux_aarch64_release_artifacts.sh
+
+# Slice 40: the CI verify job must leave enough time for its clean bootstrap
+# plus the same full agent-verify gate required locally.
+run_suite test-verify-ci-timeout-budget bash scripts/tests/test_verify_ci_timeout_budget.sh
+
+# Slice 40: generic TypeScript prework skips only the seven network-gated arms;
+# the warmed default-embedder CI job must own their complementary live and
+# release-surface coverage.
+run_suite test-ts-cache-coverage-split bash scripts/tests/test_ts_cache_coverage_split.sh
+
 # Scripts (bash): coordinated-publish resilience (R-REL-4b/4c) — REAL npm
 # local-registry round-trip (publish -> query-no-op -> install -> loader) +
 # crates.io SIMULATED (real crates registry infeasible in-harness). node-only.
@@ -226,6 +257,16 @@ run_suite test-npm-inject-optional-deps bash scripts/tests/test_npm_inject_optio
 
 # actionlint binary present + rejects deliberately-broken fixture.
 run_suite test-actionlint-fixture bash scripts/tests/test_actionlint_fixture.sh
+
+# Go-installed actionlint prefixes its exact version with `v`; bootstrap and
+# agent-lint must normalize that conventional form without accepting drift.
+run_suite test-actionlint-go-install-version bash scripts/tests/test_actionlint_go_install_version.sh
+
+# Local lint preflight must use CI's exact Ruff version rather than reporting a
+# false green from an older environment. Fixture provides only a stale Ruff and
+# asserts the wrapper fails before attempting any other lint leg.
+run_suite test-agent-lint-ruff-version bash scripts/tests/test_agent_lint_ruff_version.sh
+run_suite test-agent-lint-actionlint-version bash scripts/tests/test_agent_lint_actionlint_version.sh
 
 # TC-37 recurrence guard: agent-lint-md.sh must HARD-fail (not skip_notice/exit 0)
 # when markdownlint-cli2 is genuinely unresolvable. Builds its own throwaway
@@ -276,6 +317,12 @@ run_suite test-md-generators bash scripts/tests/test_md_generators.sh
 run_suite test-cargo-skew bash dev/release/tests/cargo_skew.sh
 run_suite test-pip-skew bash dev/release/tests/pip_skew.sh
 
+# Scripts (bash): temporary TC-74 evidence control. The canonical runner owns
+# the exact Cargo invocation, so the local agent loop and every gated Rust CI
+# leg use the same serial mode.
+run_suite test-rust-workspace-gate bash scripts/tests/test_rust_workspace_gate.sh
+run_suite test-ci-rust-workspace-gate bash scripts/tests/test_ci_rust_workspace_gate.sh
+
 # Rust
 #
 # TC-20 invariant: this line must NEVER reach `eu7_real_corpus_ac_validation`,
@@ -288,7 +335,9 @@ run_suite test-pip-skew bash dev/release/tests/pip_skew.sh
 #   3. `#[ignore]` on the test itself — holds no matter which features are
 #      selected, so `--all-features` still would not run the body.
 # Verify by inspection only (`-- --list --ignored`), never by running it.
-run_suite test-rust cargo test --workspace --quiet --no-fail-fast
+run_suite test-aarch64-candle-feature-closure bash scripts/tests/test_aarch64_candle_feature_closure.sh
+run_suite test-aarch64-candle-cpu bash scripts/tests/test_aarch64_candle_cpu.sh
+run_suite test-rust bash scripts/test-rust-workspace.sh --serial
 
 # Python
 python_bin=""
@@ -334,10 +383,21 @@ fi
 
 # TypeScript
 if [ -d src/ts/node_modules ]; then
-  run_suite test-ts bash -c 'cd src/ts && npm test --silent'
+  # The seven default-embedder TypeScript arms remain part of this ordinary
+  # prework gate, but skip their live-model bodies here.  CI's
+  # default-embedder-tests job owns the same suite after warming the BGE cache
+  # and enables its release-surface arm there.
+  run_suite test-ts env FATHOMDB_SKIP_NETWORK_TESTS=1 bash -c 'cd src/ts && npm test --silent'
 else
   skip_suite test-ts "src/ts/node_modules not installed"
 fi
+
+# The release-surface test executes from tsc's `dist/tests` layout. Keep its
+# repository-root calculation pinned independently so its opt-in CI arm cannot
+# fail after the native debug build has already run.
+run_suite test-release-surface-repo-root bash scripts/tests/test_release_surface_repo_root.sh
+run_suite test-release-surface-native-api bash scripts/tests/test_release_surface_native_api.sh
+run_suite test-ts-cache-coverage-no-rg bash scripts/tests/test_ts_cache_coverage_split_no_rg.sh
 
 # Collect-all summary — the deliverable. Prints every suite's outcome (full
 # table on any FAIL or AGENT_VERBOSE=1; a one-line summary otherwise) and

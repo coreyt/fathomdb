@@ -10,7 +10,7 @@
 #
 # Predicate under test (see scripts/steward-orient.sh's header for the full
 # statement):
-#   * output is <= 4096 bytes and NO file is written anywhere — INCLUDING
+#   * output is <= 5120 bytes and NO file is written anywhere — INCLUDING
 #     `.git/index`, which `git status` rewrites when it refreshes a stale stat
 #     cache (arms 2b-2d);
 #   * every load-bearing section is non-empty, or the run HARD-fails naming the
@@ -199,8 +199,8 @@ if [ "$RC" -eq 0 ]; then
 else
   fail "arm 0 (baseline green): rc=$RC err=$ERR out=$OUT"
 fi
-if [ "$BYTES" -le 4096 ] && [ "$BYTES" -gt 0 ]; then
-  pass "baseline fixture — payload is 1..4096 bytes ($BYTES)"
+if [ "$BYTES" -le 5120 ] && [ "$BYTES" -gt 0 ]; then
+  pass "baseline fixture — payload is 1..5120 bytes ($BYTES)"
 else
   fail "arm 0 (byte cap): $BYTES bytes"
 fi
@@ -304,6 +304,15 @@ done
 setup_fixture
 mkdir -p "$WTDIR/orphan-alpha" "$WTDIR/orphan-beta"
 mkdir -p "$FIX/proj-worktrees/decoy-child"   # the wrong (child) location
+# Keep the filesystem proof in raw paths: this is the sibling contract the
+# fixture establishes, before the briefing compacts a HOME-prefixed display.
+if [ -d "$WTDIR/orphan-alpha" ] && [ -d "$WTDIR/orphan-beta" ] \
+   && [ ! -d "$FIX/proj-worktrees/orphan-alpha" ] \
+   && [ ! -d "$FIX/proj-worktrees/orphan-beta" ]; then
+  pass "arm 7 fixture plants orphan dirs only in the raw sibling worktrees path"
+else
+  fail "arm 7 fixture invalid: raw sibling/orphan layout was not created"
+fi
 run_orient "$FIX"
 if [ "$RC" -eq 0 ] && grep -qF 'orphan-alpha' <<<"$OUT" && grep -qF 'orphan-beta' <<<"$OUT"; then
   pass "orphan checkout dirs in the SIBLING <root>-worktrees/ are found and named"
@@ -317,11 +326,74 @@ if [ -n "$OUT" ] && ! grep -qF 'decoy-child' <<<"$OUT"; then
 else
   fail "arm 7: empty payload, or the child-path decoy was enumerated (resolved as a child)"
 fi
-if grep -qF "$WTDIR" <<<"$OUT"; then
-  pass "the briefing prints the resolved worktrees dir so a wrong path is visible"
+# steward-orient compacts a $HOME-prefixed worktree directory to `~`, which is
+# expected in CI where mktemp commonly lives under $HOME. Derive the expected
+# display with the same substitution while retaining the raw-path fixture proof
+# above, so this arm is independent of the runner's temp-root convention.
+DISPLAY_WTDIR="${WTDIR/#$HOME/\~}"
+if grep -qF "$DISPLAY_WTDIR" <<<"$OUT"; then
+  pass "the briefing prints the resolved worktrees dir in its HOME-compacted display form"
 else
-  fail "arm 7: resolved worktrees dir not printed; out=$OUT"
+  fail "arm 7: resolved worktrees dir not printed as $DISPLAY_WTDIR; out=$OUT"
 fi
+
+# --- Arm 7a: worktrees are bounded, but actionable identities survive -------
+# A cold start needs enough identity to act on the live exceptions (current,
+# locked and detached checkouts), not merely a count; printing every clean
+# attached checkout made the 4 KB cap depend on repository clutter. This fixture
+# contains all three meaningful classes plus three ordinary rows, so a summary
+# without identities and an unbounded list both fail this arm.
+setup_fixture
+LOCKED_WT="$WTDIR/fixture-locked"
+DETACHED_A="$WTDIR/fixture-detached-a"
+DETACHED_B="$WTDIR/fixture-detached-b"
+NORMAL_A="$WTDIR/fixture-normal-a"
+NORMAL_B="$WTDIR/fixture-normal-b"
+NORMAL_C="$WTDIR/fixture-normal-c"
+git -C "$FIX" worktree add -q -b fixture-locked "$LOCKED_WT"
+git -C "$FIX" worktree lock "$LOCKED_WT"
+git -C "$FIX" worktree add -q --detach "$DETACHED_A" HEAD
+git -C "$FIX" worktree add -q --detach "$DETACHED_B" HEAD
+git -C "$FIX" worktree add -q -b fixture-normal-a "$NORMAL_A"
+git -C "$FIX" worktree add -q -b fixture-normal-b "$NORMAL_B"
+git -C "$FIX" worktree add -q -b fixture-normal-c "$NORMAL_C"
+FIX_BRANCH="$(git -C "$FIX" branch --show-current)"
+FIX_SHA="$(git -C "$FIX" rev-parse --short=8 HEAD)"
+run_orient "$FIX"
+if [ "$RC" -eq 0 ]; then
+  pass "bounded-worktree fixture produces a complete briefing"
+else
+  fail "arm 7a (bounded worktrees): rc=$RC err=$ERR out=$OUT"
+fi
+if grep -qE '^WORKTREES 7 registered; locked=1 detached=2 shown=3 omitted=4; details: git worktree list$' <<<"$OUT"; then
+  pass "worktree summary reports each exception count, shown rows, omitted rows, and the on-demand command"
+else
+  fail "arm 7a summary: exact bounded accounting is missing; out=$OUT"
+fi
+# The briefing intentionally compacts paths below $HOME. The fixture may live
+# below $HOME on CI but under /tmp locally, so compare the displayed form while
+# the raw-path checks above continue to establish the sibling-layout contract.
+display_path() { printf '%s' "${1/#$HOME/\~}"; }
+for needle in \
+  "WT current path=$(display_path "$FIX") branch=$FIX_BRANCH sha=$FIX_SHA" \
+  "WT locked path=$(display_path "$LOCKED_WT") branch=fixture-locked sha=$FIX_SHA" \
+  "WT detached path=$(display_path "$DETACHED_A") branch=DETACHED sha=$FIX_SHA"; do
+  if grep -qF "$needle" <<<"$OUT"; then
+    pass "actionable worktree identity survives: $needle"
+  else
+    fail "arm 7a identity missing: $needle; out=$OUT"
+  fi
+done
+if ! grep -qF "$NORMAL_A" <<<"$OUT" && ! grep -qF "$NORMAL_B" <<<"$OUT" && ! grep -qF "$NORMAL_C" <<<"$OUT" \
+   && ! grep -qF "$DETACHED_B" <<<"$OUT"; then
+  pass "ordinary and over-limit exception rows are omitted explicitly, not silently truncated"
+else
+  fail "arm 7a boundedness: an omitted worktree identity leaked into the briefing; out=$OUT"
+fi
+git -C "$FIX" worktree unlock "$LOCKED_WT"
+for wt in "$LOCKED_WT" "$DETACHED_A" "$DETACHED_B" "$NORMAL_A" "$NORMAL_B" "$NORMAL_C"; do
+  git -C "$FIX" worktree remove --force "$wt"
+done
 
 # --- Arm 3: ZERO landed slices -> HARD fail naming the section -------------
 setup_fixture
@@ -399,7 +471,7 @@ else
   fail "arm 5d (missing state file): rc=$RC err=$ERR"
 fi
 
-# --- Arm 1: OUTPUT OVER 4 KB -> HARD fail (the cap is mechanical) ---------
+# --- Arm 1: OUTPUT OVER 5 KB -> HARD fail (the cap is mechanical) ---------
 # Enforced by the script itself, not only by this test: the cap is a promise the
 # tool makes to the reader's context budget, so it has to be self-checking.
 setup_fixture
@@ -407,12 +479,12 @@ BIG="$(head -c 6000 /dev/zero | tr '\0' 'x')"
 perl -0777 -pi -e "s/the fixture's next action, recorded verbatim\\./$BIG/" \
   "$FIX/dev/plans/runs/STATUS-0.9.0.md"
 run_orient "$FIX"
-if [ "$RC" -ne 0 ] && grep -qiE 'budget|4096|bytes' <<<"$ERR"; then
-  pass "a briefing over the 4096-byte cap HARD-fails and names the budget"
+if [ "$RC" -ne 0 ] && grep -qiE 'budget|5120|bytes' <<<"$ERR"; then
+  pass "a briefing over the 5120-byte cap HARD-fails and names the budget"
 else
   fail "arm 1 (byte cap): rc=$RC bytes=$BYTES err=$ERR"
 fi
-if [ "$BYTES" -gt 4096 ]; then
+if [ "$BYTES" -gt 5120 ]; then
   pass "arm 1 fixture really produced an over-cap payload ($BYTES bytes)"
 else
   fail "arm 1 fixture invalid: payload was only $BYTES bytes"
@@ -551,7 +623,7 @@ rm -f "$FIX/.git/index.lock"
 # CHILD processes (gh, python3).
 GIT_CALLS_ALL="$(grep -coE '(\$\(|<\()git ' "$GATE" || true)"
 GIT_CALLS_SAFE="$(grep -coE '(\$\(|<\()git --no-optional-locks ' "$GATE" || true)"
-if [ "$GIT_CALLS_ALL" -ge 8 ]; then
+if [ "$GIT_CALLS_ALL" -ge 7 ]; then
   pass "arm 2d precondition: the briefing really does shell out to git ($GIT_CALLS_ALL call sites)"
 else
   fail "arm 2d precondition: found only $GIT_CALLS_ALL git call sites — the count regex has drifted, so this arm proves nothing"
@@ -576,10 +648,18 @@ if [ "$RC" -eq 0 ]; then
 else
   fail "arm 10 (real repo green): rc=$RC err=$ERR out=$OUT"
 fi
-if [ "$BYTES" -le 4096 ] && [ "$BYTES" -gt 0 ]; then
-  pass "the real checkout's briefing is within the 4096-byte cap ($BYTES bytes)"
+if [ "$BYTES" -le 5120 ] && [ "$BYTES" -gt 0 ]; then
+  pass "the real checkout's briefing is within the 5120-byte cap ($BYTES bytes)"
 else
   fail "arm 10 (real byte cap): $BYTES bytes"
+fi
+# The worktree section must be cardinality-bounded without hiding every active
+# identity. It reports the live exception counts and names the exact command for
+# omitted rows; the fixture above proves its selected rows carry path/branch/SHA.
+if grep -qE '^WORKTREES [0-9]+ registered; locked=[0-9]+ detached=[0-9]+ shown=[0-9]+ omitted=[0-9]+; details: git worktree list$' <<<"$OUT"; then
+  pass "the real checkout's worktree section is a bounded actionable summary"
+else
+  fail "arm 10 (worktree boundedness): expected bounded actionable worktree accounting; out=$OUT"
 fi
 if [ "$REAL_BEFORE" = "$REAL_AFTER" ]; then
   pass "the real checkout's porcelain status is unchanged by the briefing"

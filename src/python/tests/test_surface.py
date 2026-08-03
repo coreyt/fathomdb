@@ -206,27 +206,24 @@ def test_allowlist_excludes_recovery_denylist() -> None:
     assert GOVERNED_SURFACE_ALLOWLIST & _RECOVERY_DENYLIST == set()
 
 
-# X1 (0.8.14 Slice 40) — module-level embedder-helper parity ledger.
+# X1 (0.8.20 Slice 40) — module-level embedder-helper parity ledger.
 #
 # The cross-binding surface harness above (`_live_python_command_surface` /
 # `src/ts/tests/surface.test.ts`) introspects only `Engine` / `admin` / `read`,
-# so it is BLIND to module-level functions. `embed_batch_cls` is a module-level
-# embedder helper exposed PYTHON-ONLY — it lives in `fathomdb-py/src/lib.rs`,
-# `fathomdb.__all__`, and the `_fathomdb.pyi` stub, and is intentionally ABSENT
-# from the TS binding (`fathomdb-napi/src/lib.rs`, `src/ts`). TS parity for it is
-# a TRACKED DEFERRAL (py-first). By contrast the `Engine.embed` *verb* IS at
-# Py↔TS parity (governed-allowlist member `embed`). This ledger makes the
-# asymmetry ASSERTED rather than a silent blind spot: a new/removed Python
-# module-level embedder helper must be reflected here in lockstep with a
-# conscious TS parity decision.
-_PY_ONLY_MODULE_EMBEDDER_HELPERS = frozenset({"embed_batch_cls"})
+# so it is BLIND to module-level functions. Keep an explicit helper-to-peer
+# ledger: `embed_batch_cls` now has TypeScript's `embedBatchCls` peer, so no
+# helper is Python-only. By contrast the `Engine.embed` *verb* is governed
+# separately. The TypeScript runtime test owns proof that each listed peer is
+# actually exported through N-API.
+_MODULE_LEVEL_EMBEDDER_HELPER_PARITY = {"embed_batch_cls": "embedBatchCls"}
+_PY_ONLY_MODULE_EMBEDDER_HELPERS = frozenset()
 
 
 def test_module_level_embedder_helper_asymmetry_is_tracked() -> None:
     import fathomdb
 
-    # The tracked py-only helpers are present as module-level callables and
-    # exported in `__all__`.
+    # Any intentionally Python-only helpers are present as module-level
+    # callables and exported in `__all__`.
     for name in _PY_ONLY_MODULE_EMBEDDER_HELPERS:
         assert callable(getattr(fathomdb, name, None)), (
             f"expected Python-only module-level embedder helper {name!r}"
@@ -235,20 +232,24 @@ def test_module_level_embedder_helper_asymmetry_is_tracked() -> None:
             f"{name!r} must be exported in fathomdb.__all__"
         )
 
-    # The module-level embedder-helper surface is EXACTLY the tracked py-only set.
-    # A new module-level `embed*` callable (e.g. a future `embed_batch`) would
-    # break this and force a conscious update here + a TS parity decision, rather
-    # than drifting in silently. (`Engine.embed` is a class method, not a module
-    # attribute, so it is correctly out of scope for this module-level check.)
+    # The module-level embedder-helper surface is EXACTLY the ledger's Python
+    # side. A new module-level `embed*` callable (e.g. a future `embed_batch`)
+    # breaks this and forces a conscious TS-parity decision rather than drifting
+    # silently. (`Engine.embed` is a class method, not a module attribute, so it
+    # is correctly out of scope for this module-level check.)
     live_module_embed_helpers = {
         n
         for n in getattr(fathomdb, "__all__", ())
         if "embed" in n.lower() and callable(getattr(fathomdb, n, None))
     }
-    assert live_module_embed_helpers == _PY_ONLY_MODULE_EMBEDDER_HELPERS, (
-        "module-level embedder-helper surface drifted from the tracked py-only "
-        "set; update _PY_ONLY_MODULE_EMBEDDER_HELPERS and record the TS parity "
+    assert live_module_embed_helpers == set(_MODULE_LEVEL_EMBEDDER_HELPER_PARITY), (
+        "module-level embedder-helper surface drifted from the parity ledger; "
+        "update _MODULE_LEVEL_EMBEDDER_HELPER_PARITY and record the TS parity "
         f"decision. live={sorted(live_module_embed_helpers)}"
+    )
+    assert not _PY_ONLY_MODULE_EMBEDDER_HELPERS, (
+        "module-level embedder helpers require a TypeScript peer; a Python-only "
+        "exception needs an explicit parity ruling"
     )
 
 

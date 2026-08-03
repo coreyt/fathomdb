@@ -32,10 +32,12 @@ exists on `origin/main`." Both have since LANDED — 20c `841c307b`, 25 `83b1c81
 > close records (§11 Slice 5, §12 Slice 10, §13 Slice 15b) are retained **as history**; their "not landed" /
 > "Slice 15 OPEN" banners describe the on-branch state at the time they were written, **not** current truth.
 
-**Last updated:** 2026-07-30. **Library Sweep #3 COMPLETE** — Slices 31 `d0287620` (close record §20), 32
+**Last updated:** 2026-08-02. **0.8.20 is PUBLISHED as `v0.8.20`** after Slice 40 (`R-20-PUB`) landed at
+`833a2035`. The published native artifact scope is Linux x86_64/glibc only; npm uses the `next` dist-tag.
+The implementation ladder and release gate are both complete. **Library Sweep #3 COMPLETE** — Slices 31 `d0287620` (close record §20), 32
 `31d33293`, 33 `f02dc5b4`. **DOC-HYGIENE-3 COMPLETE** — `fd281358` + `85d44c74`. **Slice 34 was CANCELLED**
 (`seq-182`) and **PARKED at 0.8.21** (`seq-183`) — it is **NOT in this ladder**. **Slice 39 (`R-20-DOC`) is
-COMPLETE — LANDED `91db34d8`** (close record §21). **Ladder remaining: 40 alone.**
+COMPLETE — LANDED `91db34d8`** (close record §21). There is no remaining implementation slice.
 (Prior lands: Slice 23 `30102ecd`, Slice 21 `77be504b` §18, Slice 30 `9b3ed0e3` §17.)
 
 ---
@@ -44,10 +46,17 @@ COMPLETE — LANDED `91db34d8`** (close record §21). **Ladder remaining: 40 alo
 
 | | |
 |---|---|
-| **Slice in flight** | **NONE.** The most recent land is **Slice 39 (`91db34d8`)** — **R-20-DOC COMPLETE** (MIT reconciled across all four publishable manifests, a LICENSE that actually ships in all 10 published units, the `## 0.8.20` CHANGELOG section; close record §21). Before it: **Library Sweep #3 COMPLETE** (31 `d0287620` · 32 `31d33293` · 33 `f02dc5b4`) and **DOC-HYGIENE-3 COMPLETE** (`fd281358` machinery + `85d44c74` remainder, TC-53/TC-92). **Forward sequence: two cross-cutting units, then Slice 40** — (1) `SLICE-ID-HARDENING`, (2) "Slice 39.5" (`R-20-HARNESS`), then **Slice 40 (`R-20-PUB`)**. **Neither cross-cutting unit is a ladder slice**; neither carries a slice number or an `R-20-xx` ladder position (the `DOC-HYGIENE-3` / TC-86 precedent, `seq-204`) — `next_slice` stays **40**. ⛔ **Slice 34 is CANCELLED and is NOT in this ladder** (`seq-182`; parked at 0.8.21, `seq-183`) — route no work through it. Slice 31's close record (23 RED tests wired into **no gate**, 7 codex rounds / 12 findings / zero repeats, terminal-clean) is **§20**. **SCHEMA stays 24**; governed-surface allowlist byte-identical since 15d, `check-governed-surface-pin.sh` exit 0. Prior: 23 (`30102ecd`), 22 (`572475f2`, §19), 21 (`77be504b`, §18), 30 (`9b3ed0e3`, §17 — publish precondition SATISFIED). |
-| **Status** | **Every ladder slice through 39 is COMPLETE and LANDED on `origin/main`** — 0, 5, 10, 15, 20 (+20c), 21, 22, 23, 25, 30, 31, 32, 33, 39 — plus the non-ladder DOC-HYGIENE-3. **SCHEMA 24.** The **batched governed-surface delta is SIGNED** (HITL, steward `seq-157`); **AC-079 mints into `dev/acceptance.md` at Slice 40** — minting is not signing. **Remaining ladder: 40 alone**, then the separate HITL **PUBLISH** gate — the release's only **`halts_run`** unruled decision. *(`decisions.unruled` holds **ONE** row and it is the live open decision: **`publish`**. `npm-dist-tag` and `axis-e-version` were both **RULED at `seq-229`** (HITL 2026-07-31) and moved to `decisions.ruled`; `platform-publish-schedule` is **not** in `unruled` and has not been since `2159fb03` — it sits in `decisions.ruled_tracking`. ⛔ **Do not re-transcribe this list.** The count beside it in §4 is generated from `decisions.unruled`; this sentence is not, and the two disagreed for eleven days because a hand-written clause named a composition the state file had already changed. Read the state file — §4.)* |
-| **Unblocks** | <!-- BEGIN GENERATED release-state:0.8.20:status-unblocks -->**Slices 40 are NOW UNBLOCKED** — the Slice 39 landing (91db34d8), then the two cross-cutting units named in `ladder_order` (Slice 40 is the last ladder slice. Ahead of it, off-ladder: SLICE-ID-HARDENING (the fractional-id tooling fixes + recurrence arms, seq-204 ruling 1) and 'Slice 39.5' / R-20-HARNESS (collect-all harness + the true red list local AND CI, seq-204 ruling 2). ⚠ CORRECTED at seq-205/seq-209: main's CI is NOT vacuously green, it is RED — the last completed runs concluded failure with 23 jobs executing and only markdownlint skipped, four of them failing (commission-manifest, verify, security, rust-windows). And `test_commission_manifest.sh` is rc=0 LOCALLY (69 PASS) while its CI job fails — a genuine local-to-CI divergence, not a local red. Publish gate (i) (seq-202) is therefore NOT met today. Establishing the true CI red list, and explaining that divergence, belongs to Slice 39.5 (seq-204 ruling 2, seq-206).) now exists. Slice 30 (H7) depends on 10/15/20/25. **AC-079 is PRE-SIGNED** — the HITL signed off on the accumulated governed-surface delta (Slices 5d + 10b + 15b + 15d) on 2026-07-25 (master F-34), pinned to the content of `src/conformance/governed-surface-allowlist.json`; any diff to that file re-opens it (the T1e pin). Pre-signing is NOT minting: AC-079 is minted and recorded as SIGNED at Slice 40 (§4 #1). **Publish is gated by the separate HITL publish gate, not by this AC.**<!-- END GENERATED release-state:0.8.20:status-unblocks --> |
-| **Immediate next action** | **Commission Slice 40 (`R-20-PUB`) — the FINAL ladder slice.** ⛔ **HITL: Slice 40 is NOT to be split** — structure it internally with checkpoints. ✅ Both cross-cutting units are done: `SLICE-ID-HARDENING` **`2008f529`** (§22) and **"Slice 39.5" `b6cc8fa6`** (§23). ✅ **The disposition decision is MADE — `seq-219` ruled option (b), FIX EVERYTHING**: nothing waived, nothing deferred. ⛔ **This REVERSES `seq-206`** — the CI reds are **Slice 40's to FIX**, not 39.5's to report. Nine placements ruled at `seq-223`. 📄 **The brief is READY as substance and is TWO files** — the MANIFEST + BRIEF PAIR still owes one adversarial review (brief §14); the round-3 pass at `8e1eafb4` covered the brief text, which the `5d135bee` split then rewrote: `dev/plans/runs/0.8.20-slice-40-commission-brief.md` (instructions — read this) and `dev/plans/runs/0.8.20-slice-40-brief-provenance.md` (retracted claims + claim sourcing — **you do not need to read it**). ⛔ **Regenerate the manifest first** (`scripts/commission-manifest.sh 0.8.20 40`) and pair it with the brief; ⛔ **branch from `git rev-parse origin/main`, NOT the manifest's base sha** (it cannot see the two cross-cutting units). Neither cross-cutting unit is a ladder slice; `commission-manifest.sh` **cannot generate either brief** (DOC-HYGIENE-3 / TC-86). **Slice 40 STOPS before any tag.** ⚠ **CI on `main` is RED** — five reds, all diagnosed in the brief §10; publish gate (i) (every job **that executed** green, `seq-202`/`seq-211`, measured on Slice 40's own landing commit per `seq-223`) is **not met**. ✅ **Ten policies PRE-APPROVED by the HITL at `seq-229`** (2026-07-31) so the run does not stall mid-flight — `rust-macos` mechanism credit · a new-red escape hatch to 0.8.21 · HITL stands by to push at PHASE 7 · Axis-E ruled conditionally (**checkpoint B is no longer a stop**) · `npm-dist-tag` = non-`latest` · the PHASE 3 smoke `source_id` defect ruled **FIX** · TC-25 as a known gap · OOS-12 bounded triage · the license warning left · and **`publish` gate (ii) deliberately NOT pre-approved**. **Unruled: `publish` alone** — the only `halts_run` decision. |
+| **Slice in flight** | **NONE.** Slice 40 (`R-20-PUB`) landed at **`833a2035`** after the two cross-cutting units, `SLICE-ID-HARDENING` (`2008f529`) and `R-20-HARNESS` (`b6cc8fa6`). Every implementation slice is now landed; **SCHEMA stays 24**. |
+| **Status** | **Every ladder slice is COMPLETE and LANDED on `origin/main`** — 0, 5, 10, 15, 20, 21, 22, 23, 25, 30, 31, 32, 33, 39, 40. **AC-079 is MINTED and SIGNED** at Slice 40; AC-080 and AC-041 are green. v0.8.20 is published. |
+| **Release gate** | Complete. The annotated `v0.8.20` tag is at `d030e9bb0b25ac592b5ae9c06bed32026e0e1c8a`; registry recovery records are retained as evidence. |
+| **Immediate next action** | Do not commission another 0.8.20 slice. Start the 0.8.21 foundation board from current `origin/main`. |
+
+**HITL platform-scope amendment — `seq-234`, 2026-07-31.** 0.8.20 supports and publishes Linux x86_64 native
+artifacts only. macOS/Windows CI, validation and native-artifact work defer to **0.8.22**; this does not
+platform-exclude Cargo source crates. **B4 is cancelled and deferred to 0.8.22** — do not integrate its private
+patch. TC-91 remains release-blocking on Linux: earn **five consecutive relevant Linux CI TC-91 greens** whose
+Linux `verify` execution actually runs the B3 gate. B5's safe test-hooks-capable canonical binding route remains
+unresolved under `seq-233`; only PUBLISH gate (ii) is still `halts_run`.
 
 **Slices 0, 5, 10, 15 close records** are §11 (Slice 5), §12 (Slice 10), §13 (Slice 15b — TC-34 only; the
 registry/EAV/TC-33 remainder that also landed in the keystone `a2022957` is summarised in §8 and in
@@ -75,18 +84,17 @@ by that ruling.
 | **32** | **Library Sweep #3, leg 2/3** — implement the SBOM-survey tool against Slice 31's RED tests. **CODE ONLY**; no bump, no manifest or lockfile edit; **no requirement id** (TC-76) | 31 | **COMPLETE — LANDED `31d33293`**. 24/24 GREEN. Governed surface byte-identical; SCHEMA stays 24 |
 | **33** | **Library Sweep #3, leg 3/3** — RUN the tool, produce the dependency survey (**ascertain, never implement**) + the TC-115 install-then-run smoke; **no requirement id** | 32 | **COMPLETE — LANDED `f02dc5b4`**. Survey of record: `dev/plans/runs/0.8.20-slice-33-library-sweep-3-FINDINGS.md`. Output is an **input to 0.8.22**; no bump applied |
 | **39** | **Publish-facing documentation (R-20-DOC)** — **MIT license reconciliation + a LICENSE that actually ships** · the **0.8.20 CHANGELOG section** · registry-facing READMEs · `docs/` de-stale · `dev/interfaces` currency · docs.rs doc-comment corrections | 30 | **COMPLETE — LANDED `91db34d8`** (fast-forward ref-to-ref push, **no merge commit** — TC-110). The MIT reconciliation (`seq-193`) is applied across all four publishable manifests and a real LICENSE now ships in all **10** published units, with `scripts/check-license-consistency.sh` as the standing guard; the `## 0.8.20` CHANGELOG section exists, so `verify-release-gates.sh` check 4 can match it. Close record **§21** |
-| 40 | Verification + release readiness (publish-or-hold); **TC-16 determination FIRST** (`seq-118`) · **the DISPATCH GUARD (`seq-198` ruling 1)** — a **confirmation input on `workflow_dispatch` that must literally match the version** (⚠ **"required" = ENFORCED in `verify-release-gates.sh`, NOT `required: true` in `release.yml`, and the input must carry NO `default:`** — a default auto-populates the second factor and restores the one-unchecked-checkbox publish; Steward ruling `seq-229`), plus `scripts/verify-release-gates.sh` **exiting 1, not warning**, when a dispatch carries `dry_run=false` without it (today `verify-release-gates.sh:58-61` warns-and-continues **and** skips the tag-format check, leaving the real publish at `release.yml:261` reachable with **no tag**). **Slice 40 is the ONLY slice permitted to touch `.github/` this release** | 5,30,39 | not started |
+| 40 | Verification + release readiness (publish-or-hold); dispatch guard, local rehearsal, CI repair, version alignment, governed-surface mint, X1 parity, and release-gate hardening. **Slice 40 is the ONLY slice permitted to touch `.github/` this release** | 5,30,39 | **COMPLETE — LANDED `833a2035`**. No tag or real publish; the separate explicit HITL PUBLISH gate remains. |
 
-**Ladder remaining: 40 alone**, then the separate HITL **PUBLISH** gate (with its
-`npm-dist-tag` rider — §4). Ahead of Slice 40, off-ladder and in this order: **`SLICE-ID-HARDENING`**, then
-**"Slice 39.5" (`R-20-HARNESS`)** — **neither is a ladder slice** and neither carries a slice number or an
-`R-20-xx` ladder position (`seq-204`). Slices
-**0/5/10/15/20/21/22/23/25/30/31/32/33/39 are all LANDED**, as is the non-ladder **DOC-HYGIENE-3**
+**The implementation ladder is complete**, then the separate HITL **PUBLISH** gate (with its
+`npm-dist-tag` rider — §4). The pre-Slice-40 cross-cutting units **`SLICE-ID-HARDENING`** and
+**"Slice 39.5" (`R-20-HARNESS`)** were not ladder slices and did not consume a ladder position. Slices
+**0/5/10/15/20/21/22/23/25/30/31/32/33/39/40 are all LANDED**, as is the non-ladder **DOC-HYGIENE-3**
 (`fd281358` + `85d44c74`). **TC-86 is DONE (`2956d98d`).** ⛔ **Slice 34 is NOT in this ladder** — it was
 **CANCELLED** at `seq-182` (reversing `seq-178`) and all `#[non_exhaustive]` work is **PARKED at 0.8.21**
 (odd micro ⇒ label-only build) to **publish at 0.8.22** (`seq-183`). The **batched governed-surface decision
-is no longer a pending ladder stop** — it was **SIGNED** at `seq-157`; only the **AC-079 mint** remains, and
-that happens inside Slice 40. **No 0.8.20 slice applies a dependency bump**; the one deliberate manifest edit
+is no longer a pending ladder stop** — it was **SIGNED** at `seq-157`, and **AC-079 minted at Slice 40**.
+**No 0.8.20 slice applies a dependency bump**; the one deliberate manifest edit
 is Slice 39's Apache-2.0 → MIT license-field correction (`seq-193`).
 
 **Band occupancy (plan §5):** the 20 band holds 21, 22 and 23 — **three of four slots used, one spare**. The
@@ -112,8 +120,8 @@ reserved to the same initiative** (`:1297`). Highest **defined, non-reserved** A
 
 | AC | Covers | Status |
 |---|---|---|
-| **AC-079** | Governed-surface delta (erasure API + the accumulated 5d/10b/15b/15d delta) vs the conformance allowlist | **BUILT · ✅ SIGNED** — pre-signed by the HITL 2026-07-25 (master **F-34**) and the batched governed-surface decision **SIGNED at steward `seq-157`** (2026-07-29). **MINTS into `dev/acceptance.md` at Slice 40** — minting is not signing (below) |
-| **AC-080** | Erasure completeness at rest — body absent from every row-owned projection **and** `-wal` bytes | **BUILT, GREEN** (below) |
+| **AC-079** | Governed-surface delta (erasure API + the accumulated 5d/10b/15b/15d delta) vs the conformance allowlist | **MINTED · ✅ SIGNED** — pre-signed by the HITL 2026-07-25 (master **F-34**), batched decision signed at steward `seq-157`, and minted at Slice 40 (`833a2035`) |
+| **AC-080** | Erasure completeness at rest — body absent from every row-owned projection **and** `-wal` bytes | **MINTED, GREEN** (below) |
 | **AC-041** | REQ-054 five-name recovery denylist | **VERIFIED GREEN, denylist UNCHANGED at five** (below) |
 
 **AC-079 — what was built, what was signed, and what is still owed.** Slice 5d added to the *positive allowlist* in
@@ -132,8 +140,8 @@ steward `seq-157`** (2026-07-29): **seven net-new allowlist members = four logic
 `recovery_denylist` is **UNCHANGED at five** ⇒ AC-041 unaffected. Any diff to the allowlist file **re-opens**
 the gate (the **T1e** content pin). **Publish is gated by the SEPARATE HITL publish gate, not by AC-079.**
 
-**What is still owed is a MINT, not a signature.** AC-079 is minted into `dev/acceptance.md` and recorded as
-SIGNED at **Slice 40** — see §4 #1 and the §4 CLOSED block.
+**The mint is complete, not a new signature.** AC-079 is minted into `dev/acceptance.md` and recorded as
+SIGNED at **Slice 40 (`833a2035`)**. Publish remains gated by the separate explicit HITL decision.
 
 🕮 **CORRECTED 2026-07-30 (steward `seq-207`) — this paragraph was FALSE and is rewritten.** It previously
 said the allowlist `_comment` "still contains the literal `AWAITING HITL SIGN-OFF, NOT SIGNED` (×4)" and that
@@ -180,7 +188,7 @@ Everything else is tracked by **requirement id + TDD test name** per the locked-
 > `seq-106` ruling 5): Memex adapts to 0.8.20's surface and **no confirmation is to be sought**. The rows are
 > retained as the decision record; **do not act on them as open**.
 >
-> **THE LIVE OPEN SET IS EXACTLY <!-- BEGIN GENERATED release-state:0.8.20:status-live-open-count -->ONE<!-- END GENERATED release-state:0.8.20:status-live-open-count -->** (was TWO until 2026-07-29 — the count is
+> **THE LIVE OPEN SET IS EXACTLY <!-- BEGIN GENERATED release-state:0.8.20:status-live-open-count -->ZERO<!-- END GENERATED release-state:0.8.20:status-live-open-count -->** (was TWO until 2026-07-29 — the count is
 > generated from `decisions.unruled`. It went TWO → SIX on 2026-07-29 when four HITL items that had existed
 > only in the ledger and in session transcripts were written INTO the single writer at `seq-150` — **the
 > count grew because the record got honest, not because new work appeared** — then SIX → **ONE** across that

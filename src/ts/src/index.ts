@@ -37,6 +37,22 @@ export type {
  */
 export type LifecycleState = "pending" | "active" | "deleted" | "purged";
 
+/**
+ * Embed `texts` with the pinned default BGE-small model using CLS pooling.
+ *
+ * This is the TypeScript peer of Python's `embed_batch_cls`. It returns one
+ * L2-normalized vector per input in input order; `[]` returns `[]` without
+ * loading weights. It is intentionally distinct from {@link Engine.embed},
+ * which uses the engine's Mean-pooling read path. The published native package
+ * includes the default embedder; a custom thin build rejects with
+ * `EmbedderNotConfiguredError`.
+ */
+export async function embedBatchCls(texts: readonly string[]): Promise<number[][]> {
+  const batch = Array.from(texts);
+  for (const text of batch) validateFfiString(text);
+  return intercept(() => native.embedBatchCls(batch));
+}
+
 export interface EngineConfig {
   embedderPoolSize?: number;
   schedulerRuntimeThreads?: number;

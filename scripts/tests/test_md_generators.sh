@@ -40,8 +40,11 @@ fi
 
 WORK="$(mktemp -d)"
 LABEL="__md_guard_$$"
+GLOB_FIXTURE_A="dev/target"
+GLOB_FIXTURE_B="scripts/target"
 cleanup() {
   rm -rf "$WORK"
+  rmdir "$GLOB_FIXTURE_A" "$GLOB_FIXTURE_B" 2>/dev/null
   rm -f "scripts/repo-prune/measurements/context-clarity/${LABEL}.md" \
         "scripts/repo-prune/measurements/context-clarity/${LABEL}.json" \
         "scripts/repo-prune/measurements/memory-clarity/${LABEL}.md" \
@@ -72,11 +75,11 @@ lint_md() {
   fi
 }
 
-# --- context-clarity.sh : read-only over the live repo --------------------
-bash scripts/repo-prune/bin/context-clarity.sh "$LABEL" >/dev/null 2>&1 || true
-lint_md test-context-clarity-md "scripts/repo-prune/measurements/context-clarity/${LABEL}.md"
-
-# --- memory-clarity.sh : run against a tiny synthetic memory dir ----------
+# --- synthetic memory: shared by both generators -------------------------
+# context-clarity's steward resolver intentionally fails closed if the memory
+# reference named by the hand-off cannot resolve. CI has no user memory, so
+# construct the same minimal fixture used by memory-clarity BEFORE either
+# generator runs and pass it explicitly to both paths.
 MEM="$WORK/memory"
 mkdir -p "$MEM"
 cat > "$MEM/MEMORY.md" <<'EOF'
@@ -95,7 +98,38 @@ type: project
 
 Body text for the synthetic memory fixture.
 EOF
-CLAUDE_MEMORY_DIR="$MEM" bash scripts/repo-prune/bin/memory-clarity.sh "$LABEL" >/dev/null 2>&1 || true
+
+# --- context-clarity.sh : read-only over the live repo --------------------
+# Two target directories make the unquoted `*/target` predicate expand to
+# multiple pathnames before find receives it. The generator must still run.
+mkdir -p "$GLOB_FIXTURE_A" "$GLOB_FIXTURE_B"
+if CLAUDE_MEMORY_DIR="$MEM" bash scripts/repo-prune/bin/context-clarity.sh "$LABEL" \
+     >"$WORK/context-clarity.out" 2>&1; then
+  printf 'PASS  test-context-clarity-glob-safe\n'
+else
+  printf 'FAIL  test-context-clarity-glob-safe (generator exited nonzero):\n' >&2
+  cat "$WORK/context-clarity.out" >&2
+  FAILED=$((FAILED + 1))
+fi
+lint_md test-context-clarity-md "scripts/repo-prune/measurements/context-clarity/${LABEL}.md"
+CONTEXT_JSON="scripts/repo-prune/measurements/context-clarity/${LABEL}.json"
+if grep -qE '"index_bytes": [1-9][0-9]*' "$CONTEXT_JSON" \
+   && grep -qF '"index_entries": 1, "memory_files": 2,' "$CONTEXT_JSON"; then
+  printf 'PASS  test-context-clarity-uses-synthetic-memory\n'
+else
+  printf 'FAIL  test-context-clarity-uses-synthetic-memory (fixture metrics missing)\n' >&2
+  FAILED=$((FAILED + 1))
+fi
+
+# --- memory-clarity.sh : run against a tiny synthetic memory dir ----------
+if CLAUDE_MEMORY_DIR="$MEM" bash scripts/repo-prune/bin/memory-clarity.sh "$LABEL" \
+     >"$WORK/memory-clarity.out" 2>&1; then
+  printf 'PASS  test-memory-clarity-uses-synthetic-memory\n'
+else
+  printf 'FAIL  test-memory-clarity-uses-synthetic-memory (generator exited nonzero):\n' >&2
+  cat "$WORK/memory-clarity.out" >&2
+  FAILED=$((FAILED + 1))
+fi
 lint_md test-memory-clarity-md "scripts/repo-prune/measurements/memory-clarity/${LABEL}.md"
 
 if [ "$FAILED" -ne 0 ]; then

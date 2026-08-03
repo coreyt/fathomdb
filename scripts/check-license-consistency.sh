@@ -44,7 +44,7 @@
 #   |-----------------------------------|--------------------------------------|
 #   | 7 publishable crates              | REAL `cargo package --list`          |
 #   | npm `fathomdb`                    | REAL `npm pack --dry-run --json`     |
-#   | npm `@fathomdb/fathomdb-<triple>` | REAL `npm pack --dry-run --json`     |
+#   | npm `fathomdb-<triple>` | REAL `npm pack --dry-run --json`     |
 #   | the PyPI wheel                    | MECHANISM PROXY (see below)          |
 #
 #   The wheel is the ONE unit not covered by real packaging output by default,

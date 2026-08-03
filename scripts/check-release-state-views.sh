@@ -180,6 +180,13 @@ def _and_join(items):
         return "".join(items)
     return ", ".join(items[:-1]) + " and " + items[-1]
 
+
+def _remaining_ladder(st):
+    """Render the remaining ladder, including the explicit end-of-ladder fact."""
+    remaining = " → ".join(_slice_str(n) for n in st["remaining_ladder"])
+    return remaining or "none"
+
+
 def render_master_ladder_progress(st):
     """master §4, the 0.8.20 row: landed slices + SHAs, SCHEMA, remaining ladder.
 
@@ -192,7 +199,7 @@ def render_master_ladder_progress(st):
     # `_slice_str`, not `str`: `render_plan_immediate_next` renders THIS SAME
     # FIELD through the helper, so a bare `str` here put the same fact in two
     # documents in two shapes (`40.0` here, `40` there).
-    ladder = " → ".join(_slice_str(n) for n in st["remaining_ladder"])
+    ladder = _remaining_ladder(st)
     return ("Slices %s are all LANDED on `origin/main`; SCHEMA is %d; "
             "remaining ladder = %s." % (landed, st["schema_version"], ladder))
 
@@ -455,7 +462,7 @@ def render_plan_landed_roll_up(st):
     landed = " · ".join("%s (`%s`)" % (_slice_str(n), by[n]["sha"]) for n in st["landed"])
     return ("\n**LANDED on `origin/main`, in full:** Slices %s. SCHEMA is %d; remaining ladder = %s."
             % (landed, st["schema_version"],
-               " → ".join(_slice_str(n) for n in st["remaining_ladder"])))
+               _remaining_ladder(st)))
 
 
 RENDERERS = {

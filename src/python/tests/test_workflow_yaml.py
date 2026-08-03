@@ -6,8 +6,8 @@ gated on any env var; they run on every ``pytest`` invocation. See
 ``dev/design/0.7.1-EU-6-FIX-1-design.md`` §6 for the design.
 
 Covers:
-- AC-FIX1-5: ``ci.yml`` wheel-size-gate matrix covers all 4 release-target
-  platforms (Linux x86_64, Linux aarch64, macOS, Windows).
+- 0.8.20 Linux-first scope: ``ci.yml`` wheel-size-gate runs only the shipped
+  Linux x86_64 artifact path; macOS/Windows native work is deferred to 0.8.22.
 - AC-FIX1-6: ``pyproject.toml [tool.maturin] features`` does NOT list
   ``test-hooks``.
 - AC-FIX1-7: ``package.json`` ``scripts.build:native`` carries
@@ -118,33 +118,17 @@ def test_release_workflow_build_python_has_explicit_features() -> None:
     )
 
 
-def test_ci_wheel_size_matrix_covers_all_release_platforms() -> None:
-    """AC-FIX1-5: wheel-size-gate matrix must cover Linux x86_64,
-    Linux aarch64, macOS (x86_64 or arm64), and Windows x86_64 — the
-    four release-target platform families. Each entry must carry a
-    ``baseline_bytes`` integer for regression gating."""
+def test_ci_wheel_size_matrix_is_linux_first() -> None:
+    """The wheel-size gate covers only the shipped Linux x86_64 artifact."""
 
     data = _load_yaml(CI_YML)
     job = data["jobs"]["wheel-size-gate"]
     matrix_include = job["strategy"]["matrix"]["include"]
 
-    required_targets = {
-        "x86_64-unknown-linux-gnu",
-        "aarch64-unknown-linux-gnu",
-        "x86_64-pc-windows-msvc",
-    }
-    macos_targets = {"x86_64-apple-darwin", "aarch64-apple-darwin"}
-
     actual_targets = {entry.get("target") for entry in matrix_include}
-    missing = required_targets - actual_targets
-    assert not missing, (
-        f"wheel-size-gate matrix is missing required platforms: {missing!r}; "
-        f"current entries cover {actual_targets!r}. AC-FIX1-5 requires all "
-        f"4 release-target families to be gated."
-    )
-    assert actual_targets & macos_targets, (
-        f"wheel-size-gate matrix is missing a macOS entry; current entries "
-        f"cover {actual_targets!r}."
+    assert actual_targets == {"x86_64-unknown-linux-gnu"}, (
+        "wheel-size-gate must remain Linux x86_64 only for 0.8.20; "
+        f"current entries cover {actual_targets!r}."
     )
 
     for entry in matrix_include:
@@ -153,6 +137,36 @@ def test_ci_wheel_size_matrix_covers_all_release_platforms() -> None:
             f"wheel-size-gate matrix entry {entry!r} is missing a positive "
             f"integer baseline_bytes."
         )
+
+
+def test_ci_default_embedder_typescript_suite_is_pinned_and_serial() -> None:
+    """The heavyweight native TypeScript suite must rebuild locked inputs and
+    run one process at a time, so an independently valid test cannot contend
+    for the same model/SQLite resources with six siblings."""
+
+    data = _load_yaml(CI_YML)
+    steps = data["jobs"]["default-embedder-tests"]["steps"]
+    node_step = next(
+        (step for step in steps if "actions/setup-node" in str(step.get("uses", ""))),
+        None,
+    )
+    assert node_step is not None, "default-embedder-tests must pin Node explicitly"
+    assert node_step.get("with", {}).get("node-version") == "25.9.0"
+
+    runs = [step.get("run", "") for step in steps if isinstance(step.get("run"), str)]
+    assert "cd src/ts && npm ci" in runs, (
+        "default-embedder-tests must install the package-lock before emitting tests"
+    )
+    assert "cd src/ts && npm run build:native:debug" in runs, (
+        "default-embedder-tests must build its native binding from this checkout"
+    )
+    test_run = next(
+        (run for run in runs if "for test_file in" in run),
+        "",
+    )
+    assert 'RELEASE_SURFACE_TESTS=1 node --test "$test_file"' in test_run, (
+        "default-embedder-tests must start one Node test runner per heavyweight native file"
+    )
 
 
 @pytest.mark.parametrize(
