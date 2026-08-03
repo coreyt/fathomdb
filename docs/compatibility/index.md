@@ -1,7 +1,7 @@
 # Compatibility
 
 Supported platforms, toolchains, and version-alignment policy for the
-**0.8.20** release.
+published **0.8.20** release.
 
 > **Pre-1.0 = beta.** FathomDB is on a pre-1.0 line. The surface may
 > change between micro releases, and 0.8.20 carries breaking changes

@@ -8,9 +8,8 @@ Two consumption paths for Rust users:
   `fathomdb recover` verbs. Operator-only; does **not**
   ship `search` / `get` / `list` query verbs.
 
-> **0.8.20 is not published yet.** Publishing 0.8.20 to crates.io is a
-> separate, gated step that has not run. Until it does, use the from-git path
-> below. FathomDB is pre-1.0 and the surface is **beta**.
+> **0.8.20 is published to crates.io.** FathomDB is pre-1.0 and the surface
+> is **beta**.
 
 ## Requirements
 
@@ -21,7 +20,7 @@ Two consumption paths for Rust users:
   [release matrix](../compatibility/index.md): linux x86_64/aarch64,
   darwin x86_64/arm64, windows x86_64.
 
-## Install (once 0.8.20 is published)
+## Install the published crates
 
 Library:
 

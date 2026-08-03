@@ -2,6 +2,14 @@
   "_comment": "SINGLE WRITER for 0.8.20 release state (DOC-HYGIENE-2 T2a). THIS FILE IS THE ONLY PLACE THESE FACTS ARE AUTHORED: landed slices + their landing SHAs, the SCHEMA version, the next slice, the remaining ladder, AC status, and the ruled/unruled decision set. WHY: before this file, that state was narrated across a 5-12 file write-side fan-out (the master release plan, the STATUS board, the plan, the Steward hand-off, the ledgers) with NOTHING checking that the copies agreed - one reconciliation commit (b70629e5) had to touch 7 files, and the live board is ~79 KB, too large to read whole. HOW IT IS ENFORCED: `generated_views` below names the marker-delimited regions that are RENDERED from this file by scripts/check-release-state-views.sh. That script regenerates each region into a temp buffer and diffs it against what is in the document; any difference is a HARD failure, so a hand-edit of a view, or a change here without a regenerate, both go red. Regenerate with `scripts/check-release-state-views.sh --write`. TO CHANGE A FACT: edit it HERE, then run --write, then commit both. Do NOT hand-edit inside the markers. SCOPE: this file records state, it does not decide anything - it changes no release slot, no scope, no requirement and no AC. Every fact below was re-verified from git (merge-commit ancestry on origin/main; `pub const SCHEMA_VERSION` in src/rust/crates/fathomdb-schema/src/lib.rs) rather than copied from narration.",
   "release": "0.8.20",
   "release_kind": "even, publish",
+  "published": {
+    "tag": "v0.8.20",
+    "tag_commit": "d030e9bb0b25ac592b5ae9c06bed32026e0e1c8a",
+    "published_on": "2026-08-02",
+    "npm_dist_tag": "next",
+    "native_artifact_scope": "Linux x86_64/glibc only",
+    "evidence": "The annotated v0.8.20 tag is at origin/main. The post-publish recovery dispatch and the unscoped npm platform-package fix landed after the tag; they are release evidence, not a new 0.8.20 implementation slice."
+  },
   "board": "dev/plans/runs/STATUS-0.8.20.md",
   "plan": "dev/plans/plan-0.8.20.md",
   "master": "dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md",
@@ -242,7 +250,7 @@
   ],
   "next_slice": null,
   "remaining_ladder": [],
-  "ladder_order": "COMPLETE. Slices 0/5/10/15/20/21/22/23/25/30/31/32/33/39/40 are LANDED; Slice 40 landed at 833a2035 after the two prior cross-cutting units, SLICE-ID-HARDENING (2008f529) and R-20-HARNESS (b6cc8fa6). Slice 34 was CANCELLED (seq-182), parked at 0.8.21 (seq-183). There is no further 0.8.20 implementation slice. PUBLISH remains a separate explicit HITL gate and Slice 40 stopped before any tag.",
+  "ladder_order": "COMPLETE and PUBLISHED. Slices 0/5/10/15/20/21/22/23/25/30/31/32/33/39/40 are LANDED; Slice 40 landed at 833a2035 after the two prior cross-cutting units, SLICE-ID-HARDENING (2008f529) and R-20-HARNESS (b6cc8fa6). Slice 34 was CANCELLED (seq-182), parked at 0.8.21 (seq-183). v0.8.20 was published on 2026-08-02 under npm dist-tag next with Linux x86_64/glibc native artifacts only. There is no further 0.8.20 implementation or publish gate.",
   "publish_precondition_slice": 30,
   "acceptance": {
     "highest_defined_non_reserved": "AC-080",
@@ -288,16 +296,17 @@
   },
   "decisions": {
     "_comment": "Ruled vs unruled, as of 2026-07-25. Sources of record: dev/plans/runs/STATUS-0.8.20.md §4 (the historical queue banner) and dev/plans/plan-0.8.20.md §11 (the live queue + the 2026-07-24 and 2026-07-25 ruling blocks). Recorded here so the ruled/unruled split has ONE writer; the two prose sections stay exactly as they are.",
-    "unruled": [
+    "unruled": [],
+    "ruled": [
       {
         "id": "publish",
         "title": "PUBLISH the 0.8.20 breaking pair — now TWO gates (seq-202)",
         "gated_at": "After Slice 40. TWO INDEPENDENT GATES, neither sufficient alone: (i) every ci.yml job THAT EXECUTED concludes success on the landed commit, AND (ii) explicit HITL approval. Ruled 2026-07-30 (seq-202); HITL noted it may be relaxed later but stands while the line has gone this long unpublished. No conflict with seq-152 — the ci.yml security job runs agent-security.sh, not a Dependabot scan. ⚠ AMENDED 2026-07-30 (HITL, seq-211): gate (i) originally read 'every ci.yml job concludes success', which is UNMEETABLE BY CONSTRUCTION — the markdownlint job is `if: needs.changes.outputs.docs_only == 'true'` (ci.yml:379), so it is SKIPPED on every non-docs push. Both measured full runs (30546942720, 30550762581) show 23 jobs with exactly 1 skipped, and the skip is markdownlint. The gate therefore keys on jobs that EXECUTED; a skipped job is a distinct third state and is neither a pass nor a failure. This narrows nothing in substance — no executing job may fail. ⚠ MEASURED ON: the ci.yml run of Slice 40's own LANDING commit (HITL 2026-07-30, steward seq-223). No single run executes every job — markdownlint is docs_only-gated and seven code jobs are !docs_only-gated — so a docs-only push yields a partial green that proves nothing about the engine. That is not hypothetical: it is how a ~3-week verify/security red stayed invisible, the most recent 'successful' run having SKIPPED both.",
-        "halts_run": true,
-        "source": "plan-0.8.20.md §11 item 3; gates tightened at steward seq-202"
-      }
-    ],
-    "ruled": [
+        "halts_run": false,
+        "ruled_on": "2026-08-02",
+        "ruling": "PUBLISHED as v0.8.20. The release used npm dist-tag next and is limited to the published Linux x86_64/glibc native artifacts recorded in the platform-capability manifest.",
+        "source": "annotated tag v0.8.20 and post-publish recovery records"
+      },
       {
         "id": "batched-governed-surface",
         "ruling": "(a) SIGN AS-IS. The accumulated governed-surface delta is SIGNED: SEVEN net-new allowlist members over the AC-074-signed 0.8.19 set = FOUR logical verbs (erase_source/eraseSource · read.crossed_boundary_since/read.crossedBoundarySince · configure_projections/configureProjections · read.projections), plus the non-command types EraseReport, SourceId, ExciseReport (now always-present), ReadView, BoundaryCrossing, ProjectionSpec/ProjectionDelta/ProjectionRole, ProjectionDestructiveError. recovery_denylist UNCHANGED at the five REQ-054 names (AC-041 unaffected); excise_source stays CLI-only and un-allowlisted. AC-079 mints at Slice 40, still pinned to this content — any diff re-opens the gate (T1e pin). PUBLISH IS NOT AUTHORIZED BY THIS SIGNATURE; it remains a separate hard HITL gate. PROVENANCE: authored by Slices 5d (3685fdb5), 10b (4524ffd2), 15b (35523156), 15d (0d887f85) — slices 20/25/30/21/22/23 each contributed ZERO allowlist bytes, so the common shorthand 'the 20/25/30 delta' is imprecise; plan §11 attributes it correctly. DISCHARGED 2026-07-31 (Steward), superseding the clause retained verbatim below. The allowlist _comment re-pin is DONE (seq-164/seq-208, c239908b): grep -c 'AWAITING' and grep -c 'NOT SIGNED' on src/conformance/governed-surface-allowlist.json are BOTH 0, Slice 31 has LANDED (d0287620), and scripts/check-governed-surface-pin.sh exits 0. Do NOT brief any agent to preserve or verify those literals - they no longer exist, and an agent reporting them intact would be reporting a green it could not have observed. SUPERSEDED, retained as the record: \"OWED, NOT LOST: the allowlist _comment still reads 'AWAITING HITL SIGN-OFF, NOT SIGNED' ×4; correcting it needs a coordinated re-issue of scripts/governed-surface-pin.json (the gate hashes raw bytes). That re-pin is HELD until Slice 31 lands, because the Slice 31 orchestrator is in flight and was briefed to halt-and-escalate on any allowlist change.\" WHY THIS SAT STALE: the board (STATUS §3, seq-207) and the master (§4, seq-164) both corrected it; this file did not, and commission-manifest.sh points an orchestrator at decisions.ruled to read rulings - so the single writer held the only uncorrected copy of a fact the prose had already fixed, inverting the whole point of the single-writer design. Found by a cold-start audit 2026-07-31.",

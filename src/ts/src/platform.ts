@@ -78,7 +78,7 @@ export function resolveTriple(
   if (triple === null) {
     throw new UnsupportedPlatformError(
       `Unsupported platform: FathomDB has no prebuilt native binary for ${platform}/${arch}. ` +
-        `Supported hosts: linux (x64/arm64/arm), darwin (x64/arm64), win32 (x64/ia32/arm64).`,
+        "See the compatibility matrix for published-artifact support.",
     );
   }
   return triple;

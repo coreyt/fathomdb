@@ -32,9 +32,9 @@ exists on `origin/main`." Both have since LANDED — 20c `841c307b`, 25 `83b1c81
 > close records (§11 Slice 5, §12 Slice 10, §13 Slice 15b) are retained **as history**; their "not landed" /
 > "Slice 15 OPEN" banners describe the on-branch state at the time they were written, **not** current truth.
 
-**Last updated:** 2026-08-01. **Slice 40 (`R-20-PUB`) COMPLETE — LANDED `833a2035`**; the implementation
-ladder is complete and the release remains held at the separate explicit HITL **PUBLISH** gate (no tag was
-created). **Library Sweep #3 COMPLETE** — Slices 31 `d0287620` (close record §20), 32
+**Last updated:** 2026-08-02. **0.8.20 is PUBLISHED as `v0.8.20`** after Slice 40 (`R-20-PUB`) landed at
+`833a2035`. The published native artifact scope is Linux x86_64/glibc only; npm uses the `next` dist-tag.
+The implementation ladder and release gate are both complete. **Library Sweep #3 COMPLETE** — Slices 31 `d0287620` (close record §20), 32
 `31d33293`, 33 `f02dc5b4`. **DOC-HYGIENE-3 COMPLETE** — `fd281358` + `85d44c74`. **Slice 34 was CANCELLED**
 (`seq-182`) and **PARKED at 0.8.21** (`seq-183`) — it is **NOT in this ladder**. **Slice 39 (`R-20-DOC`) is
 COMPLETE — LANDED `91db34d8`** (close record §21). There is no remaining implementation slice.
@@ -47,9 +47,9 @@ COMPLETE — LANDED `91db34d8`** (close record §21). There is no remaining impl
 | | |
 |---|---|
 | **Slice in flight** | **NONE.** Slice 40 (`R-20-PUB`) landed at **`833a2035`** after the two cross-cutting units, `SLICE-ID-HARDENING` (`2008f529`) and `R-20-HARNESS` (`b6cc8fa6`). Every implementation slice is now landed; **SCHEMA stays 24**. |
-| **Status** | **Every ladder slice is COMPLETE and LANDED on `origin/main`** — 0, 5, 10, 15, 20, 21, 22, 23, 25, 30, 31, 32, 33, 39, 40. **AC-079 is MINTED and SIGNED** at Slice 40; AC-080 and AC-041 are green. The implementation ladder is complete. The sole unruled decision remains the separate explicit HITL **PUBLISH** gate. |
-| **Release gate** | The Slice-30 publish precondition is satisfied. PUBLISH requires both a fully green CI run on the landed state and explicit HITL approval; neither a tag nor a real publish was created by Slice 40. |
-| **Immediate next action** | Hold at the separate explicit HITL **PUBLISH** gate. Do not commission another 0.8.20 implementation slice. |
+| **Status** | **Every ladder slice is COMPLETE and LANDED on `origin/main`** — 0, 5, 10, 15, 20, 21, 22, 23, 25, 30, 31, 32, 33, 39, 40. **AC-079 is MINTED and SIGNED** at Slice 40; AC-080 and AC-041 are green. v0.8.20 is published. |
+| **Release gate** | Complete. The annotated `v0.8.20` tag is at `d030e9bb0b25ac592b5ae9c06bed32026e0e1c8a`; registry recovery records are retained as evidence. |
+| **Immediate next action** | Do not commission another 0.8.20 slice. Start the 0.8.21 foundation board from current `origin/main`. |
 
 **HITL platform-scope amendment — `seq-234`, 2026-07-31.** 0.8.20 supports and publishes Linux x86_64 native
 artifacts only. macOS/Windows CI, validation and native-artifact work defer to **0.8.22**; this does not
@@ -188,7 +188,7 @@ Everything else is tracked by **requirement id + TDD test name** per the locked-
 > `seq-106` ruling 5): Memex adapts to 0.8.20's surface and **no confirmation is to be sought**. The rows are
 > retained as the decision record; **do not act on them as open**.
 >
-> **THE LIVE OPEN SET IS EXACTLY <!-- BEGIN GENERATED release-state:0.8.20:status-live-open-count -->ONE<!-- END GENERATED release-state:0.8.20:status-live-open-count -->** (was TWO until 2026-07-29 — the count is
+> **THE LIVE OPEN SET IS EXACTLY <!-- BEGIN GENERATED release-state:0.8.20:status-live-open-count -->ZERO<!-- END GENERATED release-state:0.8.20:status-live-open-count -->** (was TWO until 2026-07-29 — the count is
 > generated from `decisions.unruled`. It went TWO → SIX on 2026-07-29 when four HITL items that had existed
 > only in the ledger and in session transcripts were written INTO the single writer at `seq-150` — **the
 > count grew because the record got honest, not because new work appeared** — then SIX → **ONE** across that
