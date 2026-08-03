@@ -319,6 +319,10 @@ printf '# fixture plan\n\n- Slice 39 — TC-86 redact: LANDED\n' >"$PLANS/landed
 # canonical form the gate must recognize for a landed dependency.
 printf '# fixture plan\n\n**LANDED on main:** Slices 30 (`9b3ed0e3`)\n' \
   >"$PLANS/landed-rollup.md"
+# The renderer writes the complete landed set in ladder order. A dependency
+# need not be the first item in that canonical roll-up.
+printf '# fixture plan\n\n**LANDED on `origin/main`, in full:** Slices 0 (`2ea2c884`) · 5 (`a6cf2bbe`) · 10 (`f94275e1`) · 15 (`19d8f072`).\n' \
+  >"$PLANS/landed-rollup-prior-items.md"
 # Status words must be affirmative closure witnesses, not merely substrings. A
 # negated or prefixed status must not authorize a dependent spawn.
 printf '# fixture plan\n\n- Slice 39 — NOT CLOSED\n' >"$PLANS/not-closed.md"
@@ -427,6 +431,12 @@ if [ "$RC" -eq 0 ]; then
   pass "regression guard: a generated LANDED roll-up satisfies --expect-closed 30"
 else
   fail "a generated LANDED roll-up must clear the gate; got rc=$RC, out: $OUT"
+fi
+run_preflight "$LINKED" --expect-closed 15 --plan "$PLANS/landed-rollup-prior-items.md"
+if [ "$RC" -eq 0 ]; then
+  pass "regression guard: a generated LANDED roll-up recognizes a later landed slice"
+else
+  fail "a later entry in a generated LANDED roll-up must clear the gate; got rc=$RC, out: $OUT"
 fi
 run_preflight "$LINKED" --expect-closed 39 --plan "$PLANS/int-trailing-period.md"
 if [ "$RC" -eq 0 ]; then

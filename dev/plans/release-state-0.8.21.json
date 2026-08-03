@@ -17,6 +17,7 @@
   "next_slice": 20,
   "remaining_ladder": [20],
   "generated_views": [
+    {"id": "plan-landed-roll-up", "file": "dev/plans/plan-0.8.21.md", "location": "Landed foundation", "renders": "every landed slice + its landing SHA, the SCHEMA version, and the remaining ladder"},
     {"id": "plan-immediate-next", "file": "dev/plans/plan-0.8.21.md", "location": "Immediate next slice", "renders": "next slice and remaining ladder"}
   ]
 }

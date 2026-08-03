@@ -52,6 +52,11 @@ experiment needs its own proposal and evidence gate.
 | 15 | Linux aarch64 package/build/smoke proof | 10 |
 | 20 | Current-documentation and platform-drift checks | 15 |
 
+## Landed foundation
+
+<!-- BEGIN GENERATED release-state:0.8.21:plan-landed-roll-up -->
+**LANDED on `origin/main`, in full:** Slices 0 (`2ea2c884`) · 5 (`a6cf2bbe`) · 10 (`f94275e1`) · 15 (`19d8f072`). SCHEMA is 24; remaining ladder = 20.<!-- END GENERATED release-state:0.8.21:plan-landed-roll-up -->
+
 ## Reserved-gap policy
 
 No reserved-gap work is authorized by this plan. The former free-threading and
