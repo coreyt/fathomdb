@@ -110,6 +110,25 @@ printf '# STATUS — 0.8.99 fixture\n\nSlice 1: **LANDED %s**.\n' "$SHORT_SHA" \
   >"$CURRENT_REPO/dev/plans/runs/STATUS-0.8.99.md"
 commit_all "$CURRENT_REPO" "docs: stamp STATUS-0.8.99 Slice 1 LANDED $SHORT_SHA"
 
+# Canonical-state fixture: the recorded SHA is the evidence, even though this
+# historical landing subject predates the `merge(<release>): Slice N` spelling
+# and the concise board intentionally has no ladder table.
+CANONICAL_REPO="$TMPROOT/canonical-state"
+init_repo "$CANONICAL_REPO"
+mkdir -p "$CANONICAL_REPO/dev/plans/runs" "$CANONICAL_REPO/src"
+printf '# concise 0.8.99 board\n' >"$CANONICAL_REPO/dev/plans/runs/STATUS-0.8.99.md"
+printf 'base\n' >"$CANONICAL_REPO/src/base.txt"
+commit_all "$CANONICAL_REPO" 'fixture: base'
+printf 'landed\n' >"$CANONICAL_REPO/src/landed.txt"
+commit_all "$CANONICAL_REPO" 'historical landing subject without slice convention'
+CANONICAL_SHA="$(git -C "$CANONICAL_REPO" rev-parse --short=8 HEAD)"
+cat >"$CANONICAL_REPO/dev/plans/release-state-0.8.99.json" <<EOF
+{"release":"0.8.99","board":"dev/plans/runs/STATUS-0.8.99.md",
+ "landed":[5],"ladder":[{"slice":5,"status":"LANDED","sha":"$CANONICAL_SHA"}],
+ "remaining_ladder":[]}
+EOF
+commit_all "$CANONICAL_REPO" 'fixture: record canonical landing state'
+
 # --- Fixture B: a STALE board — same land, board never touched -----------------
 # Built by replaying fixture A's history up to (and including) the merge, but
 # WITHOUT the board-stamping commit — reproduces the exact incident shape: the
@@ -883,6 +902,60 @@ if [ "$RC" -eq 0 ]; then
   pass "check-board-currency ignores untracked STATUS boards"
 else
   fail "untracked board changed the currency verdict: rc=$RC, out=$OUT"
+fi
+
+run_checker "$CANONICAL_REPO"
+if [ "$RC" -eq 0 ]; then
+  pass "canonical landed SHA ancestry passes without a merge-subject match or board table"
+else
+  fail "canonical state facts should vouch for a concise board: rc=$RC, out=$OUT"
+fi
+
+python3 - "$CANONICAL_REPO/dev/plans/release-state-0.8.99.json" <<'PY'
+import json, sys
+p = sys.argv[1]
+d = json.load(open(p))
+d['ladder'][0]['sha'] = 'deadbeef'
+open(p, 'w').write(json.dumps(d))
+PY
+run_checker "$CANONICAL_REPO"
+if [ "$RC" -ne 0 ] && grep -q 'release-state SHA deadbeef does not resolve' <<<"$OUT"; then
+  pass "canonical machine facts fail closed when a landed SHA is unresolvable"
+else
+  fail "bad canonical SHA: rc=$RC out=$OUT"
+fi
+
+python3 - "$CANONICAL_REPO/dev/plans/release-state-0.8.99.json" <<'PY'
+import json, sys
+p = sys.argv[1]
+d = json.load(open(p))
+d['ladder'][0]['sha'] = None
+open(p, 'w').write(json.dumps(d))
+PY
+run_checker "$CANONICAL_REPO"
+if [ "$RC" -ne 0 ] && grep -q 'has no non-empty ladder sha' <<<"$OUT"; then
+  pass "canonical machine facts fail closed when a landed SHA is missing"
+else
+  fail "missing canonical SHA: rc=$RC out=$OUT"
+fi
+
+git -C "$CANONICAL_REPO" checkout -q -b unreachable-state-sha
+printf 'unreachable\n' >"$CANONICAL_REPO/src/unreachable.txt"
+commit_all "$CANONICAL_REPO" 'fixture: unreachable state commit'
+UNREACHABLE_SHA="$(git -C "$CANONICAL_REPO" rev-parse --short=8 HEAD)"
+git -C "$CANONICAL_REPO" checkout -q main
+python3 - "$CANONICAL_REPO/dev/plans/release-state-0.8.99.json" "$UNREACHABLE_SHA" <<'PY'
+import json, sys
+p, sha = sys.argv[1:]
+d = json.load(open(p))
+d['ladder'][0]['sha'] = sha
+open(p, 'w').write(json.dumps(d))
+PY
+run_checker "$CANONICAL_REPO"
+if [ "$RC" -ne 0 ] && grep -q "release-state SHA $UNREACHABLE_SHA is not reachable" <<<"$OUT"; then
+  pass "canonical machine facts fail closed when a landed SHA is unreachable"
+else
+  fail "unreachable canonical SHA: rc=$RC out=$OUT"
 fi
 
 # Current authority regression: the published 0.8.20 board remains intentionally
