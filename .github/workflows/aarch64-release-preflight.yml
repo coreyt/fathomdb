@@ -5,6 +5,15 @@ name: AArch64 release preflight
 # that workflow validates an immutable tag reachable from main, while this
 # preflight must prove the unmerged branch on a real ARM64 runner.
 on:
+  push:
+    paths:
+      - .github/workflows/aarch64-release-preflight.yml
+      - .github/workflows/release.yml
+      - src/python/**
+      - src/rust/**
+      - src/ts/**
+      - Cargo.toml
+      - Cargo.lock
   workflow_dispatch:
 
 permissions:

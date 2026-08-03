@@ -98,8 +98,21 @@ if "post-publish-smoke-aarch64" not in release_needs:
 if not Path(preflight_path).is_file():
     fail("AArch64 release preflight workflow is missing")
 preflight = yaml.safe_load(open(preflight_path))
-if set(preflight.get(True, {})) != {"workflow_dispatch"}:
-    fail("AArch64 release preflight must be workflow_dispatch-only")
+preflight_triggers = preflight.get(True, {})
+if set(preflight_triggers) != {"push", "workflow_dispatch"}:
+    fail("AArch64 release preflight must run on relevant branch pushes and workflow dispatch")
+push_paths = preflight_triggers.get("push", {}).get("paths", [])
+for required_path in [
+    ".github/workflows/aarch64-release-preflight.yml",
+    ".github/workflows/release.yml",
+    "src/python/**",
+    "src/rust/**",
+    "src/ts/**",
+    "Cargo.toml",
+    "Cargo.lock",
+]:
+    if required_path not in push_paths:
+        fail(f"AArch64 release preflight push trigger must include {required_path!r}")
 preflight_jobs = preflight.get("jobs", {})
 native_preflight = preflight_jobs.get("native-aarch64-artifacts")
 if native_preflight is None:
