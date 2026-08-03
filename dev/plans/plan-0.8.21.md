@@ -75,6 +75,6 @@ retained in place; current indexes must identify current authority.
 ## Immediate next slice
 
 <!-- BEGIN GENERATED release-state:0.8.21:plan-immediate-next -->
-**IMMEDIATE NEXT: Slice 0** (`FOUNDATION`) — state, documentation, toolchain, and platform-manifest design
+**IMMEDIATE NEXT: Slice 20** (`DOC-DRIFT`) — current-documentation and platform-drift checks
 
-**Remaining ladder:** 0 → 5 → 10 → 15 → 20.<!-- END GENERATED release-state:0.8.21:plan-immediate-next -->
+**Remaining ladder:** 20.<!-- END GENERATED release-state:0.8.21:plan-immediate-next -->

@@ -6,7 +6,8 @@
 
 ## Current state
 
-Slice 0 is current. 0.8.21 is the reliability and platform foundation:
-TC-91 first, then serial local verification, then Linux aarch64 proof. It is
+Slices 0, 5, 10, and 15 are landed on this branch, respectively at
+`2ea2c884`, `a6cf2bbe`, `f94275e1`, and `19d8f072`. The remaining active work
+is Slice 20: current-documentation and platform-drift checks. 0.8.21 remains
 label-only and must not advertise or publish an artifact without the evidence
 required by `dev/platform-capabilities.json`.
