@@ -87,9 +87,14 @@ ledgerwrite.py dev/todos-and-considerations-ledger.jsonl --profile todos \
 The profile requires `id`, `kind`, and `status`; only the documented todos
 vocabularies are accepted. `--open` allocates the ID while holding the ledger
 lock. Updates require `--expected-prior-seq`, reject a stale state, reject a
-kind mutation, and reject transitions out of a terminal status. Existing legacy
-`TC-N` IDs remain valid for updates. This is not a claim that numeric allocation
-can be made safe across independently cloned worktrees; new identities are UUIDs.
+kind mutation, and reject transitions out of a terminal status. All retained
+legacy IDs (including `TC-N`, `TC-99-VEC0`, and `OOS-18`) remain valid for
+updates; their existing kinds and statuses are accepted through a closed
+compatibility table, while new opens still use only the documented vocabulary.
+This is not a claim that numeric allocation can be made safe across independently
+cloned worktrees; new identities are UUIDs. Profile `--dry-run` takes the same
+non-mutating lock and performs the same history/OCC/transition validation as a
+real write; it still does not advance a sequence or create a file.
 
 **Torn-line healing.** Before appending, ledgerwrite reads the file's **last
 byte** (O(1), never into context). If the file is non-empty and that byte is not a

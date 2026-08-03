@@ -7,7 +7,7 @@
 >
 > **Ledger file:** `dev/todos-and-considerations-ledger.jsonl` (one JSON record per line).
 > **This repo's id prefix:** `TC`. New items use tool-allocated `TC-<uuid>` identities;
-> historical `TC-N` identities remain valid.
+> historical identities, including `TC-N`, `TC-99-VEC0`, and `OOS-18`, remain valid.
 >
 > It is **generic and portable** — the same two files (this README + the JSONL) drop
 > into any repo that has the `ledgerwrite`/`ledgerwatch` tools. See [Porting](#porting-to-another-repo).
@@ -103,7 +103,12 @@ An item is **live** iff its latest entry's `status` is non-terminal.
 
 The profile permits normal forward movement among active states, permits a
 terminal resolution from an active state, and refuses transitions out of a
-terminal state or a return from `in-progress` to `open`.
+terminal state or a return from `in-progress` to `open`. It also recognizes the
+retained legacy states `resolved`, `closed`, `placed`, `accepted`,
+`build-authorized`, `converged-pending-hitl`, and `in_progress` when updating an
+existing item; those names cannot be used to open a new item. `resolved` and
+`closed` are legacy terminal states and can only be normalized to a canonical
+terminal status.
 
 ### 2.2 Field reference
 

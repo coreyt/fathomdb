@@ -114,6 +114,17 @@ TODOS_TRANSITIONS = {
 TODOS_ID_RE = re.compile(
     r"TC-(?:[0-9]+|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$"
 )
+# Retained records predate the profile. These are a closed compatibility set
+# measured from the committed todos ledger, not an open-ended alternate schema.
+LEGACY_TODOS_STATUSES = {
+    "resolved": "terminal",
+    "closed": "terminal",
+    "placed": "active",
+    "accepted": "active",
+    "build-authorized": "active",
+    "converged-pending-hitl": "active",
+    "in_progress": "active",
+}
 
 
 class TodosProfileError(Exception):
@@ -405,13 +416,11 @@ def todos_shape_error(args, fields):
     else:
         if not fields.get("id"):
             return "ledgerwrite: todos profile requires --field id=..."
-        if not TODOS_ID_RE.fullmatch(fields["id"]):
-            return "ledgerwrite: invalid todos id (expected legacy TC-N or TC-UUID)"
         if args.expected_prior_seq is None:
             return "ledgerwrite: todos update requires --expected-prior-seq"
         if args.expected_prior_seq < 1:
             return "ledgerwrite: --expected-prior-seq must be positive"
-    if args.kind not in TODOS_KINDS:
+    if args.open and args.kind not in TODOS_KINDS:
         return "ledgerwrite: invalid todos kind"
     if fields.get("status") not in TODOS_STATUSES:
         return "ledgerwrite: invalid todos status"
@@ -463,11 +472,35 @@ def validate_todos_history(args, fields, records):
     if previous.get("seq") != args.expected_prior_seq:
         return "ledgerwrite: expected prior seq does not match current item state"
     prior_status = previous.get("status")
+    if prior_status in LEGACY_TODOS_STATUSES:
+        if LEGACY_TODOS_STATUSES[prior_status] == "terminal":
+            if fields["status"] not in TODOS_TERMINAL:
+                return "ledgerwrite: illegal todos status transition from legacy terminal status"
+            return None
+        return None
     if prior_status not in TODOS_STATUSES:
-        return "ledgerwrite: existing todos item has invalid status; repair via migration"
+        return "ledgerwrite: existing todos item has unsupported legacy status"
     if fields["status"] not in TODOS_TRANSITIONS[prior_status]:
         return "ledgerwrite: illegal todos status transition"
     return None
+
+
+def validate_todos_dry_run(path, args, fields):
+    """Validate profile history under lock without creating or changing a file."""
+    try:
+        fd = os.open(path, os.O_RDONLY)
+    except FileNotFoundError:
+        return validate_todos_history(args, fields, [])
+    try:
+        if fcntl is not None:
+            fcntl.flock(fd, fcntl.LOCK_EX)
+        try:
+            return validate_todos_history(args, fields, read_todos_records(fd))
+        finally:
+            if fcntl is not None:
+                fcntl.flock(fd, fcntl.LOCK_UN)
+    finally:
+        os.close(fd)
 
 
 def run(argv, out=sys.stdout, err=sys.stderr) -> int:
@@ -580,10 +613,16 @@ def run(argv, out=sys.stdout, err=sys.stderr) -> int:
         return 2
 
     if args.dry_run:
-        if args.profile == "todos" and args.open:
-            # A dry-run demonstrates the exact immutable-ID shape without
-            # creating state.  Real opens check the ledger under flock below.
-            fields["id"] = "TC-" + str(uuid.uuid4())
+        if args.profile == "todos":
+            abspath = os.path.abspath(args.file)
+            try:
+                profile_error = validate_todos_dry_run(abspath, args, fields)
+            except (OSError, UnicodeDecodeError, ValueError) as exc:
+                print(f"ledgerwrite: todos profile refused: {exc}", file=err)
+                return 2
+            if profile_error:
+                print(profile_error, file=err)
+                return 2
         tail, clobbered = build_record(args, fields)
         for key in sorted(clobbered):
             print(

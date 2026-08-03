@@ -283,6 +283,131 @@ def test_todos_profile_accepts_a_legacy_tc_numeric_id_on_update(tmp_path):
     assert json.loads(out)["id"] == "TC-42"
 
 
+@pytest.mark.parametrize(
+    "item_id,kind,status,next_status",
+    [
+        ("TC-91", "observation", "placed", "in-progress"),
+        ("TC-53", "todo", "resolved", "done"),
+        ("OOS-18", "observation", "placed", "watching"),
+        ("TC-99-VEC0", "observation", "closed", "done"),
+        ("TC-33", "open_question", "open", "done"),
+        ("TC-55", "open-question", "open", "done"),
+        ("TC-45", "decision", "placed", "done"),
+        ("TC-7", "reconcile", "resolved", "done"),
+    ],
+)
+def test_todos_profile_updates_real_retained_legacy_shapes(
+    tmp_path, item_id, kind, status, next_status
+):
+    """Fixtures mirror retained IDs/kinds/statuses, not invented compatibility."""
+    ledger = str(tmp_path / "todos.jsonl")
+    assert call(
+        [
+            ledger,
+            "--kind",
+            kind,
+            "--summary",
+            "retained item",
+            "--field",
+            f"id={item_id}",
+            "--field",
+            f"status={status}",
+        ]
+    )[0] == 0
+    rc, _, err = call(
+        [
+            ledger,
+            "--profile",
+            "todos",
+            "--kind",
+            kind,
+            "--summary",
+            "profiled update",
+            "--field",
+            f"id={item_id}",
+            "--field",
+            f"status={next_status}",
+            "--expected-prior-seq",
+            "1",
+        ]
+    )
+    assert rc == 0, err
+
+
+@pytest.mark.parametrize(
+    "argv_fragment,error",
+    [
+        (["--field", "id=TC-404", "--field", "status=open", "--expected-prior-seq", "1"], "does not exist"),
+        (["--field", "id=TC-42", "--field", "status=in-progress", "--expected-prior-seq", "99"], "expected prior seq"),
+        (["--field", "id=TC-42", "--field", "status=open", "--expected-prior-seq", "1"], "illegal todos status transition"),
+    ],
+)
+def test_todos_profile_dry_run_validates_history_without_writing(tmp_path, argv_fragment, error):
+    ledger = str(tmp_path / "todos.jsonl")
+    assert call(
+        [
+            ledger,
+            "--kind",
+            "todo",
+            "--summary",
+            "terminal legacy fixture",
+            "--field",
+            "id=TC-42",
+            "--field",
+            "status=done",
+        ]
+    )[0] == 0
+    before = open(ledger, encoding="utf-8").read()
+    rc, out, err = call(
+        [ledger, "--profile", "todos", "--kind", "todo", "--summary", "dry run"]
+        + argv_fragment
+        + ["--dry-run"]
+    )
+    assert rc == 2
+    assert out == ""
+    assert error in err
+    assert open(ledger, encoding="utf-8").read() == before
+
+
+def test_todos_profile_dry_run_accepts_legacy_shape_without_writing(tmp_path):
+    ledger = str(tmp_path / "todos.jsonl")
+    assert call(
+        [
+            ledger,
+            "--kind",
+            "observation",
+            "--summary",
+            "retained TC-91 shape",
+            "--field",
+            "id=TC-91",
+            "--field",
+            "status=placed",
+        ]
+    )[0] == 0
+    before = open(ledger, encoding="utf-8").read()
+    rc, out, err = call(
+        [
+            ledger,
+            "--profile",
+            "todos",
+            "--kind",
+            "observation",
+            "--summary",
+            "dry-run compatibility check",
+            "--field",
+            "id=TC-91",
+            "--field",
+            "status=in-progress",
+            "--expected-prior-seq",
+            "1",
+            "--dry-run",
+        ]
+    )
+    assert rc == 0, err
+    assert json.loads(out)["id"] == "TC-91"
+    assert open(ledger, encoding="utf-8").read() == before
+
+
 # --- happy path -------------------------------------------------------------
 
 
