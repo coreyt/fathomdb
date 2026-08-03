@@ -55,7 +55,7 @@ experiment needs its own proposal and evidence gate.
 ## Landed foundation
 
 <!-- BEGIN GENERATED release-state:0.8.21:plan-landed-roll-up -->
-**LANDED on `origin/main`, in full:** Slices 0 (`2ea2c884`) · 5 (`a6cf2bbe`) · 10 (`f94275e1`) · 15 (`19d8f072`). SCHEMA is 24; remaining ladder = 20.<!-- END GENERATED release-state:0.8.21:plan-landed-roll-up -->
+**LANDED on `origin/main`, in full:** Slices 0 (`2ea2c884`) · 5 (`a6cf2bbe`) · 10 (`f94275e1`) · 15 (`19d8f072`) · 20 (`354ee9b4`). SCHEMA is 24; remaining ladder = none.<!-- END GENERATED release-state:0.8.21:plan-landed-roll-up -->
 
 ## Reserved-gap policy
 
@@ -79,7 +79,6 @@ retained in place; current indexes must identify current authority.
 
 ## Immediate next slice
 
-<!-- BEGIN GENERATED release-state:0.8.21:plan-immediate-next -->
-**IMMEDIATE NEXT: Slice 20** (`DOC-DRIFT`) — current-documentation and platform-drift checks
-
-**Remaining ladder:** 20.<!-- END GENERATED release-state:0.8.21:plan-immediate-next -->
+No implementation slice remains. All 0.8.21 implementation slices are
+landed; release closure and the opening of 0.8.22 remain explicit state
+transitions and are not implied by this label-only foundation plan.
