@@ -149,6 +149,20 @@
       "design_refs": [
         "dev/design/ci-verify-robustness-review.md"
       ]
+    },
+    {
+      "slice": 60,
+      "short": "NESTED-PROJECTIONS",
+      "title": "nested-source canonical-body projections and public attribute query surface",
+      "depends_on": [
+        20
+      ],
+      "status": "UNBLOCKED",
+      "sha": null,
+      "design_refs": [
+        "dev/adr/ADR-0.8.21-nested-source-projections.md",
+        "dev/design/nested-source-projections.md"
+      ]
     }
   ],
   "landed": [
@@ -165,14 +179,34 @@
     50,
     55
   ],
-  "next_slice": null,
-  "remaining_ladder": [],
+  "next_slice": 60,
+  "remaining_ladder": [
+    60
+  ],
   "generated_views": [
     {
       "id": "plan-landed-roll-up",
       "file": "dev/plans/plan-0.8.21.md",
       "location": "Landed foundation",
       "renders": "every landed slice + its landing SHA, the SCHEMA version, and the remaining ladder"
+    },
+    {
+      "id": "plan-immediate-next",
+      "file": "dev/plans/plan-0.8.21.md",
+      "location": "Immediate next slice",
+      "renders": "next_slice, its ladder entry, and the remaining ladder"
+    },
+    {
+      "id": "status-current-state",
+      "file": "dev/plans/runs/STATUS-0.8.21.md",
+      "location": "Current state table's Next slice row",
+      "renders": "next_slice, its status, and every landed slice with its landing SHA"
+    },
+    {
+      "id": "status-next-action",
+      "file": "dev/plans/runs/STATUS-0.8.21.md",
+      "location": "Current state table's Immediate next action row",
+      "renders": "next_slice, its ladder entry, and the remaining ladder"
     }
   ]
 }

@@ -108,6 +108,12 @@ Slice-0 gate before Slices 15 and 25 open.
 | - | -------- | ------------------ | ------------ | -------- |
 | 40 | release | Linux AArch64 native artifacts — native manylinux Python wheel, unscoped npm platform package, and native registry smokes while macOS/Windows/musl remain deferred | accepted (HITL 2026-08-02) | ADR-0.8.20-linux-aarch64-native-artifacts.md |
 
+## Phase 0.8.21 (release-artifact decision)
+
+| # | Category | Candidate decision | HITL verdict | ADR file |
+| - | -------- | ------------------ | ------------ | -------- |
+| 41 | interface | Nested-source projections for Memex B15 — declared literal member paths, engine-owned scalar EAV/property-FTS derivation, portable attribute filtering and projected-text search; canonical-text equality intentionally collapses `"1"` and `1` | accepted (HITL 2026-08-04; remapped to Slice 60 by `seq-242`) | ADR-0.8.21-nested-source-projections.md |
+
 ## Categories
 
 acceptance | architecture | design | interface.
