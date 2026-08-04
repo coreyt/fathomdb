@@ -77,7 +77,7 @@ experiment needs its own proposal and evidence gate.
 | 15 | Linux aarch64 package/build/smoke proof | 10 |
 | 20 | Current-documentation and platform-drift checks | 15 |
 | 25 | Remediate the audited SIGPIPE / fail-open shell sites | 20 |
-| 30 | `shellcheck` in `agent-lint.sh` (+ `.shellcheckrc`, masked-return checks) | 25 |
+| 30 | `shellcheck` in `scripts/agent-lint.sh` (+ `.shellcheckrc`, masked-return checks) | 25 |
 | 35 | Always-on `shell-lint` CI job ahead of the `verify` gate | 30 |
 | 40 | Guard that a dependency pin is still a fix, not the vulnerability | 20 |
 | 45 | Make a CI failure legible without log-diving; make suite execution visible on success | 35 |
@@ -92,7 +92,8 @@ delivers observability. Design of record:
 R2.9, R2.4 for Slice 50).
 
 **Slice 45 — the failure you cannot read.** `verify` uploads **nothing** on
-failure; only `rust-workspace-race-report` does (`ci.yml:126`). `run_capped`
+failure; only the `rust-workspace-race-report` job in
+`.github/workflows/ci.yml` does. `run_capped`
 truncates to 200 lines and writes the remainder to a `/tmp` file that **dies
 with the runner**, so two `test-ts` failures in the review's sample are **not
 root-causable at all**. Failure artifacts, a `$GITHUB_STEP_SUMMARY` naming the
