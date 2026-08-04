@@ -25,9 +25,20 @@ if [ -z "$pyright_bin" ]; then
   exit 1
 fi
 
-pyright_version="$("$pyright_bin" --version)"
-if [ "$pyright_version" != "pyright $PYRIGHT_VERSION" ]; then
-  printf 'FAIL typecheck-python: Pyright %s is required; selected %s. Run scripts/bootstrap.sh in a clean non-worktree checkout.\n' "$PYRIGHT_VERSION" "$pyright_version" >&2
+if ! pyright_version_output="$("$pyright_bin" --version 2>&1)"; then
+  printf 'FAIL typecheck-python: could not read the installed Pyright version. Run scripts/bootstrap.sh in a clean non-worktree checkout.\n' >&2
+  exit 1
+fi
+
+pyright_version_line_found=0
+while IFS= read -r pyright_version_line || [ -n "$pyright_version_line" ]; do
+  if [ "$pyright_version_line" = "pyright $PYRIGHT_VERSION" ]; then
+    pyright_version_line_found=1
+  fi
+done <<<"$pyright_version_output"
+
+if [ "$pyright_version_line_found" -ne 1 ]; then
+  printf 'FAIL typecheck-python: Pyright %s is required; selected %s. Run scripts/bootstrap.sh in a clean non-worktree checkout.\n' "$PYRIGHT_VERSION" "$pyright_version_output" >&2
   exit 1
 fi
 
