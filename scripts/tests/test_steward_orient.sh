@@ -42,6 +42,9 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 GATE="${GATE_UNDER_TEST:-$REPO_ROOT/scripts/steward-orient.sh}"
 RESOLVER="$REPO_ROOT/scripts/release-current.py"
 BOARD_CURRENCY="$REPO_ROOT/scripts/check-board-currency.sh"
+# One caller today. An array (not a bare word split of a string) so adding a
+# second is a one-element change and paths with spaces stay intact.
+BOARD_CURRENCY_CALLERS=("$BOARD_CURRENCY")
 CLOSED_LIB="$REPO_ROOT/scripts/lib/board-closed.sh"
 LEDGERWATCH="$REPO_ROOT/dev/agent-tools/ledgerwatch/ledgerwatch.py"
 CI_YML="$REPO_ROOT/.github/workflows/ci.yml"
@@ -287,7 +290,7 @@ if grep -qF 'head -n 15' "$CLOSED_LIB" \
 else
   fail "arm 8b: the shared predicate lib is missing or has the wrong window"
 fi
-for caller in "$BOARD_CURRENCY"; do
+for caller in "${BOARD_CURRENCY_CALLERS[@]}"; do
   if grep -qF 'lib/board-closed.sh' "$caller"; then
     pass "$(basename "$caller") sources the shared board-CLOSED predicate"
   else

@@ -798,6 +798,56 @@ grounds.
   Expect to write per-line justified `disable` comments; that is fine — a
   per-line disable with a reason is a decision, a global one is not.
 
+##### CORRECTION (2026-08-04, recorded while implementing R1.1 in 0.8.21 Slice 30)
+
+**The claim above the recommendation table — that
+`shellcheck --enable=check-extra-masked-returns` "would have caught [the
+2026-08-04 bug] deterministically" — is FALSE, and was measured false on the
+version this repo now pins (shellcheck 0.11.0).**
+
+Fed the verbatim pre-fix line from `308f7922`:
+
+```bash
+FIRST_SUITE_LINE="$(grep -nE '^[[:space:]]*run_suite[[:space:]]' "$AGENT_TEST" | head -n1 | cut -d: -f1)"
+```
+
+shellcheck 0.11.0 reports **nothing** — not under SC2312, and not under any of
+its eleven optional checks (`add-default-case`, `avoid-negated-conditions`,
+`avoid-nullary-conditions`, `check-extra-masked-returns`,
+`check-set-e-suppressed`, `check-unassigned-uppercase`, `deprecate-which`,
+`quote-safe-variables`, `require-double-brackets`, `require-variable-braces`,
+`useless-use-of-cat`). The same holds for the P0 shape
+`if git ls-files --unmerged | grep -q .; then`. The reason is structural, not a
+bug: SC2312 fires where a command substitution's exit status is discarded by the
+command it is an *argument to*. In an assignment the substitution's status *is*
+the assignment's status, so by SC2312's own rule nothing is masked — even though
+`pipefail` has already poisoned that status with the producer's SIGPIPE.
+
+Adopting shellcheck is still right, and SC2312 covers a large and overlapping
+family of genuine masked returns. But shellcheck **alone** would not have
+stopped occurrences one through four, and a slice that shipped only shellcheck
+while believing otherwise would have been a vacuous green about its own purpose.
+Slice 30 therefore ships the SC2312 leg **and** a second enforced leg — the
+early-exiting-consumer detector in `scripts/lib/shell-early-consumer.sh`,
+promoted from the positive-controlled arm 5 of
+`scripts/tests/test_shell_pipefail_guards.sh` — which does cover the shape.
+
+**Ratchet form adopted.** Per-FILE, not per-directory (strictly tighter):
+`scripts/shellcheck-sc2312-ratchet.txt` and
+`scripts/shell-early-consumer-ratchet.txt`. Every tracked `*.sh` not listed is
+enforced, new files are covered by default, and both lists may only shrink — a
+listed file that has become clean fails the gate until its line is deleted.
+
+**Named follow-ups from Slice 30** (deferred deliberately, not dropped):
+
+- **FUP-SHELLCHECK-1** — clear SC2016 (91 sites) and SC2015 (40 sites) and
+  remove them from `DEFERRED_CHECKS` in `scripts/agent-lint-shell.sh`.
+- **FUP-SHELLCHECK-2** — empty `scripts/shellcheck-sc2312-ratchet.txt`
+  (35 files / 344 findings at Slice 30 landing).
+- **FUP-SHELLCHECK-3** — empty `scripts/shell-early-consumer-ratchet.txt`
+  (37 files / 224 sites at Slice 30 landing, two of which are deliberate
+  fixtures that will never leave the list).
+
 #### R1.2 — Fix the 15 audited sites — **P0** (small, mechanical)
 
 - **Problem.** §3.1.2.

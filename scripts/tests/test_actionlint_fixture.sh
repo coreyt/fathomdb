@@ -275,7 +275,11 @@ fi
 if [ "$NODE_PIN_FAILED" -eq 0 ]; then
   printf 'PASS  ci.yml and release.yml pin every setup-node step to Node 25.9.0\n'
 fi
-if [ ! -f "$NODE_VERSION_FILE" ] || [ "$(tr -d '\r\n' < "$NODE_VERSION_FILE")" != "25.9.0" ]; then
+pinned_node_version=""
+if [ -f "$NODE_VERSION_FILE" ]; then
+  pinned_node_version="$(tr -d '\r\n' < "$NODE_VERSION_FILE")"
+fi
+if [ "$pinned_node_version" != "25.9.0" ]; then
   printf 'FAIL  .nvmrc must pin local Node to 25.9.0\n' >&2
   NODE_PIN_FAILED=$((NODE_PIN_FAILED + 1))
 fi

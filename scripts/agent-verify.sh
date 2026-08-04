@@ -4,7 +4,13 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd_repo_root() { cd "$(git rev-parse --show-toplevel)"; }
+# `git rev-parse` failing here used to degrade to `cd ""` — a bash no-op that
+# leaves the script running in an arbitrary cwd. Bind and check it instead.
+cd_repo_root() {
+  local _repo_toplevel
+  _repo_toplevel="$(git rev-parse --show-toplevel)" || return 1
+  cd "$_repo_toplevel" || return 1
+}
 cd_repo_root
 
 start=$(date +%s)

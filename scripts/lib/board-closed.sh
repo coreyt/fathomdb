@@ -32,5 +32,7 @@
 # `head` with SIGPIPE and turn a CLOSED board into a 141 (i.e. "LIVE"). No pipe,
 # no SIGPIPE, same predicate.
 board_is_closed() {
-  grep -qiE 'CLOSED — historical record' <<<"$(head -n 15 "$1")"
+  local head_window
+  head_window="$(head -n 15 "$1")"
+  grep -qiE 'CLOSED — historical record' <<<"$head_window"
 }

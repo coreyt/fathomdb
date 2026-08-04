@@ -1,0 +1,35 @@
+# FathomDB shellcheck configuration — 0.8.21 Slice 30 (SHELLCHECK), per
+# dev/design/ci-verify-robustness-review.md R1.1.
+#
+# This file records the repo's DELIBERATE ENABLES only. It intentionally
+# contains no `disable=` line: a repo-level `disable=` is indistinguishable
+# from "covered" while covering nothing, which is the exact posture that let
+# the same SIGPIPE/masked-return bug through four times. Where a finding is
+# genuinely wrong for a specific site, the suppression is a narrowly scoped
+# `# shellcheck disable=SCxxxx` on that line with a reason.
+#
+# Enforcement lives in scripts/agent-lint-shell.sh (invoked by
+# scripts/agent-lint.sh); the pin lives in scripts/lib/shellcheck-version.sh.
+# Editors that read .shellcheckrc therefore see the same enabled check set the
+# gate does.
+
+# SC2312. OPTIONAL in shellcheck (off unless requested) and the single check
+# that catches this repo's historical failure mode: a command whose non-zero
+# exit is swallowed because it is inside a command substitution or upstream of
+# a pipe (`cmd | head` under `set -o pipefail` -> SIGPIPE -> the gate passes on
+# a crashed producer). Slice 25 was the FOURTH hand-fix of that class.
+#
+# Coverage is ratcheted, not blanket: scripts/agent-lint-shell.sh enforces
+# SC2312 over every tracked *.sh EXCEPT the files listed in
+# scripts/shellcheck-sc2312-ratchet.txt, and that list can only shrink (a file
+# that has become clean must be removed or the gate fails). New files are
+# covered by default.
+enable=check-extra-masked-returns
+
+# Follow `. "$SCRIPT_DIR/lib/foo.sh"` into the sourced file instead of emitting
+# SC1091 "not following". This makes the existing `# shellcheck source=` header
+# directives (43 of them already in the tree) actually load-bearing, and lets
+# shellcheck see variables/functions defined in scripts/lib/*.sh — strictly
+# MORE analysis, not less.
+external-sources=true
+source-path=SCRIPTDIR

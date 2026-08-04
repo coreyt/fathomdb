@@ -1444,7 +1444,8 @@ fi
   git checkout -q -b feature/in-flight
   echo "branch change" >branch-only.txt
   git add branch-only.txt && git commit -qm 'branch: not pushed'
-  python3 - "$(git rev-parse --short HEAD)" <<'PY'
+  branch_head="$(git rev-parse --short HEAD)"
+  python3 - "$branch_head" <<'PY'
 import json, sys
 p = "dev/plans/release-state-9.9.9.json"
 st = json.load(open(p))

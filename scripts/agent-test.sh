@@ -279,6 +279,13 @@ run_suite test-pyright-pin-consistency bash scripts/tests/test_pyright_pin_consi
 run_suite test-ci-run-hygiene bash scripts/tests/test_ci_run_hygiene.sh
 run_suite test-ci-run-hygiene-ci-env bash scripts/tests/test_ci_run_hygiene_ci_env.sh
 
+# Shell lint (0.8.21 Slice 30). The version guard mirrors the ruff/actionlint
+# ones; the gate suite is the red-first proof that agent-lint.sh rejects the
+# masked-return and early-exiting-consumer shapes and that both ratchets can
+# only shrink.
+run_suite test-agent-lint-shellcheck-version bash scripts/tests/test_agent_lint_shellcheck_version.sh
+run_suite test-agent-lint-shellcheck-gate bash scripts/tests/test_agent_lint_shellcheck_gate.sh
+
 # TC-37 recurrence guard: agent-lint-md.sh must HARD-fail (not skip_notice/exit 0)
 # when markdownlint-cli2 is genuinely unresolvable. Builds its own throwaway
 # fixture repo under mktemp -d; never touches this checkout's node_modules.

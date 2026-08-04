@@ -43,7 +43,8 @@ fi
 # blockers above/below, so the caller can narrow the STRICT exception to
 # exactly this case (lib-gate-policy.sh).
 if [ -r /proc/sys/kernel/unprivileged_userns_clone ]; then
-    if [ "$(cat /proc/sys/kernel/unprivileged_userns_clone)" != "1" ]; then
+    userns_clone="$(cat /proc/sys/kernel/unprivileged_userns_clone)"
+    if [ "$userns_clone" != "1" ]; then
         echo "AC-037 ENVIRONMENTAL: unprivileged user namespaces disabled by kernel" >&2
         echo "  (sysctl kernel.unprivileged_userns_clone=1 would enable the live layer)" >&2
         exit 3

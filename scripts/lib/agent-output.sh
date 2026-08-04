@@ -44,7 +44,10 @@ run_capped() {
   fi
 
   local total_lines
-  total_lines=$(wc -l <"$spill" | tr -d ' ')
+  # `wc -l | tr` would hide a failing wc behind tr's success; strip the
+  # padding some wc implementations emit with parameter expansion instead.
+  total_lines="$(wc -l <"$spill")"
+  total_lines="${total_lines//[[:space:]]/}"
 
   printf 'FAIL %s (exit=%d, %sms)\n' "$verb" "$rc" "$duration_ms"
   printf -- '----\n'
@@ -71,5 +74,9 @@ skip_notice() {
 
 # Usage: cd_repo_root
 cd_repo_root() {
-  cd "$(git rev-parse --show-toplevel)"
+  # `git rev-parse` failing here used to degrade to `cd ""` — a bash no-op
+  # that leaves the caller running in an arbitrary cwd. Bind and check it.
+  local _repo_toplevel
+  _repo_toplevel="$(git rev-parse --show-toplevel)" || return 1
+  cd "$_repo_toplevel" || return 1
 }

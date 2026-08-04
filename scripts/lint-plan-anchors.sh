@@ -114,7 +114,10 @@
 #             resolves and exists (and >=1 plan and >=1 citation were seen);
 #         1 = a violation, or a vacuous scan.
 set -euo pipefail
-cd "$(git rev-parse --show-toplevel)"
+# `git rev-parse` failing here used to degrade to `cd ""` — a bash no-op that
+# leaves the script running in an arbitrary cwd. Bind and check it instead.
+_repo_toplevel="$(git rev-parse --show-toplevel)" || exit 1
+cd "$_repo_toplevel" || exit 1
 
 QUIET=0
 [ "${1:-}" = "--quiet" ] && QUIET=1

@@ -93,6 +93,9 @@ case "$WORK_REAL/" in
 esac
 echo "smoke: work    = $WORK (verified outside the repo)"
 
+# Invoked indirectly by the `trap cleanup EXIT` below; a trap handler is not a
+# call site as far as SC2329 is concerned.
+# shellcheck disable=SC2329
 cleanup() {
     local rc=$?
     if [ -d "$WORK" ]; then
@@ -300,8 +303,8 @@ echo "smoke: RUN B rc=$rc_b"
 # Compare sorted listings, so an EXTRA or MISSING file is caught, not just
 # differing content of the three files we go on to compare.
 set +e
-SET_A="$(cd "$OUT_INSTALLED" && ls -A | LC_ALL=C sort)"
-SET_B="$(cd "$OUT_SOURCE" && ls -A | LC_ALL=C sort)"
+SET_A="$(cd "$OUT_INSTALLED" && find . -mindepth 1 -maxdepth 1 | sed 's|^\./||' | LC_ALL=C sort)"
+SET_B="$(cd "$OUT_SOURCE" && find . -mindepth 1 -maxdepth 1 | sed 's|^\./||' | LC_ALL=C sort)"
 set -e
 if [ "$SET_A" != "$SET_B" ]; then
     echo "smoke: FAIL — the two runs wrote DIFFERENT artifact sets." >&2

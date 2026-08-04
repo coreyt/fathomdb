@@ -13,7 +13,7 @@
 # Read-only. Token est = ceil(bytes/4) (no tokenizer dep; constant method).
 set -u  # not -e/pipefail: grep|wc legitimately exits nonzero on zero matches
 REPO_ROOT="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
-cd "$REPO_ROOT"
+cd "$REPO_ROOT" || exit 1
 LABEL="${1:-baseline}"
 MEM="${CLAUDE_MEMORY_DIR:-$HOME/.claude/projects/-home-coreyt-projects-fathomdb/memory}"
 OUT="scripts/repo-prune/measurements/memory-clarity"; mkdir -p "$OUT"

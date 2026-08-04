@@ -121,11 +121,13 @@ export TWINE_USERNAME=x TWINE_PASSWORD=x
 if out="$(PYPI_PUBLISH_IF_NEW_REGISTRY="$REG" PYPI_PUBLISH_IF_NEW_UPLOAD_URL="$REG/" \
           TWINE_BIN="$TWINE" "$PYPI_HELPER" fathomdb 9.9.9 "$TMP/dist" 2>&1)"; then
   status="$(curl -s -o /dev/null -w '%{http_code}' "$REG/pypi/fathomdb/9.9.9/json")"
+  post_count="$(wc -l <"$POST_LOG")"
   if printf '%s' "$out" | grep -q "uploading to $REG/" \
-     && [ "$status" = "200" ] && [ "$(wc -l <"$POST_LOG")" -ge 1 ]; then
+     && [ "$status" = "200" ] && [ "$post_count" -ge 1 ]; then
     pass "PyPI REAL upload through helper (real twine POST landed; index now 200)"
   else
-    fail "PyPI upload: out='$out' json_status=$status posts=$(cat "$POST_LOG")"
+    posts="$(cat "$POST_LOG")"
+    fail "PyPI upload: out='$out' json_status=$status posts=$posts"
   fi
 else
   fail "PyPI helper (upload) exited non-zero: $out"
