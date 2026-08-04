@@ -12,9 +12,10 @@
     "markdownlint-cli2": "^0.23.0",
     "prettier": "^3.9.4"
   },
-  "comment-overrides": "0.8.9 R-DEP-1: force transitive security patches for markdown-it (GHSA-6v5v-wf23-fmfq) and js-yaml (GHSA-h67p-54hq-rp68). markdownlint-cli2@0.22.1 pins the vulnerable 14.1.1/4.1.1 exactly and has no patched release yet; `npm audit fix --force` would downgrade markdownlint-cli2 (breaking). Both are backward-compatible minor bumps. Remove when markdownlint-cli2 ships patched deps.",
+  "comment-overrides": "0.8.9 R-DEP-1: force transitive security patches for markdown-it (GHSA-6v5v-wf23-fmfq) and js-yaml (GHSA-h67p-54hq-rp68). markdownlint-cli2@0.22.1 pins the vulnerable 14.1.1/4.1.1 exactly and has no patched release yet; `npm audit fix --force` would downgrade markdownlint-cli2 (breaking). Both are backward-compatible minor bumps. Remove when markdownlint-cli2 ships patched deps. 0.8.21: js-yaml re-bumped 4.2.0 -> 4.3.0 for GHSA-52cp-r559-cp3m (merge-key chains force quadratic CPU) — the ORIGINAL 4.2.0 pin above was itself the vulnerable range (>=4.0.0 <4.3.0). linkify-it 5.0.1 -> 5.0.2 added for GHSA-v245-v573-v5vm (quadratic-complexity DoS in the mailto: validator scan-loop); it arrives transitively via markdown-it. Both are dev-tooling only: this manifest is private and unpublished, so neither advisory reaches a shipped artifact. They are remediated by hand because Dependabot PR creation is paused (.github/dependabot.yml).",
   "overrides": {
     "markdown-it": "14.2.0",
-    "js-yaml": "4.2.0"
+    "js-yaml": "4.3.0",
+    "linkify-it": "5.0.2"
   }
 }
