@@ -801,8 +801,14 @@ fi
 # lands, the single writer is updated, and the plan's prose is not.
 setup_fixture
 plannext_fixture
-perl -0777 -pi -e 's/"next_slice": 10/"next_slice": 20/' \
-  "$FIX/dev/plans/release-state-9.9.9.json"
+python3 - "$FIX/dev/plans/release-state-9.9.9.json" <<'PY'
+import json, sys
+p = sys.argv[1]
+s = json.load(open(p))
+s["next_slice"] = 20
+s["remaining_ladder"] = [20, 30, 40]
+json.dump(s, open(p, "w"), indent=2)
+PY
 run_gate
 if [ "$RC" -ne 0 ] && grep -q 'is STALE' <<<"$OUT" && grep -q 'plan-immediate-next' <<<"$OUT" \
    && grep -q 'Slice 20' <<<"$OUT"; then
@@ -846,8 +852,14 @@ fi
 # exists to close, wearing a different hat. It must fail with the REASON.
 setup_fixture
 plannext_fixture
-perl -0777 -pi -e 's/"next_slice": 10/"next_slice": null/' \
-  "$FIX/dev/plans/release-state-9.9.9.json"
+python3 - "$FIX/dev/plans/release-state-9.9.9.json" <<'PY'
+import json, sys
+p = sys.argv[1]
+s = json.load(open(p))
+s["next_slice"] = None
+s["remaining_ladder"] = []
+json.dump(s, open(p, "w"), indent=2)
+PY
 run_gate
 # `plan-immediate-next` must be NAMED in the failure: `handoff-next-step` also
 # reads `next_slice` and also refuses to render it, so an assertion that merely
@@ -944,6 +956,7 @@ import json, sys
 p = sys.argv[1]
 s = json.load(open(p))
 s["remaining_ladder"] = []
+s["next_slice"] = None
 json.dump(s, open(p, "w"), indent=2)
 PY
 run_gate
@@ -1593,7 +1606,20 @@ for state_path in sorted(glob.glob(os.path.join(root, "dev/plans/release-state-*
     if next_slice is None:
         continue
     views = {view.get("id"): view.get("file") for view in state.get("generated_views", [])}
-    for view_id, document_key in (("plan-immediate-next", "plan"), ("status-current-state", "board")):
+    remaining = state.get("remaining_ladder")
+    if not isinstance(remaining, list):
+        errors.append(f"{os.path.basename(state_path)}: remaining_ladder must be a list")
+        continue
+    if not remaining:
+        if next_slice is not None:
+            errors.append(f"{os.path.basename(state_path)}: terminal ladder requires next_slice null")
+        continue
+    if next_slice != remaining[0]:
+        errors.append(
+            f"{os.path.basename(state_path)}: remaining_ladder starts at {remaining[0]}, not next_slice {next_slice}"
+        )
+        continue
+    for view_id, document_key in (("plan-immediate-next", "plan"), ("status-current-state", "board"), ("status-next-action", "board")):
         document = state.get(document_key, "")
         if views.get(view_id) != document:
             errors.append(
@@ -1615,6 +1641,18 @@ if [ "$LIVE_POINTER_RC" -eq 0 ]; then
   pass "real repo — every nonterminal release generates both its plan and STATUS next-state pointers"
 else
   fail "arm R6 (all-live current-state pointers): rc=$LIVE_POINTER_RC errors=$LIVE_POINTER_ERRORS"
+fi
+
+# --- Arm R7: terminalness is derived from the remaining ladder, not asserted ---
+setup_fixture
+perl -0777 -pi -e 's/"next_slice": 10/"next_slice": null/' \
+  "$FIX/dev/plans/release-state-9.9.9.json"
+run_gate
+if [ "$RC" -ne 0 ] && grep -q 'remaining_ladder' <<<"$OUT" \
+   && grep -q 'next_slice' <<<"$OUT"; then
+  pass "remaining ladder with null next_slice HARD-fails as malformed state"
+else
+  fail "arm R7 (malformed terminal state): rc=$RC out=$OUT"
 fi
 
 if [ "$FAILED" -gt 0 ]; then

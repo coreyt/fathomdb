@@ -549,6 +549,15 @@ def render_status_current_state(st):
             % (_slice_str(nxt), entry["short"], entry["status"], landed))
 
 
+def render_status_next_action(st):
+    """STATUS board's commission action, derived from the next ladder entry."""
+    nxt = st["next_slice"]
+    entry = _by_slice(st)[nxt]
+    return ("**Commission Slice %s (%s)** — %s. **Remaining ladder:** %s."
+            % (_slice_str(nxt), entry["short"], entry["title"],
+               " → ".join(_slice_str(item) for item in st["remaining_ladder"])))
+
+
 def render_plan_landed_roll_up(st):
     """`plan-<release>.md` §9's LANDED roll-up (TC-89, second site).
 
@@ -590,7 +599,27 @@ RENDERERS = {
     "handoff-next-step":       render_handoff_next_step,
     "plan-immediate-next":     render_plan_immediate_next,
     "status-current-state":    render_status_current_state,
+    "status-next-action":      render_status_next_action,
 }
+
+
+def validate_ladder_progress(st):
+    """Reject contradictory terminal and next-slice facts before rendering."""
+    remaining = st.get("remaining_ladder")
+    next_slice = st.get("next_slice")
+    if not isinstance(remaining, list):
+        raise ValueError("`remaining_ladder` must be a list of slice ids")
+    if not remaining:
+        if next_slice is not None:
+            raise ValueError(
+                "`remaining_ladder` is empty but `next_slice` is %r; a terminal "
+                "release must set `next_slice` to null" % (next_slice,))
+        return
+    if next_slice != remaining[0]:
+        raise ValueError(
+            "`remaining_ladder` starts at %s but `next_slice` is %r; a live release "
+            "must name its first remaining slice as next"
+            % (_slice_str(remaining[0]), next_slice))
 
 # ---------------------------------------------------------------------------
 # Discover tracked inputs. A stale linked worktree's state or Markdown copy is
@@ -640,6 +669,12 @@ for sp in state_paths:
         bad("FAIL %s: `generated_views` is EMPTY, so this state file owns no region\n"
             "  and nothing about it is checkable. A state file that gates nothing is a\n"
             "  vacuous pass, not a pass (TC-37)." % sp)
+        continue
+
+    try:
+        validate_ladder_progress(st)
+    except ValueError as exc:
+        bad("FAIL %s: invalid ladder progress — %s" % (sp, exc))
         continue
 
     # The `origin/main` claim the views are about to render is a fact about the
