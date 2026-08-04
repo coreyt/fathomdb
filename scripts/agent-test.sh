@@ -269,6 +269,7 @@ run_suite test-actionlint-go-install-version bash scripts/tests/test_actionlint_
 run_suite test-agent-lint-ruff-version bash scripts/tests/test_agent_lint_ruff_version.sh
 run_suite test-agent-lint-actionlint-version bash scripts/tests/test_agent_lint_actionlint_version.sh
 run_suite test-agent-typecheck-pyright-version bash scripts/tests/test_agent_typecheck_pyright_version.sh
+run_suite test-pyright-pin-consistency bash scripts/tests/test_pyright_pin_consistency.sh
 run_suite test-ci-run-hygiene bash scripts/tests/test_ci_run_hygiene.sh
 
 # TC-37 recurrence guard: agent-lint-md.sh must HARD-fail (not skip_notice/exit 0)
