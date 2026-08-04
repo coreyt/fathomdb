@@ -1309,6 +1309,117 @@ else
   pass "the release-state-views job is always-on (no if:, no needs:, not docs_only-gated)"
 fi
 
+# --- Arm R (remote-landing guard) ------------------------------------------
+# THE DEFECT THIS PINS. Both `render_master_ladder_progress` and
+# `render_plan_landed_roll_up` emit the literal words "LANDED on `origin/main`",
+# but every fact they render comes from the state file's `landed` array. Nothing
+# ever asked Git whether those SHAs were reachable from the remote, so a slice
+# counted as REMOTELY landed at local-commit time. On 2026-08-03 local `main`
+# sat 21 commits ahead of `origin/main` with three of 0.8.21's five slices
+# unpushed while the plan asserted all five were on `origin/main` in full, and
+# this gate passed. Without these arms the defect returns the next time a
+# steward commits without pushing.
+#
+# The baseline fixture has no remote at all, which is why arm 0 stays green:
+# with no `origin/main` to consult the claim is unverifiable, not false.
+remote_fixture() {
+  setup_fixture
+  (
+    cd "$FIX"
+    git branch -M main
+    git init -q --bare "$TMPROOT/remote.git"
+    git remote add origin "$TMPROOT/remote.git"
+    git push -q origin main
+
+    # Slice 0 -> the pushed baseline commit (reachable from origin/main).
+    # Slice 5 -> a commit made AFTER the push (local only). This is the drift.
+    pushed="$(git rev-parse --short HEAD)"
+    echo "local-only change" >local-only.txt
+    git add local-only.txt && git commit -qm 'local: not pushed'
+    unpushed="$(git rev-parse --short HEAD)"
+
+    python3 - "$pushed" "$unpushed" <<'PY'
+import json, sys
+p = "dev/plans/release-state-9.9.9.json"
+st = json.load(open(p))
+for e in st["ladder"]:
+    if e["slice"] == 0:  e["sha"] = sys.argv[1]
+    if e["slice"] == 5:  e["sha"] = sys.argv[2]
+json.dump(st, open(p, "w"), indent=2)
+PY
+    # Regenerate the views so the ONLY fault under test is the push state,
+    # never a stale render.
+    ./scripts/check-release-state-views.sh --write >/dev/null 2>&1
+    git add -A && git commit -qm 'fixture: real SHAs, one unpushed'
+  )
+}
+
+remote_fixture
+run_gate
+if [ "$RC" -ne 0 ] && printf '%s' "$OUT" | grep -q 'not reachable from origin/main'; then
+  pass "arm R: a landed SHA absent from origin/main HARD-fails on \`main\`"
+else
+  fail "arm R (unpushed landed SHA must fail on main): rc=$RC out=$OUT"
+fi
+
+if printf '%s' "$OUT" | grep -q 'slice 5'; then
+  pass "arm R: the failure NAMES the offending slice, not just a count"
+else
+  fail "arm R (must name slice 5): out=$OUT"
+fi
+
+if printf '%s' "$OUT" | grep -q 'slice 0'; then
+  fail "arm R: slice 0 IS on origin/main and must not be reported: out=$OUT"
+else
+  pass "arm R: a slice that IS on origin/main is not falsely reported"
+fi
+
+# --- Arm R2: pushing the commit turns the claim true -----------------------
+(cd "$FIX" && git push -q origin main)
+run_gate
+if [ "$RC" -eq 0 ] && ! printf '%s' "$OUT" | grep -q 'not reachable'; then
+  pass "arm R2: once pushed, the origin/main claim verifies and the gate is green"
+else
+  fail "arm R2 (green after push): rc=$RC out=$OUT"
+fi
+
+# --- Arm R3: ADVISORY on a branch, HARD only on `main` ---------------------
+# A PR branch legitimately carries a landed SHA the remote lacks — that is what
+# the PR is for. Hard-failing there would block the merge that resolves it.
+(
+  cd "$FIX"
+  git checkout -q -b feature/in-flight
+  echo "branch change" >branch-only.txt
+  git add branch-only.txt && git commit -qm 'branch: not pushed'
+  python3 - "$(git rev-parse --short HEAD)" <<'PY'
+import json, sys
+p = "dev/plans/release-state-9.9.9.json"
+st = json.load(open(p))
+for e in st["ladder"]:
+    if e["slice"] == 5:  e["sha"] = sys.argv[1]
+json.dump(st, open(p, "w"), indent=2)
+PY
+  ./scripts/check-release-state-views.sh --write >/dev/null 2>&1
+  git add -A && git commit -qm 'fixture: in-flight slice on a branch'
+)
+run_gate
+if [ "$RC" -eq 0 ] && printf '%s' "$OUT" | grep -q 'Advisory on a non-`main` branch'; then
+  pass "arm R3: the same condition is ADVISORY on a non-main branch (exit 0)"
+else
+  fail "arm R3 (advisory off main): rc=$RC out=$OUT"
+fi
+
+# --- Arm R4: the guard is not vacuous -------------------------------------
+# The first implementation of this check keyed its enablement off a state-file
+# key that does not exist (`slices` rather than `ladder`), so it ran on nothing
+# and every arm above would have passed against a no-op. Prove the code path
+# actually executes by asserting it reports on a repo that HAS a remote.
+if printf '%s' "$OUT" | grep -q '9.9.9 claims'; then
+  pass "arm R4: the guard actually executes and names the release (not a no-op)"
+else
+  fail "arm R4 (guard must not be vacuous): out=$OUT"
+fi
+
 if [ "$FAILED" -gt 0 ]; then
   printf '\n%d test(s) failed\n' "$FAILED" >&2
   exit 1
