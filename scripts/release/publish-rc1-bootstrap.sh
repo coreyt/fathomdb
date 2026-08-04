@@ -34,7 +34,18 @@ for c in "${TIERS[@]}"; do
   # Idempotent: skip if RC_VERSION appears anywhere in the
   # crate's sparse-index version list.
   url="https://index.crates.io/$(sparse_path "$c")"
-  if curl -fsS "$url" 2>/dev/null | grep -qF "\"vers\":\"${RC_VERSION}\""; then
+  # NOT `curl … | grep -qF …`. A crate with many published versions serves a
+  # sparse-index page far larger than the pipe buffer; `grep -qF` leaves at the
+  # first match, curl dies of SIGPIPE, `pipefail` makes 141 the rc of the `if`
+  # condition, and `set -e` is suspended inside a condition — so the SKIP below
+  # is bypassed and `cargo publish` re-runs against a version that is ALREADY on
+  # crates.io. Silent, on the real-money path, and MORE likely the more versions
+  # exist. Fetch the page into a variable (curl's own rc is still honoured: a
+  # 404 for a never-published crate short-circuits to false and falls through to
+  # publish, exactly as before) and match in-process — no pipe, no second tool.
+  index=""
+  if index="$(curl -fsS "$url" 2>/dev/null)" \
+     && [[ "$index" == *"\"vers\":\"${RC_VERSION}\""* ]]; then
     printf 'SKIP  %s %s already on crates.io\n' "$c" "$RC_VERSION"
     continue
   fi

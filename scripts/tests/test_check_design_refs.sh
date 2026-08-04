@@ -764,8 +764,15 @@ fi
 if [ ! -f "$GATE" ]; then
   fail "arm 17d (scrub ordering): $GATE does not exist, so the assertion is vacuous"
 else
-  CO_LINE="$(grep -n '^[[:space:]]*if ! git checkout-index' "$GATE" | head -1 | cut -d: -f1)"
-  UNSET_LINE="$(grep -n '^[[:space:]]*unset GIT_DIR' "$GATE" | head -1 | cut -d: -f1)"
+  # `grep -m1`, NOT `grep … | head -1`: `head` closes the pipe at line 1 while
+  # grep is still scanning the rest of this multi-hundred-line gate, so grep can
+  # die of SIGPIPE and `pipefail` aborts the whole suite with "write error:
+  # Broken pipe". That is the exact shape that failed in CI on 2026-08-04
+  # (fixed at its own site in 308f7922) — this is the structurally closest twin.
+  # `grep -m1` stops the producer itself, and `cut` reads to EOF, so nothing
+  # exits early. Same value, same rc.
+  CO_LINE="$(grep -n -m1 '^[[:space:]]*if ! git checkout-index' "$GATE" | cut -d: -f1)"
+  UNSET_LINE="$(grep -n -m1 '^[[:space:]]*unset GIT_DIR' "$GATE" | cut -d: -f1)"
   if [ -n "$CO_LINE" ] && [ -n "$UNSET_LINE" ] && [ "$CO_LINE" -lt "$UNSET_LINE" ]; then
     pass "the GIT_* scrub follows the last real-repo read (checkout-index=$CO_LINE, unset=$UNSET_LINE)"
   else

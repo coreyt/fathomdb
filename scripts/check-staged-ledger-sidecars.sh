@@ -159,7 +159,15 @@ for sc in "${TOUCHED[@]}"; do
   # exactly when a ledger is most likely to be resolved wrongly, and clearing a
   # commit whose content the gate could not read is the fail-open this repo's
   # other gates all guard against.
-  if git ls-files --unmerged -- "$sc" "$lg" | grep -q .; then
+  # NOT `git ls-files --unmerged -- … | grep -q .`. `grep -q` exits at its first
+  # match with `git` still writing; git then dies of SIGPIPE, `pipefail` makes
+  # 141 the rc of the `if` condition, and `set -e` does not apply inside a
+  # condition — so the refusal below is silently skipped and this gate clears a
+  # mid-conflict commit whose content it could not read. That is the fail-open
+  # this comment says it exists to prevent, and it runs on EVERY commit via
+  # scripts/hooks/pre-commit. Read the producer to completion, then test.
+  unmerged="$(git ls-files --unmerged -- "$sc" "$lg")"
+  if [ -n "$unmerged" ]; then
     printf 'FAIL check-staged-ledger-sidecars: `%s` and/or `%s` are UNMERGED, so the\n' "$lg" "$sc" >&2
     printf '  content that would be committed cannot be read. Resolve the conflict and\n' >&2
     printf '  `git add` BOTH files, then commit.\n' >&2

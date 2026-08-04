@@ -188,7 +188,11 @@ run_orient() {
   OUT="$(cat "$TMPROOT/out.txt")"
   ERR="$(cat "$TMPROOT/err.txt")"
   BYTES="$(wc -c <"$TMPROOT/out.txt" | tr -d ' ')"
-  SANDBOX_RESIDUE="$(find "$sandbox" -mindepth 1 | head -5)"
+  # NOT `find … | head -5`: `find` is an unbounded producer and `head` leaves
+  # after 5 lines, so on a big residue leak find dies of SIGPIPE and `pipefail`
+  # aborts the harness — precisely in the case this variable exists to report.
+  # `awk` truncates without ever closing the pipe early. Same first-5 value.
+  SANDBOX_RESIDUE="$(find "$sandbox" -mindepth 1 | awk 'NR <= 5')"
 }
 
 tree_snapshot() { find "$1" -path '*/.git' -prune -o -printf '%p %s\n' | sort; }
@@ -517,7 +521,10 @@ fi
 if [ "$BEFORE" = "$AFTER" ]; then
   pass "writes no file — the fixture tree is byte-identical before/after"
 else
-  fail "arm 2 (fixture tree mutated): $(diff <(printf '%s' "$BEFORE") <(printf '%s' "$AFTER") | head -10)"
+  # `awk 'NR <= 10'`, not `| head -10`: head would close the pipe on `diff`
+  # mid-write and SIGPIPE it, which on a large mutation would replace the
+  # diagnostic with an empty one. awk reads to EOF. Same first-10 lines.
+  fail "arm 2 (fixture tree mutated): $(diff <(printf '%s' "$BEFORE") <(printf '%s' "$AFTER") | awk 'NR <= 10')"
 fi
 if [ -z "$SANDBOX_RESIDUE" ]; then
   pass "writes no file — the run's entire TMPDIR is empty afterwards"
@@ -697,12 +704,12 @@ if [ -n "$CI_JOB_BLOCK" ]; then
 else
   fail "ci.yml has no steward-orient job"
 fi
-if printf '%s' "$CI_JOB_BLOCK" | grep -q 'scripts/tests/test_steward_orient.sh'; then
+if grep -q 'scripts/tests/test_steward_orient.sh' <<<"$CI_JOB_BLOCK"; then
   pass "the CI job runs THIS suite (not a reimplementation)"
 else
   fail "the CI job must invoke scripts/tests/test_steward_orient.sh"
 fi
-if printf '%s' "$CI_JOB_BLOCK" | grep -qE '^\s*(if|needs):'; then
+if grep -qE '^\s*(if|needs):' <<<"$CI_JOB_BLOCK"; then
   fail "the steward-orient job must be ALWAYS-ON (no if:/needs:); block: $CI_JOB_BLOCK"
 else
   pass "the steward-orient job is always-on (no if:, no needs:, not docs_only-gated)"

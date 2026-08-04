@@ -330,7 +330,15 @@ for name in $ARTIFACTS; do
         echo "smoke:        installed: $OUT_INSTALLED/$name" >&2
         echo "smoke:        source:    $OUT_SOURCE/$name" >&2
         echo "smoke:        first 20 diff lines:" >&2
-        diff "$OUT_INSTALLED/$name" "$OUT_SOURCE/$name" 2>&1 | head -20 | sed 's/^/smoke:        /' >&2
+        # NOT `diff … | head -20 | sed …`: `head` leaves after 20 lines while
+        # `diff` is still writing, diff dies of SIGPIPE, and `pipefail` turns a
+        # clear "these artifacts differ" diagnostic into a confusing abort on
+        # exactly the large diffs that matter most. Capture the diff (rc 1 is
+        # the expected "they differ" here — `cmp -s` already established that),
+        # then let `awk` do the truncation: awk reads to EOF, so there is no
+        # early consumer and nothing to race.
+        DIFF_OUT="$(diff "$OUT_INSTALLED/$name" "$OUT_SOURCE/$name" 2>&1 || true)"
+        printf '%s\n' "$DIFF_OUT" | awk 'NR <= 20 { print "smoke:        " $0 }' >&2
         exit 1
     fi
     echo "smoke: byte-identical: $name"
