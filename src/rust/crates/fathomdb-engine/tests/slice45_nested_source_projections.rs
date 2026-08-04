@@ -3,8 +3,8 @@
 //! a real database; SQLite is read only as an at-rest oracle.
 
 use fathomdb_engine::{
-    Engine, EngineError, InitialState, ProjectionFts, ProjectionRole, ProjectionSpec, ReadView,
-    SearchFilter, SoftFallbackBranch, SourceId,
+    Engine, EngineError, InitialState, LifecycleState, ProjectionFts, ProjectionRole,
+    ProjectionSpec, ReadView, SearchFilter, SoftFallbackBranch, SourceId,
 };
 use fathomdb_schema::SQLITE_SUFFIX;
 use proptest::prelude::*;
@@ -64,6 +64,26 @@ fn eav_values(path: &Path, name: &str) -> Vec<String> {
         .map(|row| row.expect("row"))
         .collect();
     values
+}
+
+fn property_fts_match(path: &Path, name: &str, query: &str) -> Vec<i64> {
+    let conn = rusqlite::Connection::open_with_flags(
+        path,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_URI,
+    )
+    .expect("open read only");
+    let rows = conn
+        .prepare(
+            "SELECT write_cursor FROM property_search_index
+         WHERE attr_name = ?1 AND property_search_index MATCH ?2
+         ORDER BY write_cursor",
+        )
+        .expect("prepare")
+        .query_map([name, query], |row| row.get::<_, i64>(0))
+        .expect("query")
+        .map(|row| row.expect("row"))
+        .collect();
+    rows
 }
 
 #[test]
@@ -255,6 +275,83 @@ fn source_change_requires_drop_before_nested_backfill_validation() {
         engine.configure_projections(&[changed], &[]),
         Err(EngineError::ProjectionDestructive { .. })
     ));
+}
+
+#[test]
+fn nested_source_rewrite_and_explicit_source_change_clear_old_derived_rows() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir, "nested_cleanup_rewrite_source_change");
+    let opened = Engine::open(path.clone()).unwrap();
+    let engine = &opened.engine;
+    let old = nested_spec(
+        "field",
+        &["attributes", "old", "value"],
+        &[ProjectionRole::Filterable, ProjectionRole::Searchable],
+        true,
+    );
+    engine.configure_projections(std::slice::from_ref(&old), &[]).unwrap();
+    engine
+        .write(&[node(
+            "rewrite",
+            "slice45:rewrite",
+            r#"{"attributes":{"old":{"value":"stale-rewrite"},"new":{"value":"new-source"}}}"#,
+        )])
+        .unwrap();
+    engine
+        .write(&[node(
+            "rewrite",
+            "slice45:rewrite",
+            r#"{"attributes":{"old":{"value":"fresh-rewrite"},"new":{"value":"new-source"}}}"#,
+        )])
+        .unwrap();
+    assert_eq!(eav_values(&path, "field"), vec!["fresh-rewrite"]);
+    assert!(property_fts_match(&path, "field", "stale").is_empty());
+    assert_eq!(property_fts_match(&path, "field", "fresh").len(), 1);
+
+    let changed = nested_spec(
+        "field",
+        &["attributes", "new", "value"],
+        &[ProjectionRole::Filterable, ProjectionRole::Searchable],
+        true,
+    );
+    engine.configure_projections(&[changed], &["field".to_string()]).unwrap();
+    assert_eq!(eav_values(&path, "field"), vec!["new-source"]);
+    assert!(property_fts_match(&path, "field", "fresh").is_empty());
+    assert_eq!(property_fts_match(&path, "field", "new").len(), 1);
+}
+
+#[test]
+fn nested_source_delete_purge_and_erasure_remove_derived_rows() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir, "nested_cleanup_lifecycle_erasure");
+    let opened = Engine::open(path.clone()).unwrap();
+    let engine = &opened.engine;
+    let spec = nested_spec(
+        "field",
+        &["attributes", "core:field", "value"],
+        &[ProjectionRole::Filterable, ProjectionRole::Searchable],
+        true,
+    );
+    engine.configure_projections(&[spec], &[]).unwrap();
+    engine
+        .write(&[
+            node(
+                "delete",
+                "slice45:delete",
+                r#"{"attributes":{"core:field":{"value":"delete-me"}}}"#,
+            ),
+            node("erase", "slice45:erase", r#"{"attributes":{"core:field":{"value":"erase-me"}}}"#),
+        ])
+        .unwrap();
+    engine.transition("delete", LifecycleState::Deleted, Some("test delete".to_string())).unwrap();
+    assert_eq!(eav_values(&path, "field"), vec!["erase-me"]);
+    assert!(property_fts_match(&path, "field", "delete").is_empty());
+    engine.purge("delete").unwrap();
+    assert_eq!(eav_values(&path, "field"), vec!["erase-me"]);
+
+    engine.erase_source("slice45:erase").unwrap();
+    assert!(eav_values(&path, "field").is_empty());
+    assert!(property_fts_match(&path, "field", "erase").is_empty());
 }
 
 #[test]
