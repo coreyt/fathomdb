@@ -6,14 +6,14 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-CI="${CI:-$REPO_ROOT/.github/workflows/ci.yml}"
+CI_YML="${CI_YML:-$REPO_ROOT/.github/workflows/ci.yml}"
 
 FAILED=0
 pass() { printf 'PASS  %s\n' "$1"; }
 fail() { printf 'FAIL  %s\n' "$1" >&2; FAILED=$((FAILED + 1)); }
 
-if [ ! -f "$CI" ]; then
-  fail "ci.yml not found at $CI"
+if [ ! -f "$CI_YML" ]; then
+  fail "ci.yml not found at $CI_YML"
   exit 1
 fi
 
@@ -21,7 +21,7 @@ concurrency_block="$(awk '
   /^concurrency:$/ { in_concurrency = 1; next }
   in_concurrency && /^[^[:space:]]/ { exit }
   in_concurrency { print }
-' "$CI")"
+' "$CI_YML")"
 
 if [ -z "$concurrency_block" ]; then
   fail "ci.yml must define top-level workflow concurrency"

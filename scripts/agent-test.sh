@@ -271,6 +271,7 @@ run_suite test-agent-lint-actionlint-version bash scripts/tests/test_agent_lint_
 run_suite test-agent-typecheck-pyright-version bash scripts/tests/test_agent_typecheck_pyright_version.sh
 run_suite test-pyright-pin-consistency bash scripts/tests/test_pyright_pin_consistency.sh
 run_suite test-ci-run-hygiene bash scripts/tests/test_ci_run_hygiene.sh
+run_suite test-ci-run-hygiene-ci-env bash scripts/tests/test_ci_run_hygiene_ci_env.sh
 
 # TC-37 recurrence guard: agent-lint-md.sh must HARD-fail (not skip_notice/exit 0)
 # when markdownlint-cli2 is genuinely unresolvable. Builds its own throwaway
