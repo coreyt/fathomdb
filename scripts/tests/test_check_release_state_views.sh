@@ -1655,6 +1655,24 @@ else
   fail "arm R7 (malformed terminal state): rc=$RC out=$OUT"
 fi
 
+# The inverse is equally dangerous: a completed ladder carrying a numeric next
+# slice would fabricate work for the next commission.
+setup_fixture
+python3 - "$FIX/dev/plans/release-state-9.9.9.json" <<'PY'
+import json, sys
+p = sys.argv[1]
+s = json.load(open(p))
+s["remaining_ladder"] = []
+json.dump(s, open(p, "w"), indent=2)
+PY
+run_gate
+if [ "$RC" -ne 0 ] && grep -q 'remaining_ladder' <<<"$OUT" \
+   && grep -q 'next_slice' <<<"$OUT"; then
+  pass "empty remaining ladder with numeric next_slice HARD-fails as malformed state"
+else
+  fail "arm R8 (fabricated next slice): rc=$RC out=$OUT"
+fi
+
 if [ "$FAILED" -gt 0 ]; then
   printf '\n%d test(s) failed\n' "$FAILED" >&2
   exit 1
