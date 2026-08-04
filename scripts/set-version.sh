@@ -226,13 +226,19 @@ read_pyproject_version() {
   ' "$PYPROJ"
 }
 
+# NOT `sed … | head -1`: `head` closes the pipe at line 1 while `sed` is still
+# reading the rest of the file, so sed can die of SIGPIPE and `pipefail` makes
+# that the rc of the function. The producer stops ITSELF instead — the address
+# is the same regex, `s//\1/p` reuses it, and `q` quits at the first match. Same
+# value, same rc (0 with empty output when there is no match), no early
+# consumer to race.
 read_npm_version() {
-  sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$NPMPKG" | head -1
+  sed -n '/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/{s//\1/p;q;}' "$NPMPKG"
 }
 
 # Read the first "version" from an arbitrary package.json (platform pkgs).
 read_npm_version_file() {
-  sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$1" | head -1
+  sed -n '/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/{s//\1/p;q;}' "$1"
 }
 
 # Returns the literal text of the version line inside [package] of the
@@ -274,8 +280,12 @@ _toml_version_line() {
 }
 
 # Line number of the first "version" key in a JSON file.
+# `grep -m1` rather than `grep … | head -1`: grep stops itself after the first
+# match, so nothing closes the pipe early and grep cannot be SIGPIPEd. `cut`
+# reads to EOF, so it is not an early-exiting consumer. rc is unchanged — 0 on
+# a match, 1 on none (which `pipefail` still propagates exactly as before).
 _json_version_line() {
-  grep -n '"version"' "$1" | head -1 | cut -d: -f1
+  grep -n -m1 '"version"' "$1" | cut -d: -f1
 }
 
 # Emit a structured drift diagnostic: `<file>:<line>: version drift —
@@ -360,7 +370,8 @@ check_files() {
     case "$line" in
       version.workspace[[:space:]]*=[[:space:]]*true) ;;
       '')
-        pkg_line="$(grep -n '^\[package\]' "$manifest" | head -1 | cut -d: -f1)"
+        # `grep -m1`, not `grep … | head -1` — see _json_version_line.
+        pkg_line="$(grep -n -m1 '^\[package\]' "$manifest" | cut -d: -f1)"
         _drift "$manifest" "${pkg_line:-1}" "<missing>" "version.workspace = true"
         rc=1
         ;;
@@ -387,11 +398,11 @@ check_files() {
       *)                     expected="$ws"  ;;
     esac
     if [ -z "$dep_ver" ]; then
-      line_no="$(grep -nE "^${dep_name}[[:space:]]*=" "$CARGO" | head -1 | cut -d: -f1)"
+      line_no="$(grep -nE -m1 "^${dep_name}[[:space:]]*=" "$CARGO" | cut -d: -f1)"
       _drift "$CARGO" "${line_no:-1}" "<missing version>" "$expected"
       rc=1
     elif [ "$dep_ver" != "$expected" ]; then
-      line_no="$(grep -nE "^${dep_name}[[:space:]]*=" "$CARGO" | head -1 | cut -d: -f1)"
+      line_no="$(grep -nE -m1 "^${dep_name}[[:space:]]*=" "$CARGO" | cut -d: -f1)"
       _drift "$CARGO" "${line_no:-1}" "$dep_ver" "$expected"
       rc=1
     fi

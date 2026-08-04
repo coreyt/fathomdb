@@ -14,6 +14,38 @@ FAILED=0
 pass() { printf 'PASS  %s\n' "$1"; }
 fail() { printf 'FAIL  %s\n' "$1" >&2; FAILED=$((FAILED + 1)); }
 
+# Line number (1-based, within $2) of the first line containing fixed string
+# $1; EMPTY when there is genuinely no match.
+#
+# This replaces `grep -nF … | head -n1 | cut -d: -f1 || true`. That idiom has
+# two defects and the `|| true` is the worse one: `head -n1` closes the pipe
+# while grep is still scanning, so grep can be SIGPIPEd, and `|| true` then
+# converts that crash into an EMPTY STRING — indistinguishable from "the CI job
+# does not warm the cache". The ordering assertions downstream simply skip
+# themselves on an empty value, so a broken pipe would report a silent
+# non-result. A wrong answer is worse than an abort.
+#
+# Here `grep -m1` stops the producer itself (nothing exits early, so there is
+# nothing to race) and the rc is read explicitly: 0 = match, 1 = no match, and
+# anything else is a real failure that returns non-zero and, under `set -e`,
+# aborts loudly instead of being laundered into "".
+first_match_line_no() {
+  local needle="$1" haystack="$2" hit rc
+  set +e
+  hit="$(grep -nF -m1 -e "$needle" <<<"$haystack")"
+  rc=$?
+  set -e
+  case "$rc" in
+    0) printf '%s' "${hit%%:*}" ;;
+    1) : ;;
+    *)
+      printf 'test_ts_cache_coverage_split: grep failed (rc=%d) searching for `%s`\n' \
+        "$rc" "$needle" >&2
+      return "$rc"
+      ;;
+  esac
+}
+
 if [ ! -f "$AGENT_TEST" ] || [ ! -f "$CI" ]; then
   fail "agent-test.sh and ci.yml must exist"
   exit 1
@@ -120,11 +152,11 @@ else
     pass "dedicated default-embedder test inherits only the warm-cache failure gate"
   fi
 
-  warm_line="$(grep -nF 'Warm BGE embedder cache' <<<"$default_embedder_block" | head -n1 | cut -d: -f1 || true)"
-  npm_ci_line="$(grep -nF 'npm ci' <<<"$default_embedder_block" | head -n1 | cut -d: -f1 || true)"
-  native_build_line="$(grep -nF 'npm run build:native:debug' <<<"$default_embedder_block" | head -n1 | cut -d: -f1 || true)"
-  tsc_line="$(grep -nF 'npm exec -- tsc -p tsconfig.json' <<<"$default_embedder_block" | head -n1 | cut -d: -f1 || true)"
-  emitted_test_line="$(grep -nF 'RELEASE_SURFACE_TESTS=1 node --test' <<<"$default_embedder_block" | head -n1 | cut -d: -f1 || true)"
+  warm_line="$(first_match_line_no 'Warm BGE embedder cache' "$default_embedder_block")"
+  npm_ci_line="$(first_match_line_no 'npm ci' "$default_embedder_block")"
+  native_build_line="$(first_match_line_no 'npm run build:native:debug' "$default_embedder_block")"
+  tsc_line="$(first_match_line_no 'npm exec -- tsc -p tsconfig.json' "$default_embedder_block")"
+  emitted_test_line="$(first_match_line_no 'RELEASE_SURFACE_TESTS=1 node --test' "$default_embedder_block")"
   if [ -n "$warm_line" ] && [ -n "$npm_ci_line" ] && [ -n "$native_build_line" ] && \
     [ -n "$tsc_line" ] && [ -n "$emitted_test_line" ] && \
     [ "$warm_line" -lt "$npm_ci_line" ] && [ "$npm_ci_line" -lt "$native_build_line" ] && \

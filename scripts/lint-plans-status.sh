@@ -26,6 +26,30 @@ cd "$(git rev-parse --show-toplevel)"
 ALLOWED_RE='^(ACTIVE|COMPLETE|PROPOSED|SUPERSEDED|UNKNOWN)$'
 FAIL=0
 
+# The first line of $2 matching ERE $1; EMPTY only when there is genuinely no
+# match. Replaces `printf '%s\n' "$block" | grep -E … | head -n1 || true`: the
+# `|| true` converted a SIGPIPE from the early-exiting `head` (or any grep
+# error) into "", which this linter then reports as "missing a `status:` key" —
+# a wrong verdict, which is worse than an abort. `grep -m1` stops the producer
+# itself, and rc 0/1 is classified while anything else returns non-zero and
+# aborts under `set -e`. Kept byte-parallel with lint-design-status.sh's copy
+# for the same reason ALLOWED_RE is duplicated rather than shared.
+first_matching_line() {
+  local re="$1" text="$2" hit rc
+  set +e
+  hit="$(grep -m1 -E -e "$re" <<<"$text")"
+  rc=$?
+  set -e
+  case "$rc" in
+    0) printf '%s' "$hit" ;;
+    1) : ;;
+    *)
+      printf 'lint-plans-status: grep failed (rc=%d) matching `%s`\n' "$rc" "$re" >&2
+      return "$rc"
+      ;;
+  esac
+}
+
 # No exceptions: the rule is total over dev/plans/*.md (top-level). An earlier
 # revision carved out dev/plans/plan-0.8.20.md while it was under a "do not
 # touch" hard constraint from the commissioning brief; that constraint was
@@ -46,7 +70,7 @@ for f in dev/plans/*.md; do
   # Frontmatter block = the lines strictly between the first `---` and the
   # next line that is exactly `---`.
   block="$(awk 'NR==1{next} /^---$/{exit} {print}' "$f")"
-  status_line="$(printf '%s\n' "$block" | grep -E '^status:[[:space:]]*' | head -n1 || true)"
+  status_line="$(first_matching_line '^status:[[:space:]]*' "$block")"
 
   if [ -z "$status_line" ]; then
     printf 'FAIL %s: frontmatter present but missing a `status:` key\n' "$f" >&2

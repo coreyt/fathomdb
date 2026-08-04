@@ -240,7 +240,15 @@ if [ "$STAGED_ONLY" -eq 1 ]; then
   # CANNOT-CERTIFY #1 — an unmerged index has no stage 0, so there is no single
   # "content that will be committed" to snapshot. Loud, then out of the way: see
   # THE RESIDUAL in the header for why this is exit 0 and not a refusal.
-  if git ls-files --unmerged | grep -q .; then
+  # NOT `git ls-files --unmerged | grep -q .`. `grep -q` leaves at its first
+  # match while `git` is still writing, so on a long conflict list git dies of
+  # SIGPIPE, `pipefail` makes 141 the rc of the condition, and `set -e` is
+  # suspended inside `if` — the condition evaluates FALSE and this warning is
+  # silently skipped. It would fail open exactly when it should fire, because
+  # only a long list can lose that race. Read the producer to completion into a
+  # variable and test the value: no early consumer, so nothing to race.
+  UNMERGED="$(git ls-files --unmerged)"
+  if [ -n "$UNMERGED" ]; then
     printf 'check-design-refs: NOT CHECKED — the index has UNMERGED paths, so the content\n' >&2
     printf '  that will be committed cannot be snapshotted. Design coverage for this commit\n' >&2
     printf '  is UNVERIFIED (TC-92). Resolve the conflict and re-run:\n' >&2

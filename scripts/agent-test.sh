@@ -400,6 +400,12 @@ run_suite test-release-surface-repo-root bash scripts/tests/test_release_surface
 run_suite test-release-surface-native-api bash scripts/tests/test_release_surface_native_api.sh
 run_suite test-ts-cache-coverage-no-rg bash scripts/tests/test_ts_cache_coverage_split_no_rg.sh
 
+# SIGPIPE / fail-open guards over the shell gates (0.8.21 Slice 25, from
+# dev/design/ci-verify-robustness-review.md §3.1.2-§3.1.3). Deterministic: each
+# arm shims only the PRODUCER with a megabyte-scale one, so the pipe-buffer race
+# that the real sites lose intermittently is lost every single time.
+run_suite test-shell-pipefail-guards bash scripts/tests/test_shell_pipefail_guards.sh
+
 # Collect-all summary — the deliverable. Prints every suite's outcome (full
 # table on any FAIL or AGENT_VERBOSE=1; a one-line summary otherwise) and
 # exits: 0 iff zero FAILs, 1 if any FAIL, 2 for a harness usage error (an

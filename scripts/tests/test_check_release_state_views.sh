@@ -878,12 +878,34 @@ REAL_NEXT="$(python3 -c '
 import json, sys
 print(json.load(open(sys.argv[1])).get("next_slice"))' "$REAL_PLAN_STATE")"
 if [ "$REAL_NEXT" = "None" ]; then
-  if [ -z "$REAL_PLAN_PATH" ] \
-     && ! rg -q 'BEGIN GENERATED release-state:0\.8\.20:plan-immediate-next' \
-       "$REPO_ROOT/dev/plans/plan-0.8.20.md"; then
-    pass "real repo — end-of-ladder state retires the generated next-slice pointer instead of fabricating one"
+  # This arm USED to read `! rg -q <marker> <plan>`. `rg` is not in this repo's
+  # guaranteed tool baseline (§2.4B: three CI runs lost to `rg: command not
+  # found`, and there is a dedicated `test-ts-cache-coverage-no-rg` suite), and
+  # an absent rg exits 127, which `!` inverts to TRUE — so the arm reported
+  # `pass` WITHOUT EVER OPENING THE FILE. That is a TC-37 vacuous pass, and it
+  # is the worse direction of the rg hazard: the 2026-08-01 incident failed
+  # loudly and wrongly, this one passed silently and wrongly.
+  #
+  # Fixed three ways: (a) the tool is `grep`, which is POSIX and used
+  # throughout this file already; (b) the file's existence is asserted, since
+  # `grep` on a missing file also exits non-zero and would invert the same way;
+  # (c) the rc is READ EXPLICITLY, so "no match" (1) is distinguished from
+  # "the tool could not run" (>=2 / 127), and only the former can pass.
+  REAL_PLAN_MD="$REPO_ROOT/dev/plans/plan-0.8.20.md"
+  if [ ! -f "$REAL_PLAN_MD" ]; then
+    fail "arm 10f: $REAL_PLAN_MD is missing, so the retired-pointer assertion cannot be evaluated (a check that cannot run must not pass — TC-37)"
   else
-    fail "arm 10f: end-of-ladder state must retire plan-immediate-next and its markers; path=$REAL_PLAN_PATH"
+    set +e
+    grep -qF 'BEGIN GENERATED release-state:0.8.20:plan-immediate-next' "$REAL_PLAN_MD"
+    MARKER_RC=$?
+    set -e
+    if [ "$MARKER_RC" -gt 1 ]; then
+      fail "arm 10f: grep could not read $REAL_PLAN_MD (rc=$MARKER_RC) — the marker check did not run, so it does not pass"
+    elif [ -z "$REAL_PLAN_PATH" ] && [ "$MARKER_RC" -eq 1 ]; then
+      pass "real repo — end-of-ladder state retires the generated next-slice pointer instead of fabricating one"
+    else
+      fail "arm 10f: end-of-ladder state must retire plan-immediate-next and its markers; path=$REAL_PLAN_PATH marker_rc=$MARKER_RC"
+    fi
   fi
 elif [ -z "$REAL_PLAN_PATH" ]; then
   fail "arm 10f: a live next_slice requires a declared plan-immediate-next view — TC-89's pointer is hand-written"
@@ -892,7 +914,16 @@ elif [ ! -f "$REPO_ROOT/$REAL_PLAN_PATH" ]; then
 else
   RPB='<!-- BEGIN GENERATED release-state:0.8.20:plan-immediate-next -->'
   RPE='<!-- END GENERATED release-state:0.8.20:plan-immediate-next -->'
-  REAL_PTR="$(perl -0777 -ne 'print $1 if /\Q'"$RPB"'\E(.*?)\Q'"$RPE"'\E/s' "$REPO_ROOT/$REAL_PLAN_PATH")"
+  # `perl` is the second undeclared tool dependency in this file (§3.1.3). It is
+  # kept — extracting a multi-line region between two literal markers is what it
+  # is for — but its absence is now named, not left to abort the suite mid-arm
+  # with a bare 127. Absent tool => loud FAIL, never a pass and never a skip.
+  if ! command -v perl >/dev/null 2>&1; then
+    fail "arm 10f: perl is not on PATH, so the generated region could not be read — the check did not run, and a check that cannot run does not pass (TC-37)"
+    REAL_PTR=""
+  else
+    REAL_PTR="$(perl -0777 -ne 'print $1 if /\Q'"$RPB"'\E(.*?)\Q'"$RPE"'\E/s' "$REPO_ROOT/$REAL_PLAN_PATH")"
+  fi
   if [ -n "$REAL_PTR" ] \
      && [ "$REAL_NEXT" != "None" ] \
      && grep -qF "IMMEDIATE NEXT: Slice $REAL_NEXT" <<<"$REAL_PTR"; then

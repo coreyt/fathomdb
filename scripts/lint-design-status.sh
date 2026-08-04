@@ -74,6 +74,31 @@ FAIL=0
 SCANNED=0
 LEGACY_SEEN=0
 
+# The first line of $2 matching ERE $1; EMPTY only when there is genuinely no
+# match. Replaces `printf '%s\n' "$block" | grep -E … | head -n1 || true`, whose
+# `|| true` was the real hazard: `head -n1` closes the pipe under the producer,
+# and the `|| true` then turns a SIGPIPE (or any grep error) into "" — which
+# this linter reads as "the file has no `status:` key" and reports as a FAIL
+# naming the wrong cause, or, at the `superseded_by:` site, as a FAIL against a
+# document that is perfectly well-formed. `grep -m1` stops the producer itself,
+# and the rc is classified: 0 match, 1 no match, anything else returns non-zero
+# and aborts under `set -e` rather than being laundered into an empty string.
+first_matching_line() {
+  local re="$1" text="$2" hit rc
+  set +e
+  hit="$(grep -m1 -E -e "$re" <<<"$text")"
+  rc=$?
+  set -e
+  case "$rc" in
+    0) printf '%s' "$hit" ;;
+    1) : ;;
+    *)
+      printf 'lint-design-status: grep failed (rc=%d) matching `%s`\n' "$rc" "$re" >&2
+      return "$rc"
+      ;;
+  esac
+}
+
 # find (not a glob): the scan must be RECURSIVE, unlike the top-level-only
 # dev/plans scope. -print0 so a path with whitespace cannot split.
 while IFS= read -r -d '' f; do
@@ -106,7 +131,7 @@ while IFS= read -r -d '' f; do
   # Frontmatter block = the lines strictly between the first `---` and the
   # next line that is exactly `---`.
   block="$(awk 'NR==1{next} /^---$/{exit} {print}' "$f")"
-  status_line="$(printf '%s\n' "$block" | grep -E '^status:[[:space:]]*' | head -n1 || true)"
+  status_line="$(first_matching_line '^status:[[:space:]]*' "$block")"
 
   if [ -z "$status_line" ]; then
     printf 'FAIL %s: frontmatter present but missing a `status:` key\n' "$f" >&2
@@ -124,7 +149,7 @@ while IFS= read -r -d '' f; do
   if grep -qE "$ALLOWED_RE" <<<"$value"; then
     # Governed value. SUPERSEDED must name a successor.
     if [ "$value" = "SUPERSEDED" ]; then
-      superseded_by="$(printf '%s\n' "$block" | grep -E '^superseded_by:[[:space:]]*' | head -n1 || true)"
+      superseded_by="$(first_matching_line '^superseded_by:[[:space:]]*' "$block")"
       target="$(printf '%s\n' "$superseded_by" | sed -E 's/^superseded_by:[[:space:]]*//; s/[[:space:]]+$//')"
       if [ -z "$target" ]; then
         printf 'FAIL %s: status SUPERSEDED requires a non-empty `superseded_by:` key\n' "$f" >&2
