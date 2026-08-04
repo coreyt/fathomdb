@@ -355,4 +355,16 @@ done <"$REPO_ROOT/scripts/shellcheck-sc2312-ratchet.txt"
 [ "$stale" -eq 0 ] || fail_arm "arm H: scripts/shellcheck-sc2312-ratchet.txt has rotted"
 printf 'PASS  arm H: every entry in the real ratchet is tracked and still non-clean\n'
 
+# A rebase can reintroduce a masked command substitution into a fixture without
+# touching either ratchet. Keep this shallow-clone regression source SC2312
+# clean under the exact optional check the gate enforces; unrelated historical
+# default-rule findings are covered by that gate's separate default-ruleset leg.
+STATE_VIEWS_FIXTURE="$REPO_ROOT/scripts/tests/test_check_release_state_views.sh"
+if "$REAL_SHELLCHECK" --severity=style --include=SC2312 \
+  --format=quiet -- "$STATE_VIEWS_FIXTURE"; then
+  printf 'PASS  arm J: release-state shallow-clone fixture is ShellCheck-clean\n'
+else
+  fail_arm "arm J: release-state shallow-clone fixture must be ShellCheck-clean"
+fi
+
 printf 'All shellcheck gate tests passed\n'
