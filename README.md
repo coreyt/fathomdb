@@ -18,8 +18,9 @@ operator CLI.
 - Optional in-process default embedder (`bge-small-en-v1.5`, pure Rust).
 
 **Status: 0.8.20, pre-1.0 beta.** The surface may change between micro
-releases. 0.8.20 has not been published to crates.io / PyPI / npm; publishing
-is a separate, gated step. Licensed **MIT** (see `LICENSE`).
+releases. v0.8.20 is published; native Python and npm artifacts are currently
+available only for Linux x86_64/glibc, and npm is on the `next` dist-tag.
+Licensed **MIT** (see `LICENSE`).
 
 Public documentation: `docs/` (built with `mkdocs build --strict`).
 Changes since 0.8.9: `CHANGELOG.md`.
@@ -35,7 +36,7 @@ Repository layout:
 
 Implementation roots:
 
-- Rust workspace members live under `src/rust/crates/`
+- Nine Rust workspace members live under `src/rust/crates/`
 - Python package root lives under `src/python/`
 - TypeScript package root lives under `src/ts/`
 

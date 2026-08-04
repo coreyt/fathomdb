@@ -101,7 +101,7 @@ if ! command -v python3 >/dev/null 2>&1; then
 fi
 
 MODE="$MODE" QUIET="$QUIET" python3 - <<'PY'
-import glob, json, os, sys
+import json, os, subprocess, sys
 
 MODE  = os.environ["MODE"]
 QUIET = os.environ["QUIET"] == "1"
@@ -118,6 +118,78 @@ def bad(msg):
     global fail
     fail = 1
     sys.stderr.write(msg.rstrip("\n") + "\n")
+
+
+# ---------------------------------------------------------------------------
+# Remote-landing guard.
+#
+# WHY THIS EXISTS. `render_master_ladder_progress` and
+# `render_plan_landed_roll_up` both emit the literal words "LANDED on
+# `origin/main`", but every fact they render comes from the state file's
+# `landed` array. Neither ever asked Git whether those SHAs are reachable from
+# the remote, so a slice was declared REMOTELY landed the instant it was
+# written to the state file — which is local-commit time. On 2026-08-03 local
+# `main` sat 21 commits ahead of `origin/main` with three of 0.8.21's five
+# slices (0, 15, 20) unpushed, while the plan asserted all five were on
+# `origin/main` in full. The board could not have caught it: it was
+# structurally incapable of reporting the gap it was asserting away.
+#
+# WHY THIS IS A SEPARATE CHECK AND NOT A RENDER CHANGE. This script's contract
+# is that committed Markdown equals generated Markdown. If the rendered STRING
+# varied with local push state, the generated text would differ between a
+# steward's checkout and CI, and every in-flight slice would report a spurious
+# view mismatch. So the render stays deterministic over the state file and the
+# push fact is verified alongside it.
+#
+# WHY IT IS ADVISORY OFF `main`. A PR branch legitimately carries a landed SHA
+# that is not yet on `origin/main` — that is what the PR is for. Hard-failing
+# there would block the very merge that resolves it. On `main`, the same
+# condition is exactly the drift above and is a HARD failure.
+# ---------------------------------------------------------------------------
+def _git(*args):
+    r = subprocess.run(["git", "--no-optional-locks"] + list(args),
+                       check=False, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    return r.returncode, r.stdout.decode("utf-8", "replace").strip()
+
+
+def check_remote_landing(release, st):
+    """Verify every `landed` SHA is reachable from `origin/main`."""
+    if _git("rev-parse", "--verify", "--quiet", "origin/main")[0] != 0:
+        return  # No remote-tracking ref (fresh or detached clone): unverifiable.
+
+    by = _by_slice(st)
+    unpushed = []
+    for n in st["landed"]:
+        sha = by[n]["sha"]
+        rc, _ = _git("rev-parse", "--verify", "--quiet", sha + "^{commit}")
+        if rc != 0:
+            unpushed.append((n, sha, "not a commit in this repository"))
+            continue
+        if _git("merge-base", "--is-ancestor", sha, "origin/main")[0] != 0:
+            unpushed.append((n, sha, "not reachable from origin/main"))
+
+    if not unpushed:
+        return
+
+    detail = "\n".join("    slice %s (`%s`) — %s" % (_slice_str(n), sha, why)
+                       for n, sha, why in unpushed)
+    # `--write` REGENERATES; it does not assert. Hard-failing it would make the
+    # views unregenerable precisely while a slice is unpushed — the state this
+    # guard exists to surface — so the steward could not repair the document
+    # without first defeating the check.
+    on_main = (_git("rev-parse", "--abbrev-ref", "HEAD")[1] == "main"
+               and MODE != "write")
+    headline = (
+        "check-release-state-views: %s claims %d slice(s) LANDED on `origin/main`\n"
+        "  that the remote does not carry:\n%s\n"
+        "  The generated views state `origin/main` as a fact. Push the branch (or\n"
+        "  merge its PR) so the claim becomes true, or correct `landed` in the\n"
+        "  state file." % (release, len(unpushed), detail))
+    if on_main:
+        bad("FAIL " + headline)
+    elif not QUIET:
+        sys.stderr.write("warn  " + headline + "\n"
+                         "  Advisory on a non-`main` branch: expected while the PR is open.\n")
 
 # ---------------------------------------------------------------------------
 # Renderers. One per view id. Each takes the parsed state dict and returns the
@@ -475,9 +547,25 @@ RENDERERS = {
 }
 
 # ---------------------------------------------------------------------------
-# Discover state files.
+# Discover tracked inputs. A stale linked worktree's state or Markdown copy is
+# not this checkout's contract and cannot affect its generated-view verdict.
 # ---------------------------------------------------------------------------
-state_paths = sorted(glob.glob("dev/plans/release-state-*.json"))
+def tracked(pattern):
+    result = subprocess.run(
+        ["git", "--no-optional-locks", "ls-files", "-z", "--", pattern],
+        check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+    )
+    if result.returncode:
+        raise RuntimeError(result.stderr.decode("utf-8", "replace").strip())
+    return sorted(p.decode("utf-8") for p in result.stdout.split(b"\0") if p)
+
+try:
+    state_paths = tracked(":(glob)dev/plans/release-state-*.json")
+    markdown_paths = tracked(":(glob)**/*.md")
+except RuntimeError as exc:
+    print("FAIL check-release-state-views: cannot list tracked inputs — %s" % exc,
+          file=sys.stderr)
+    sys.exit(2)
 if not state_paths:
     bad("FAIL check-release-state-views: ZERO release-state files discovered under\n"
         "  dev/plans/release-state-*.json. The check loop never ran, so a pass here\n"
@@ -507,6 +595,11 @@ for sp in state_paths:
             "  and nothing about it is checkable. A state file that gates nothing is a\n"
             "  vacuous pass, not a pass (TC-37)." % sp)
         continue
+
+    # The `origin/main` claim the views are about to render is a fact about the
+    # remote, not about this state file. Verify it before rendering it.
+    if isinstance(st.get("landed"), list) and st.get("ladder"):
+        check_remote_landing(release, st)
 
     for view in views:
         vid  = view.get("id")
@@ -584,36 +677,33 @@ for sp in state_paths:
             % (path, vid, sp, have, want, sp))
 
 # ---------------------------------------------------------------------------
-# RULE 3 — orphan-marker scan (the confinement rule).
+# RULE 3 — orphan-marker scan (the confinement rule), over tracked Markdown
+# only. Scanning the physical worktree makes an unrelated stale linked worktree
+# a false owner and violates the single-checkout contract.
 # ---------------------------------------------------------------------------
-PRUNE = {".git", "node_modules", "target", ".venv", "site", "dist", ".cache", ".wake"}
-for root, dirs, files in os.walk("."):
-    dirs[:] = [d for d in dirs if d not in PRUNE]
-    for name in files:
-        if not name.endswith(".md"):
-            continue
-        p = os.path.relpath(os.path.join(root, name), ".")
-        try:
-            with open(p, encoding="utf-8", errors="replace") as fh:
-                text = fh.read()
-        except OSError:
-            continue
-        if MARKER_PREFIX not in text:
-            continue
-        for line in text.split("\n"):
-            k = line.find(MARKER_PREFIX)
-            while k != -1:
-                end = line.find("-->", k)
-                if end == -1:
-                    bad("FAIL %s: unterminated generated-region BEGIN marker." % p)
-                    break
-                marker = line[k:end + 3]
-                if (p, marker) not in declared:
-                    bad("FAIL %s: ORPHAN generated-region marker\n    %s\n"
-                        "  No release-state file declares this view for this file. Generated\n"
-                        "  regions are confined to the locations a state file names; a marker\n"
-                        "  anywhere else is unowned and unchecked." % (p, marker))
-                k = line.find(MARKER_PREFIX, end + 3)
+for p in markdown_paths:
+    try:
+        with open(p, encoding="utf-8", errors="replace") as fh:
+            text = fh.read()
+    except OSError:
+        bad("FAIL %s: tracked Markdown input could not be read." % p)
+        continue
+    if MARKER_PREFIX not in text:
+        continue
+    for line in text.split("\n"):
+        k = line.find(MARKER_PREFIX)
+        while k != -1:
+            end = line.find("-->", k)
+            if end == -1:
+                bad("FAIL %s: unterminated generated-region BEGIN marker." % p)
+                break
+            marker = line[k:end + 3]
+            if (p, marker) not in declared:
+                bad("FAIL %s: ORPHAN generated-region marker\n    %s\n"
+                    "  No release-state file declares this view for this file. Generated\n"
+                    "  regions are confined to the locations a state file names; a marker\n"
+                    "  anywhere else is unowned and unchecked." % (p, marker))
+            k = line.find(MARKER_PREFIX, end + 3)
 
 # ---------------------------------------------------------------------------
 # Vacuity guard + report.

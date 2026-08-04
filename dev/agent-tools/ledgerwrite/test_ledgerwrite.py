@@ -47,6 +47,367 @@ def read_lines(path):
         return [ln for ln in fh.read().splitlines() if ln]
 
 
+def todos_open(ledger, summary="open item", kind="todo", status="open"):
+    return call(
+        [
+            ledger,
+            "--profile",
+            "todos",
+            "--open",
+            "--kind",
+            kind,
+            "--summary",
+            summary,
+            "--field",
+            f"status={status}",
+        ]
+    )
+
+
+# --- todos profile ----------------------------------------------------------
+
+
+def test_todos_profile_parallel_opens_allocate_distinct_immutable_ids(tmp_path):
+    ledger = str(tmp_path / "todos.jsonl")
+    script = os.path.join(HERE, "ledgerwrite.py")
+    procs = [
+        subprocess.Popen(
+            [
+                sys.executable,
+                script,
+                ledger,
+                "--profile",
+                "todos",
+                "--open",
+                "--kind",
+                "todo",
+                "--summary",
+                f"open-{i}",
+                "--field",
+                "status=open",
+                "--quiet",
+            ]
+        )
+        for i in range(12)
+    ]
+    assert all(proc.wait() == 0 for proc in procs)
+    records = [json.loads(line) for line in read_lines(ledger)]
+    ids = [record["id"] for record in records]
+    assert len(ids) == len(set(ids)) == 12
+    assert all(lw.TODOS_ID_RE.fullmatch(item_id) for item_id in ids)
+
+
+def test_todos_profile_open_rejects_caller_chosen_or_reused_id(tmp_path):
+    ledger = str(tmp_path / "todos.jsonl")
+    rc, _, err = call(
+        [
+            ledger,
+            "--profile",
+            "todos",
+            "--open",
+            "--kind",
+            "todo",
+            "--summary",
+            "do not reuse IDs",
+            "--field",
+            "id=TC-1",
+            "--field",
+            "status=open",
+        ]
+    )
+    assert rc == 2
+    assert "allocates id" in err
+    assert not os.path.exists(ledger)
+
+
+def test_todos_profile_update_requires_current_expected_seq(tmp_path):
+    ledger = str(tmp_path / "todos.jsonl")
+    rc, out, _ = todos_open(ledger)
+    assert rc == 0
+    opened = json.loads(out)
+    update = [
+        ledger,
+        "--profile",
+        "todos",
+        "--kind",
+        "todo",
+        "--summary",
+        "started",
+        "--field",
+        f"id={opened['id']}",
+        "--field",
+        "status=in-progress",
+        "--expected-prior-seq",
+        str(opened["seq"]),
+    ]
+    assert call(update)[0] == 0
+    stale = update[:-1] + [str(opened["seq"])]
+    rc, _, err = call(stale)
+    assert rc == 2
+    assert "expected prior seq" in err
+
+
+@pytest.mark.parametrize(
+    "kind,status,error",
+    [
+        ("caveat", "in-progress", "kind is immutable"),
+        ("todo", "bogus", "invalid todos status"),
+    ],
+)
+def test_todos_profile_rejects_kind_mutation_and_illegal_status(tmp_path, kind, status, error):
+    ledger = str(tmp_path / "todos.jsonl")
+    rc, out, _ = todos_open(ledger)
+    assert rc == 0
+    opened = json.loads(out)
+    rc, _, err = call(
+        [
+            ledger,
+            "--profile",
+            "todos",
+            "--kind",
+            kind,
+            "--summary",
+            "bad update",
+            "--field",
+            f"id={opened['id']}",
+            "--field",
+            f"status={status}",
+            "--expected-prior-seq",
+            str(opened["seq"]),
+        ]
+    )
+    assert rc == 2
+    assert error in err
+
+
+def test_todos_profile_rejects_illegal_terminal_transition(tmp_path):
+    ledger = str(tmp_path / "todos.jsonl")
+    _, out, _ = todos_open(ledger)
+    opened = json.loads(out)
+    done = [
+        ledger,
+        "--profile",
+        "todos",
+        "--kind",
+        "todo",
+        "--summary",
+        "done",
+        "--field",
+        f"id={opened['id']}",
+        "--field",
+        "status=done",
+        "--expected-prior-seq",
+        str(opened["seq"]),
+    ]
+    assert call(done)[0] == 0
+    rc, _, err = call(
+        [
+            ledger,
+            "--profile",
+            "todos",
+            "--kind",
+            "todo",
+            "--summary",
+            "after terminal",
+            "--field",
+            f"id={opened['id']}",
+            "--field",
+            "status=open",
+            "--expected-prior-seq",
+            "2",
+        ]
+    )
+    assert rc == 2
+    assert "illegal todos status transition" in err
+
+
+def test_todos_profile_rejects_reopening_in_progress_item(tmp_path):
+    ledger = str(tmp_path / "todos.jsonl")
+    _, out, _ = todos_open(ledger)
+    opened = json.loads(out)
+    started = [
+        ledger,
+        "--profile",
+        "todos",
+        "--kind",
+        "todo",
+        "--summary",
+        "started",
+        "--field",
+        f"id={opened['id']}",
+        "--field",
+        "status=in-progress",
+        "--expected-prior-seq",
+        str(opened["seq"]),
+    ]
+    assert call(started)[0] == 0
+    rc, _, err = call(started[:-1] + ["2"] + ["--field", "status=open"])
+    assert rc == 2
+    assert "illegal todos status transition" in err
+
+
+def test_todos_profile_accepts_a_legacy_tc_numeric_id_on_update(tmp_path):
+    ledger = str(tmp_path / "todos.jsonl")
+    rc, _, _ = call(
+        [
+            ledger,
+            "--kind",
+            "todo",
+            "--summary",
+            "legacy open",
+            "--field",
+            "id=TC-42",
+            "--field",
+            "status=open",
+        ]
+    )
+    assert rc == 0
+    rc, out, err = call(
+        [
+            ledger,
+            "--profile",
+            "todos",
+            "--kind",
+            "todo",
+            "--summary",
+            "legacy started",
+            "--field",
+            "id=TC-42",
+            "--field",
+            "status=in-progress",
+            "--expected-prior-seq",
+            "1",
+        ]
+    )
+    assert rc == 0, err
+    assert json.loads(out)["id"] == "TC-42"
+
+
+@pytest.mark.parametrize(
+    "item_id,kind,status,next_status",
+    [
+        ("TC-91", "observation", "placed", "in-progress"),
+        ("TC-53", "todo", "resolved", "done"),
+        ("OOS-18", "observation", "placed", "watching"),
+        ("TC-99-VEC0", "observation", "closed", "done"),
+        ("TC-33", "open_question", "open", "done"),
+        ("TC-55", "open-question", "open", "done"),
+        ("TC-45", "decision", "placed", "done"),
+        ("TC-7", "reconcile", "resolved", "done"),
+    ],
+)
+def test_todos_profile_updates_real_retained_legacy_shapes(
+    tmp_path, item_id, kind, status, next_status
+):
+    """Fixtures mirror retained IDs/kinds/statuses, not invented compatibility."""
+    ledger = str(tmp_path / "todos.jsonl")
+    assert call(
+        [
+            ledger,
+            "--kind",
+            kind,
+            "--summary",
+            "retained item",
+            "--field",
+            f"id={item_id}",
+            "--field",
+            f"status={status}",
+        ]
+    )[0] == 0
+    rc, _, err = call(
+        [
+            ledger,
+            "--profile",
+            "todos",
+            "--kind",
+            kind,
+            "--summary",
+            "profiled update",
+            "--field",
+            f"id={item_id}",
+            "--field",
+            f"status={next_status}",
+            "--expected-prior-seq",
+            "1",
+        ]
+    )
+    assert rc == 0, err
+
+
+@pytest.mark.parametrize(
+    "argv_fragment,error",
+    [
+        (["--field", "id=TC-404", "--field", "status=open", "--expected-prior-seq", "1"], "does not exist"),
+        (["--field", "id=TC-42", "--field", "status=in-progress", "--expected-prior-seq", "99"], "expected prior seq"),
+        (["--field", "id=TC-42", "--field", "status=open", "--expected-prior-seq", "1"], "illegal todos status transition"),
+    ],
+)
+def test_todos_profile_dry_run_validates_history_without_writing(tmp_path, argv_fragment, error):
+    ledger = str(tmp_path / "todos.jsonl")
+    assert call(
+        [
+            ledger,
+            "--kind",
+            "todo",
+            "--summary",
+            "terminal legacy fixture",
+            "--field",
+            "id=TC-42",
+            "--field",
+            "status=done",
+        ]
+    )[0] == 0
+    before = open(ledger, encoding="utf-8").read()
+    rc, out, err = call(
+        [ledger, "--profile", "todos", "--kind", "todo", "--summary", "dry run"]
+        + argv_fragment
+        + ["--dry-run"]
+    )
+    assert rc == 2
+    assert out == ""
+    assert error in err
+    assert open(ledger, encoding="utf-8").read() == before
+
+
+def test_todos_profile_dry_run_accepts_legacy_shape_without_writing(tmp_path):
+    ledger = str(tmp_path / "todos.jsonl")
+    assert call(
+        [
+            ledger,
+            "--kind",
+            "observation",
+            "--summary",
+            "retained TC-91 shape",
+            "--field",
+            "id=TC-91",
+            "--field",
+            "status=placed",
+        ]
+    )[0] == 0
+    before = open(ledger, encoding="utf-8").read()
+    rc, out, err = call(
+        [
+            ledger,
+            "--profile",
+            "todos",
+            "--kind",
+            "observation",
+            "--summary",
+            "dry-run compatibility check",
+            "--field",
+            "id=TC-91",
+            "--field",
+            "status=in-progress",
+            "--expected-prior-seq",
+            "1",
+            "--dry-run",
+        ]
+    )
+    assert rc == 0, err
+    assert json.loads(out)["id"] == "TC-91"
+    assert open(ledger, encoding="utf-8").read() == before
+
+
 # --- happy path -------------------------------------------------------------
 
 

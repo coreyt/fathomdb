@@ -4,9 +4,9 @@ The `fathomdb` Python SDK is a [PyO3](https://pyo3.rs/) binding over the
 native Rust runtime. Published wheels are platform-tagged (no source build
 required on supported platforms).
 
-> **0.8.20 is not published yet.** Publishing 0.8.20 to PyPI is a separate,
-> gated step that has not run. Until it does, use the from-source path below.
-> FathomDB is pre-1.0 and the surface is **beta**.
+> **0.8.20 is published to PyPI** for Linux x86_64/glibc only. Other hosts
+> must use the from-source path below. FathomDB is pre-1.0 and the surface is
+> **beta**.
 
 ## Requirements
 
@@ -17,7 +17,7 @@ required on supported platforms).
   extension available to the loader (statically linked into the wheel
   for supported platforms).
 
-## Install (once 0.8.20 is published)
+## Install the published wheel
 
 ```bash
 pip install fathomdb==0.8.20

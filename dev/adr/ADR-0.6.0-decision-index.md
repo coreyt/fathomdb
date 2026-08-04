@@ -102,6 +102,12 @@ Slice-0 gate before Slices 15 and 25 open.
 | 38  | acceptance   | IR-measure/eval design — R0 candidate-recall CDF spec (found@K K∈{50..1000}, per-class, all arms; gates Slice 10 rerank depth) + R2 end-to-end Mem0/Zep parity eval (identical-answerer, local Mem0-OSS baseline, per-class; Decision ①: AC-077 gate, R2 north-star; C3: gates R3 go/no-go)            | decision-ready, HITL-sign-off-pending | ADR-0.8.1-ir-measure-eval-design.md                  |
 | 39  | architecture | Graph substrate G11 migration — activates H3 reservation (HITL-signed 2026-06-05); step-14 SCHEMA_VERSION 13→14; additive `body`/`t_valid`/`t_invalid`/`confidence`/`extractor_model_id` columns on `canonical_edges`; edge projectability capability (FTS+vector; mechanism = Slice 15 impl detail); invalidate-not-accumulate contract | decision-ready, HITL-sign-off-pending | ADR-0.8.1-graph-substrate-g11-migration.md            |
 
+## Phase 0.8.20 (release-artifact decision)
+
+| # | Category | Candidate decision | HITL verdict | ADR file |
+| - | -------- | ------------------ | ------------ | -------- |
+| 40 | release | Linux AArch64 native artifacts — native manylinux Python wheel, unscoped npm platform package, and native registry smokes while macOS/Windows/musl remain deferred | accepted (HITL 2026-08-02) | ADR-0.8.20-linux-aarch64-native-artifacts.md |
+
 ## Categories
 
 acceptance | architecture | design | interface.

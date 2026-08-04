@@ -76,6 +76,8 @@ run_suite test-set-version bash scripts/tests/test_set_version.sh
 
 # Scripts (bash): release-cut fields deliberately outside set-version.sh.
 run_suite test-release-version-surfaces bash scripts/tests/test_release_version_surfaces.sh
+run_suite test-platform-capabilities bash scripts/tests/test_platform_capabilities.sh
+run_suite test-public-doc-truth bash scripts/tests/test_public_doc_truth.sh
 
 # Scripts (bash): 0.8.20 R-20-HARNESS ("Slice 39.5", no ladder slot) —
 # recurrence guard for the collect-all conversion of THIS script: proves
@@ -221,6 +223,7 @@ run_suite test-release-workflow-scope bash scripts/tests/test_release_workflow_s
 # Slice 40 / seq-234: Linux x86_64 is the 0.8.20 native-artifact scope.
 # Static assertions here complement actionlint's workflow syntax/schema check.
 run_suite test-linux-first-platform-scope bash scripts/tests/test_linux_first_platform_scope.sh
+run_suite test-linux-aarch64-release-artifacts bash scripts/tests/test_linux_aarch64_release_artifacts.sh
 
 # Slice 40: the CI verify job must leave enough time for its clean bootstrap
 # plus the same full agent-verify gate required locally.
@@ -333,6 +336,8 @@ run_suite test-ci-rust-workspace-gate bash scripts/tests/test_ci_rust_workspace_
 #   3. `#[ignore]` on the test itself — holds no matter which features are
 #      selected, so `--all-features` still would not run the body.
 # Verify by inspection only (`-- --list --ignored`), never by running it.
+run_suite test-aarch64-candle-feature-closure bash scripts/tests/test_aarch64_candle_feature_closure.sh
+run_suite test-aarch64-candle-cpu bash scripts/tests/test_aarch64_candle_cpu.sh
 run_suite test-rust bash scripts/test-rust-workspace.sh --serial
 
 # Python

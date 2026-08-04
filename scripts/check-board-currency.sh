@@ -138,11 +138,12 @@
 #             board/state contradiction or unreadable state file (TC-133).
 set -euo pipefail
 
-# The CLOSED-board predicate is SHARED with scripts/steward-orient.sh (which
-# selects the live board and derives the release from its filename) so the two
-# cannot drift apart on which release is current. Resolved from this script's
-# own directory BEFORE the cd below, so it works from any cwd.
-_CBC_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib"
+# The legacy CLOSED-banner predicate remains for pre-release-state fixtures and
+# historical boards. A modern checkout delegates current-release selection to
+# release-current.py below, which additionally recognizes a published state as
+# closure even if its retained board predates the CLOSED banner.
+_CBC_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+_CBC_LIB_DIR="$_CBC_SCRIPT_DIR/lib"
 # shellcheck source=lib/board-closed.sh
 . "$_CBC_LIB_DIR/board-closed.sh"
 
@@ -172,18 +173,18 @@ fi
 # (commission-manifest.sh, check-release-state-views.sh).
 # ---------------------------------------------------------------------------
 cbc_cross_read() {
-  local ver="$1" board="$2" state="$3"
+  local ver="$1" board="$2" state="$3" allow_concise="$4"
   if ! command -v python3 >/dev/null 2>&1; then
     printf 'STALE  %s: python3 is not on PATH, so the board/state cross-read (TC-133) could not run — the gate cannot vouch for %s\n' \
       "$ver" "$board" >&2
     return 1
   fi
-  python3 - "$ver" "$board" "$state" <<'CROSS_READ_PY'
+  python3 - "$ver" "$board" "$state" "$allow_concise" <<'CROSS_READ_PY'
 import json
 import re
 import sys
 
-ver, board_path, state_path = sys.argv[1], sys.argv[2], sys.argv[3]
+ver, board_path, state_path, allow_concise = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4] == "1"
 
 
 def err(msg):
@@ -320,6 +321,11 @@ while i < len(board_lines):
 bad = False
 
 if tables == 0:
+    if allow_concise:
+        err("note   %s: %s intentionally carries no ladder table; canonical "
+            "release-state SHA ancestry facts were checked instead."
+            % (ver, board_path))
+        sys.exit(0)
     err("STALE  %s: %s carries no ladder table (no `| Slice | ... | Status |` "
         "header row followed by a delimiter row), so the board/state cross-read "
         "(TC-133) would vouch for nothing. A live board with a release-state "
@@ -595,10 +601,76 @@ sys.exit(0)
 CROSS_READ_PY
 }
 
+# Emit `slice<TAB>sha` for a canonical current state with authoritative landed
+# facts. Empty output means the caller must retain the legacy merge-subject
+# predicate (e.g. a pre-first-land foundation or an old fixture). Any malformed
+# non-empty landed set is a hard error: machine facts must never be partial.
+cbc_machine_lands() {
+  local state="$1"
+  python3 - "$state" <<'MACHINE_LANDS_PY'
+import json
+import sys
+
+path = sys.argv[1]
+try:
+    with open(path, encoding="utf-8") as fh:
+        state = json.load(fh)
+    landed = state.get("landed")
+    if not isinstance(landed, list):
+        raise ValueError("`landed` is not a JSON array")
+    if not landed:
+        raise SystemExit(0)
+    ladder = state.get("ladder")
+    if not isinstance(ladder, list):
+        raise ValueError("`ladder` is not a JSON array")
+    by_slice = {}
+    for entry in ladder:
+        if not isinstance(entry, dict) or "slice" not in entry:
+            raise ValueError("`ladder` contains a non-object or entry without `slice`")
+        key = str(entry["slice"])
+        if key in by_slice:
+            raise ValueError("`ladder` contains duplicate slice %s" % key)
+        by_slice[key] = entry
+    for slice_id in landed:
+        key = str(slice_id)
+        entry = by_slice.get(key)
+        if entry is None:
+            raise ValueError("landed slice %s has no ladder entry" % key)
+        sha = entry.get("sha")
+        if not isinstance(sha, str) or not sha:
+            raise ValueError("landed slice %s has no non-empty ladder sha" % key)
+        print("%s\t%s" % (key, sha))
+except SystemExit:
+    raise
+except Exception as exc:
+    print("STALE  machine release-state facts in %s are invalid: %s" % (path, exc), file=sys.stderr)
+    raise SystemExit(1)
+MACHINE_LANDS_PY
+}
+
 STALE=0
 
-shopt -s nullglob
-for board in "$BOARDS_DIR"/STATUS-0.8.*.md; do
+# Inputs are tracked paths, never a physical directory walk: stale nested
+# worktrees and scratch boards cannot affect this checkout's currency verdict.
+mapfile -d '' -t TRACKED_BOARDS < <(git ls-files -z -- "$BOARDS_DIR")
+FILTERED_BOARDS=()
+for board in "${TRACKED_BOARDS[@]}"; do
+  case "$(basename "$board")" in STATUS-0.8.*.md) FILTERED_BOARDS+=("$board") ;; esac
+done
+
+# For the canonical board directory, use the same authority as steward-orient.
+# Legacy fixtures and pre-writer historical releases intentionally fall back to
+# the banner predicate when no conforming resolver tuple exists.
+CURRENT_BOARD=""
+CURRENT_STATE=""
+if [ "$BOARDS_DIR" = "dev/plans/runs" ] && CURRENT="$($_CBC_SCRIPT_DIR/release-current.py 2>/dev/null)"; then
+  IFS=$'\t' read -r _CURRENT_VER CURRENT_BOARD CURRENT_STATE <<<"$CURRENT"
+  if [ -n "$CURRENT_BOARD" ]; then
+    FILTERED_BOARDS=("$CURRENT_BOARD")
+  fi
+fi
+
+for board in "${FILTERED_BOARDS[@]}"; do
   # Closed boards are self-labelled and frozen -- never scanned (see predicate
   # above). The 15-line header window (not 5) and its rationale live in
   # scripts/lib/board-closed.sh, sourced above and shared with steward-orient.sh.
@@ -612,7 +684,30 @@ for board in "$BOARDS_DIR"/STATUS-0.8.*.md; do
   fi
   ver_escaped="$(printf '%s' "$ver" | sed 's/\./\\./g')"
 
+  MACHINE_MODE=0
+  if [ "$board" = "$CURRENT_BOARD" ] && [ -n "$CURRENT_STATE" ]; then
+    if MACHINE_LANDS="$(cbc_machine_lands "$CURRENT_STATE")"; then
+      if [ -n "$MACHINE_LANDS" ]; then
+        MACHINE_MODE=1
+        while IFS=$'\t' read -r slice_n state_sha; do
+          if ! git rev-parse --verify -q "${state_sha}^{commit}" >/dev/null; then
+            printf 'STALE  %s Slice %s: release-state SHA %s does not resolve to a commit\n' \
+              "$ver" "$slice_n" "$state_sha" >&2
+            STALE=1
+          elif ! git merge-base --is-ancestor "$state_sha" "$TIP"; then
+            printf 'STALE  %s Slice %s: release-state SHA %s is not reachable from %s\n' \
+              "$ver" "$slice_n" "$state_sha" "$TIP" >&2
+            STALE=1
+          fi
+        done <<<"$MACHINE_LANDS"
+      fi
+    else
+      STALE=1
+    fi
+  fi
+
   declare -A SEEN_SLICE=()
+  if [ "$MACHINE_MODE" -eq 0 ]; then
   while IFS= read -r line; do
     [ -n "$line" ] || continue
     sha="${line%% *}"
@@ -662,12 +757,13 @@ for board in "$BOARDS_DIR"/STATUS-0.8.*.md; do
     STALE=1
   fi
   unset SEEN_SLICE
+  fi
 
   # Step 6 — TC-133 board/state cross-read. Runs UNCONDITIONALLY for every live
   # board, including one that already failed steps 3-5: the two questions are
   # independent (git ancestry vs the single-writer state file) and reporting
   # only the first would hide the second, which is how this defect survived.
-  if ! cbc_cross_read "$ver" "$board" "dev/plans/release-state-${ver}.json"; then
+  if ! cbc_cross_read "$ver" "$board" "dev/plans/release-state-${ver}.json" "$MACHINE_MODE"; then
     STALE=1
   fi
 done

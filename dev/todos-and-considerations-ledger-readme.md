@@ -6,7 +6,8 @@
 > future session (human or agent) must not lose.
 >
 > **Ledger file:** `dev/todos-and-considerations-ledger.jsonl` (one JSON record per line).
-> **This repo's id prefix:** `TC` (items are `TC-1`, `TC-2`, …).
+> **This repo's id prefix:** `TC`. New items use tool-allocated `TC-<uuid>` identities;
+> historical identities, including `TC-N`, `TC-99-VEC0`, and `OOS-18`, remain valid.
 >
 > It is **generic and portable** — the same two files (this README + the JSONL) drop
 > into any repo that has the `ledgerwrite`/`ledgerwatch` tools. See [Porting](#porting-to-another-repo).
@@ -21,8 +22,9 @@ its status, resolving it — is a **new appended record**. An item's *current* s
 **derived** by folding all records that share its `id` (the newest one wins). This is the
 same discipline the steward and enum-discussion ledgers use, enforced by the tools:
 
-- **Write** only with **`ledgerwrite`** (stamps `ts` + a monotonic `seq`; never opens the
-  ledger body). Never `echo >>`, never an editor.
+- **Write** only with **`ledgerwrite --profile todos`** (stamps `ts` + a monotonic
+  `seq`; folds this ledger under its append lock for identity/update validation).
+  Never `echo >>`, never an editor.
 - **Read** only with **`ledgerwatch`** (delta or filtered reads; O(delta), not O(file)).
 - **Never** open the `.jsonl` by hand. A stray editor save can tear a line; `--validate`
   is the integrity check.
@@ -99,6 +101,15 @@ and **changes** entry to entry. Keep them orthogonal.
 
 An item is **live** iff its latest entry's `status` is non-terminal.
 
+The profile permits normal forward movement among active states, permits a
+terminal resolution from an active state, and refuses transitions out of a
+terminal state or a return from `in-progress` to `open`. It also recognizes the
+retained legacy states `resolved`, `closed`, `placed`, `accepted`,
+`build-authorized`, `converged-pending-hitl`, and `in_progress` when updating an
+existing item; those names cannot be used to open a new item. `resolved` and
+`closed` are legacy terminal states and can only be normalized to a canonical
+terminal status.
+
 ### 2.2 Field reference
 
 | field | req? | set by | notes |
@@ -106,7 +117,7 @@ An item is **live** iff its latest entry's `status` is non-terminal.
 | `ts`, `seq` | — | tool | stamped by `ledgerwrite`; never pass them |
 | `kind` | ✅ | `--kind` | the nature (table above); immutable per `id` |
 | `summary` | ✅ | `--summary` | one line; for an update, describe the *change* |
-| `id` | ✅ | `--field id=` | stable handle `TC-<n>`; **same across the item's whole life** |
+| `id` | ✅ | `--open` or `--field id=` | new opens receive `TC-<uuid>`; legacy `TC-N` updates remain valid; **same across the item's whole life** |
 | `status` | ✅ | `--field status=` | lifecycle as of this entry |
 | `priority` | ◻ | `--field priority=` | `p0`..`p3` |
 | `owner` | ◻ | `--field owner=` | `pas` / `hitl` / `orchestrator` / a repo name / a person |
@@ -139,21 +150,12 @@ chain is walkable from either end.
 
 ## 3. The workflow (open → update → resolve)
 
-### 3.1 Pick the next `id` (open only)
+### 3.1 Open safely (the tool allocates `id`)
 
-`id`s are stable and human-readable, so allocate the next integer once, at open time. This
-is a mechanical shell op (not a context read of entries):
-
-```bash
-# highest existing TC id, or 0 if none yet:
-grep -ho '"id": "TC-[0-9]\+"' dev/todos-and-considerations-ledger.jsonl 2>/dev/null \
-  | grep -o '[0-9]\+' | sort -n | tail -1
-# → your new id is that + 1 (e.g. TC-4)
-```
-
-(Alternative allowed convention: use the **opening entry's `seq`** as `<n>` — write the open
-entry, then read the echoed `seq` and use `TC-<seq>` for all updates. Either is fine; pick one
-per repo and be consistent.)
+Never allocate a `TC-N` identity by grep, a sequence sidecar, or any local
+counter. Independently cloned worktrees can allocate the same number, so no
+local sequential scheme is globally safe. The todos profile allocates a
+collision-resistant immutable `TC-<uuid>` while holding the append lock.
 
 ### 3.2 Open an item
 
@@ -162,9 +164,9 @@ Note `status` is a `--field` (there is no `--status` flag; the only tool flags a
 
 ```bash
 dev/agent-tools/ledgerwrite/ledgerwrite.py dev/todos-and-considerations-ledger.jsonl \
-  --kind caveat \
+  --profile todos --open --kind caveat \
   --summary "Commission B future-couples to OPP-12 only if it graduates to a live-pipeline value test" \
-  --field id=TC-1 --field status=watching --field priority=p2 \
+  --field status=watching --field priority=p2 \
   --field owner=pas --field area=eval/crosssource --field epistemic=verified \
   --ref opp:OPP-12 --ref file:eval/crosssource/linker.py \
   --body "Today eval/crosssource imports nothing from src/memex, so it's independent of the OPP-12 id-contract. IF the bench later becomes an OPP-11 live-pipeline value test, it would consume SearchHit.logical_id and become downstream of Cause-A. Re-check when B moves from offline QID-join to live pipeline."
@@ -179,18 +181,20 @@ Same `id`, same `kind`, a **new** `status`/`summary`, and a back-ref to the prio
 
 ```bash
 dev/agent-tools/ledgerwrite/ledgerwrite.py dev/todos-and-considerations-ledger.jsonl \
-  --kind caveat --summary "B now going live-pipeline — coupling is now ACTIVE; gate on id-contract" \
-  --field id=TC-1 --field status=blocked --field blocked-by=OPP-12 \
-  --ref seq:1 --ref opp:OPP-12
+  --profile todos --kind caveat \
+  --summary "B now going live-pipeline — coupling is now ACTIVE; gate on id-contract" \
+  --field id=TC-<uuid> --field status=blocked --field blocked-by=OPP-12 \
+  --expected-prior-seq 1 --ref seq:1 --ref opp:OPP-12
 ```
 
 ### 3.4 Resolve (terminal)
 
 ```bash
 dev/agent-tools/ledgerwrite/ledgerwrite.py dev/todos-and-considerations-ledger.jsonl \
-  --kind todo --summary "transformers/ReFinED env conflict resolved: pinned 4.x in an isolated extra" \
-  --field id=TC-3 --field status=done --field decider=hitl \
-  --ref seq:3 --ref git:<sha>
+  --profile todos --kind todo \
+  --summary "transformers/ReFinED env conflict resolved: pinned 4.x in an isolated extra" \
+  --field id=TC-<uuid> --field status=done --field decider=hitl \
+  --expected-prior-seq 3 --ref seq:3 --ref git:<sha>
 ```
 
 `wont-do` and `superseded` are resolutions too — always leave a `--body`/`--ref` saying **why**.

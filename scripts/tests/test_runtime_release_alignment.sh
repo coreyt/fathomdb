@@ -36,10 +36,10 @@ for manifest in "$REPO_ROOT/package.json" "$REPO_ROOT/src/ts/package.json"; do
 done
 
 release="$REPO_ROOT/.github/workflows/release.yml"
-if [ "$(grep -c 'NPM_BIN: "npm"' "$release" || true)" -eq 2 ] && ! grep -q 'npx npm@latest' "$release"; then
+if [ "$(grep -c 'NPM_BIN: "npm"' "$release" || true)" -eq 3 ] && ! grep -q 'npx npm@latest' "$release"; then
   pass "release publishing uses Node-bundled npm"
 else
-  fail "release publishing must use exactly the pinned Node-bundled npm"
+  fail "release publishing must use the pinned Node-bundled npm in every npm publish job"
 fi
 
 if grep -q 'actionlint/v1.7.12/scripts/download-actionlint.bash' "$release" \
@@ -113,12 +113,14 @@ else
 fi
 
 npm_platform_block="$(job_block publish-npm-platform-linux-x64-gnu)"
+npm_platform_arm_block="$(job_block publish-npm-platform-linux-arm64-gnu)"
 npm_main_block="$(job_block publish-npm)"
 if grep -Fq "if: \${{ !($recovery_dispatch_expr) }}" <<<"$npm_platform_block" \
+  && grep -Fq "if: \${{ !($recovery_dispatch_expr) }}" <<<"$npm_platform_arm_block" \
   && grep -Fq "if: \${{ !($recovery_dispatch_expr) }}" <<<"$npm_main_block"; then
-  pass "recovery dispatch explicitly skips both npm publish jobs"
+  pass "recovery dispatch explicitly skips both platform and main npm publish jobs"
 else
-  fail "recovery dispatch must skip both npm publish jobs"
+  fail "recovery dispatch must skip both platform and main npm publish jobs"
 fi
 
 smoke_block="$(job_block post-publish-smoke)"

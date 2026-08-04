@@ -172,7 +172,12 @@ if [ -n "$EXPECT_CLOSED" ]; then
   CLOSURE_STATE='(CLOSED|LANDED)'
   CLOSURE_TOKEN="(^|[^[:alnum:]_])${CLOSURE_STATE}([^[:alnum:]_]|$)"
   NEGATED_CLOSURE="(^|[^[:alnum:]_])(NOT[[:space:]]+|UN)${CLOSURE_STATE}([^[:alnum:]_]|$)"
-  CLOSURE_WITNESS="${SLICE_LABEL}[^A-Za-z0-9]*${EXPECT_CLOSED_RE}${ID_END}.*${CLOSURE_TOKEN}|${CLOSURE_TOKEN}.*${SLICE_LABEL}[^A-Za-z0-9]*${EXPECT_CLOSED_RE}(${ID_END}|\.?$)"
+  # The generated plan roll-up lists every landed slice after one `LANDED on
+  # <ref>: Slices ...` heading. Its dependency may therefore be later in the
+  # list rather than immediately after `Slices`; keep the exact-id boundaries
+  # around that later entry.
+  ROLLUP_WITNESS="${CLOSURE_TOKEN}on.*${SLICE_LABEL}.*(^|[^0-9.])${EXPECT_CLOSED_RE}(${ID_END}|\.?$)"
+  CLOSURE_WITNESS="${SLICE_LABEL}[^A-Za-z0-9]*${EXPECT_CLOSED_RE}${ID_END}.*${CLOSURE_TOKEN}|${CLOSURE_TOKEN}.*${SLICE_LABEL}[^A-Za-z0-9]*${EXPECT_CLOSED_RE}(${ID_END}|\.?$)|${ROLLUP_WITNESS}"
   if [ -z "$PLAN" ]; then
     hard "--expect-closed $EXPECT_CLOSED given without --plan <file>"
   elif [ ! -f "$PLAN" ]; then

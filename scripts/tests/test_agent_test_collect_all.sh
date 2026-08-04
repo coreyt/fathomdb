@@ -458,8 +458,13 @@ else
   fail "arm F: absent checkout venv did not preserve system-python fallback (rc=$F_FALLBACK_RC): $F_FALLBACK_OUT"
 fi
 
-FIRST_SUITE_LINE="$(grep -nE '^[[:space:]]*run_suite[[:space:]]' "$AGENT_TEST" | head -n1 | cut -d: -f1)"
-SELECTOR_LINE="$(grep -nF 'use_checkout_venv_python_path' "$AGENT_TEST" | head -n1 | cut -d: -f1 || true)"
+# -m1 stops grep at the first match itself. Piping an unbounded grep into
+# `head -n1` lets head close the pipe while grep is still writing, so grep dies
+# on SIGPIPE ("write error: Broken pipe", rc=2) and pipefail aborts this script
+# before the assertion below ever runs. That race is invisible on a small local
+# checkout and reproducible in CI.
+FIRST_SUITE_LINE="$(grep -m1 -nE '^[[:space:]]*run_suite[[:space:]]' "$AGENT_TEST" | cut -d: -f1)"
+SELECTOR_LINE="$(grep -m1 -nF 'use_checkout_venv_python_path' "$AGENT_TEST" | cut -d: -f1 || true)"
 if [ -n "$SELECTOR_LINE" ] && [ "$SELECTOR_LINE" -lt "$FIRST_SUITE_LINE" ]; then
   pass "arm F: agent-test selects the checkout venv before its first shell-suite registration"
 else

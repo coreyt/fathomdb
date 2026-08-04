@@ -26,7 +26,7 @@ Bullet form, prescriptive, ≤300 lines. Link out, do not inline.
 
 ## 2. Repo shape
 
-- **Rust workspace** under `src/rust/crates/` — 7 crates: `fathomdb`, `fathomdb-cli`, `fathomdb-engine`, `fathomdb-query`, `fathomdb-schema`, `fathomdb-embedder`, `fathomdb-embedder-api`.
+- **Rust workspace** under `src/rust/crates/` — 9 crates: `fathomdb`, `fathomdb-cli`, `fathomdb-engine`, `fathomdb-query`, `fathomdb-schema`, `fathomdb-embedder`, `fathomdb-embedder-api`, `fathomdb-napi`, and `fathomdb-py`.
 - **Python bindings** under `src/python/` (package: `fathomdb`).
 - **TypeScript bindings** under `src/ts/`.
 - **Public docs** under `docs/` (MkDocs-built).
@@ -120,7 +120,7 @@ Do not paraphrase, summarize, or shorten compiler diagnostics — pass them thro
 - **Ledgers (append-only JSONL):** `dev/steward/steward-ledger.jsonl` (program decisions, `seq-N`) · `dev/todos-and-considerations-ledger.jsonl`. Read/write only via the `ledgerwatch` / `ledgerwrite` tools under `dev/agent-tools/` — never hand-edit.
 - **Role contracts (durable):** `dev/plans/prompts/0.8.x-STEWARD-HANDOFF.md` · `dev/plans/prompts/0.8.x-RELEASE-ORCHESTRATOR-HANDOFF.md`
 - **Session hand-offs (dated, newest wins):** `dev/plans/runs/STEWARD-SESSION-HANDOFF-<YYYY-MM-DD>-<A|B|…>.md` — the trailing letter is a per-day sequence. `scripts/steward-orient.sh` prints the newest; read that one, not the series.
-- **Workflow skills** (`.claude/commands/`): `/steward` (program scope, HITL interface) · `/orchestrate` and its alias `/orch` (release ladder) · `/decisions` (open HITL decisions).
+- **Workflow entry points:** Claude Code loads the launchers in `.claude/commands/`. Codex discovers the shared skill wrappers in `.codex/skills/`; use natural-language requests — “act as the FathomDB Program Steward”, “orchestrate this FathomDB release plan”, or “enumerate the open FathomDB HITL decisions”. ⛔ Codex TUI slash commands are reserved and cannot be repurposed, so `/steward`, `/orchestrate`, `/orch`, and `/decisions` are Claude-only. Each Codex skill loads the matching launcher and does not duplicate its workflow rules.
 - **Historical:** `dev/progress/` — frozen at 0.6.x. Read for history; never write. Superseded by the board + `dev/plans/release-state-*.json` above.
 
 ## 10. Forbidden patterns

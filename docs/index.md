@@ -8,9 +8,9 @@ documentation source for users, operators, and SDK consumers.
 > surface. FathomDB is pre-1.0: the surface is beta and may change
 > between micro releases, and 0.8.20 carries breaking changes relative
 > to 0.8.9 (typed `SearchHit.id`, mandatory `source_id` on canonical
-> writes, RRF ranking). 0.8.20 is **not yet published** to crates.io /
-> PyPI / npm — publishing is a separate, gated step — so the current
-> install path is from source. See
+> writes, RRF ranking). **v0.8.20 is published** to crates.io / PyPI /
+> npm. Native Python and npm artifacts currently cover Linux x86_64/glibc
+> only; npm installs use its `next` dist-tag. See
 > [Install](install/python.md) and the
 > [CHANGELOG](https://github.com/coreyt/fathomdb/blob/main/CHANGELOG.md).
 

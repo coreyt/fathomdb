@@ -28,11 +28,15 @@ three things `echo` cannot give you:
    pairing is the point: **write with `ledgerwrite`, read deltas with
    `ledgerwatch`, and never open the ledger by hand.**
 
-Like `ledgerwatch`, it is deliberately **generic** — it knows nothing about any
+Like `ledgerwatch`, its default path is deliberately **generic** — it knows nothing about any
 particular ledger's vocabulary. `--kind` and `--summary` are the two universal
 fields of a ledger entry; everything else is `--field k=v`, `--ref R`, `--body`.
 What the kinds *mean* is a convention of whoever owns the ledger (for the PAS
 steward ledger, that vocabulary lives in `dev/steward/DESIGN.md`).
+
+The opt-in `--profile todos` path is the one deliberate exception. It folds the
+todos ledger under the same append lock to protect item identity and updates;
+generic writes still never read a ledger body.
 
 ---
 
@@ -63,6 +67,34 @@ The `seq` counter is a `<ledger>.seq` sidecar that always lives **beside the
 ledger** — it is intrinsic to the ledger's identity, not a configurable location,
 so the same ledger can never end up with two independent counters (which would
 reuse a `seq`).
+
+### Todos profile: safe opens and guarded updates
+
+Use this profile only for `dev/todos-and-considerations-ledger.jsonl`.
+
+```bash
+# New item: tool allocates a collision-resistant immutable TC-UUID. Never grep
+# for a numeric id and never provide id= when opening.
+ledgerwrite.py dev/todos-and-considerations-ledger.jsonl --profile todos --open \
+    --kind todo --summary "verify the registry smoke" --field status=open
+
+# Update: retain id and kind, and pass the seq printed by the latest prior entry.
+ledgerwrite.py dev/todos-and-considerations-ledger.jsonl --profile todos \
+    --kind todo --summary "registry smoke is running" \
+    --field id=TC-<uuid> --field status=in-progress --expected-prior-seq 412
+```
+
+The profile requires `id`, `kind`, and `status`; only the documented todos
+vocabularies are accepted. `--open` allocates the ID while holding the ledger
+lock. Updates require `--expected-prior-seq`, reject a stale state, reject a
+kind mutation, and reject transitions out of a terminal status. All retained
+legacy IDs (including `TC-N`, `TC-99-VEC0`, and `OOS-18`) remain valid for
+updates; their existing kinds and statuses are accepted through a closed
+compatibility table, while new opens still use only the documented vocabulary.
+This is not a claim that numeric allocation can be made safe across independently
+cloned worktrees; new identities are UUIDs. Profile `--dry-run` takes the same
+non-mutating lock and performs the same history/OCC/transition validation as a
+real write; it still does not advance a sequence or create a file.
 
 **Torn-line healing.** Before appending, ledgerwrite reads the file's **last
 byte** (O(1), never into context). If the file is non-empty and that byte is not a
@@ -123,7 +155,7 @@ instead of O(file), while guaranteeing the ledger stays machine-readable for
    and a write that fails *after* the file was created removes the empty file.
 8. `--dry-run` validates and echoes without writing or advancing the counter.
 
-**Non-requirements.** It does not read, tail, query, or summarize the ledger —
+**Non-requirements.** The generic path does not read, tail, query, or summarize the ledger —
 that is `ledgerwatch`'s job. It heals only the *trailing* boundary; detecting an
 **interior** torn/corrupt line (from a bad `sed`, truncation, or editor rewrite)
 would require an O(file) parse and belongs to a reader/validator, not this append

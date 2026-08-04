@@ -41,6 +41,7 @@ import json
 import os
 import re
 import sys
+import uuid
 from datetime import datetime, timezone
 
 try:
@@ -85,6 +86,49 @@ except ImportError:  # pragma: no cover - platform fallback
 # 10 warnings (2.2%).
 
 OVERRIDE_FLAG = "--accept-shell-residue"
+
+
+# The generic writer remains vocabulary-free.  The todos profile is intentionally
+# small and opt-in: this ledger needs a stable identity and an optimistic update
+# guard, so it reads and folds its own history while holding the existing lock.
+TODOS_KINDS = {"todo", "consideration", "caveat", "observation", "question"}
+TODOS_STATUSES = {
+    "open",
+    "in-progress",
+    "blocked",
+    "watching",
+    "done",
+    "wont-do",
+    "superseded",
+}
+TODOS_TERMINAL = {"done", "wont-do", "superseded"}
+TODOS_TRANSITIONS = {
+    "open": TODOS_STATUSES,
+    "in-progress": TODOS_STATUSES - {"open"},
+    "blocked": TODOS_STATUSES,
+    "watching": TODOS_STATUSES,
+    "done": set(),
+    "wont-do": set(),
+    "superseded": set(),
+}
+TODOS_ID_RE = re.compile(
+    r"TC-(?:[0-9]+|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$"
+)
+# Retained records predate the profile. These are a closed compatibility set
+# measured from the committed todos ledger, not an open-ended alternate schema.
+LEGACY_TODOS_STATUSES = {
+    "resolved": "terminal",
+    "closed": "terminal",
+    "placed": "active",
+    "accepted": "active",
+    "build-authorized": "active",
+    "converged-pending-hitl": "active",
+    "in_progress": "active",
+}
+
+
+class TodosProfileError(Exception):
+    """A refused profile write after the ledger lock has been acquired."""
 
 
 class Finding:
@@ -360,6 +404,105 @@ def build_record(args, fields):
     return record, (set(fields) & reserved)
 
 
+def todos_shape_error(args, fields):
+    """Validate the profile-owned fields before any file is opened."""
+    if args.no_seq:
+        return "ledgerwrite: todos profile requires seq; --no-seq is not allowed"
+    if args.open:
+        if "id" in fields:
+            return "ledgerwrite: todos --open allocates id; do not pass --field id=..."
+        if args.expected_prior_seq is not None:
+            return "ledgerwrite: todos --open does not accept --expected-prior-seq"
+    else:
+        if not fields.get("id"):
+            return "ledgerwrite: todos profile requires --field id=..."
+        if args.expected_prior_seq is None:
+            return "ledgerwrite: todos update requires --expected-prior-seq"
+        if args.expected_prior_seq < 1:
+            return "ledgerwrite: --expected-prior-seq must be positive"
+    if args.open and args.kind not in TODOS_KINDS:
+        return "ledgerwrite: invalid todos kind"
+    if fields.get("status") not in TODOS_STATUSES:
+        return "ledgerwrite: invalid todos status"
+    return None
+
+
+def read_todos_records(fd):
+    """Read valid records for the opt-in profile while the caller holds flock."""
+    size = os.fstat(fd).st_size
+    if not size:
+        return []
+    data = os.pread(fd, size, 0) if hasattr(os, "pread") else os.read(fd, size)
+    records = []
+    for number, line in enumerate(data.decode("utf-8").splitlines(), 1):
+        if not line.strip():
+            continue
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise ValueError("ledger has invalid JSON at line %d" % number) from exc
+        if not isinstance(record, dict):
+            raise ValueError("ledger has non-object JSON at line %d" % number)
+        records.append(record)
+    return records
+
+
+def validate_todos_history(args, fields, records):
+    """Return an error string, or None, using the profile's folded history."""
+    by_id = {}
+    for record in records:
+        item_id = record.get("id")
+        if isinstance(item_id, str):
+            by_id[item_id] = record
+
+    if args.open:
+        item_id = "TC-" + str(uuid.uuid4())
+        # UUID collisions are fantastically unlikely, but this is the exact
+        # operation that must reject a reused identity rather than assume luck.
+        while item_id in by_id:
+            item_id = "TC-" + str(uuid.uuid4())
+        fields["id"] = item_id
+        return None
+
+    previous = by_id.get(fields["id"])
+    if previous is None:
+        return "ledgerwrite: todos update id does not exist; use --open for a new item"
+    if previous.get("kind") != args.kind:
+        return "ledgerwrite: todos kind is immutable for an existing id"
+    if previous.get("seq") != args.expected_prior_seq:
+        return "ledgerwrite: expected prior seq does not match current item state"
+    prior_status = previous.get("status")
+    if prior_status in LEGACY_TODOS_STATUSES:
+        if LEGACY_TODOS_STATUSES[prior_status] == "terminal":
+            if fields["status"] not in TODOS_TERMINAL:
+                return "ledgerwrite: illegal todos status transition from legacy terminal status"
+            return None
+        return None
+    if prior_status not in TODOS_STATUSES:
+        return "ledgerwrite: existing todos item has unsupported legacy status"
+    if fields["status"] not in TODOS_TRANSITIONS[prior_status]:
+        return "ledgerwrite: illegal todos status transition"
+    return None
+
+
+def validate_todos_dry_run(path, args, fields):
+    """Validate profile history under lock without creating or changing a file."""
+    try:
+        fd = os.open(path, os.O_RDONLY)
+    except FileNotFoundError:
+        return validate_todos_history(args, fields, [])
+    try:
+        if fcntl is not None:
+            fcntl.flock(fd, fcntl.LOCK_EX)
+        try:
+            return validate_todos_history(args, fields, read_todos_records(fd))
+        finally:
+            if fcntl is not None:
+                fcntl.flock(fd, fcntl.LOCK_UN)
+    finally:
+        os.close(fd)
+
+
 def run(argv, out=sys.stdout, err=sys.stderr) -> int:
     parser = argparse.ArgumentParser(prog="ledgerwrite", add_help=True)
     parser.add_argument("file", nargs="?")
@@ -380,6 +523,21 @@ def run(argv, out=sys.stdout, err=sys.stderr) -> int:
         help="a reference (git:sha, plan:path, seq:N); repeatable → refs[]",
     )
     parser.add_argument("--body", default=None, help="optional longer prose body")
+    parser.add_argument(
+        "--profile",
+        choices=("todos",),
+        help="opt-in ledger contract; generic writes remain vocabulary-free",
+    )
+    parser.add_argument(
+        "--open",
+        action="store_true",
+        help="create a new todos item with a tool-allocated immutable id",
+    )
+    parser.add_argument(
+        "--expected-prior-seq",
+        type=int,
+        help="todos update: seq of the current item entry being replaced",
+    )
     parser.add_argument(
         "--no-seq", action="store_true", help="do not assign a monotonic seq"
     )
@@ -419,6 +577,18 @@ def run(argv, out=sys.stdout, err=sys.stderr) -> int:
         print(f"ledgerwrite: {exc}", file=err)
         return 2
 
+    if args.open and args.profile != "todos":
+        print("ledgerwrite: --open requires --profile todos", file=err)
+        return 2
+    if args.expected_prior_seq is not None and args.profile != "todos":
+        print("ledgerwrite: --expected-prior-seq requires --profile todos", file=err)
+        return 2
+    if args.profile == "todos":
+        profile_error = todos_shape_error(args, fields)
+        if profile_error:
+            print(profile_error, file=err)
+            return 2
+
     # THE RESIDUE GUARD RUNS BEFORE --dry-run IS HONOURED, deliberately: --dry-run
     # is precisely the peek mode a careful caller uses to see what the shell did
     # to their string, so it is the LAST place the guard may be switched off. It
@@ -442,14 +612,23 @@ def run(argv, out=sys.stdout, err=sys.stderr) -> int:
     if not all(ok):
         return 2
 
-    tail, clobbered = build_record(args, fields)
-    for key in sorted(clobbered):
-        print(
-            f"ledgerwrite: --field {key}=... ignored (reserved key set by a flag)",
-            file=err,
-        )
-
     if args.dry_run:
+        if args.profile == "todos":
+            abspath = os.path.abspath(args.file)
+            try:
+                profile_error = validate_todos_dry_run(abspath, args, fields)
+            except (OSError, UnicodeDecodeError, ValueError) as exc:
+                print(f"ledgerwrite: todos profile refused: {exc}", file=err)
+                return 2
+            if profile_error:
+                print(profile_error, file=err)
+                return 2
+        tail, clobbered = build_record(args, fields)
+        for key in sorted(clobbered):
+            print(
+                f"ledgerwrite: --field {key}=... ignored (reserved key set by a flag)",
+                file=err,
+            )
         # Peek/validate: stamp ts and a placeholder seq so the echoed shape
         # matches a real write, but touch nothing on disk.
         record = {"ts": utc_ts()}
@@ -498,6 +677,23 @@ def run(argv, out=sys.stdout, err=sys.stderr) -> int:
                         "(a prior write left no newline)",
                         file=err,
                     )
+            if args.profile == "todos":
+                try:
+                    profile_error = validate_todos_history(
+                        args, fields, read_todos_records(fd)
+                    )
+                except (UnicodeDecodeError, ValueError) as exc:
+                    raise TodosProfileError(
+                        f"ledgerwrite: todos profile refused: {exc}"
+                    ) from exc
+                if profile_error:
+                    raise TodosProfileError(profile_error)
+            tail, clobbered = build_record(args, fields)
+            for key in sorted(clobbered):
+                print(
+                    f"ledgerwrite: --field {key}=... ignored (reserved key set by a flag)",
+                    file=err,
+                )
             # Stamp ts inside the lock so it is ordered consistently with seq.
             record = {"ts": utc_ts()}
             if not args.no_seq:
@@ -509,7 +705,7 @@ def run(argv, out=sys.stdout, err=sys.stderr) -> int:
         finally:
             if fcntl is not None:
                 fcntl.flock(fd, fcntl.LOCK_UN)
-    except OSError as exc:
+    except (OSError, TodosProfileError) as exc:
         # If we created the ledger and failed before writing content, remove the
         # empty file so a rejected call leaves the ledger untouched.
         if not pre_existed and os.path.exists(abspath):
@@ -518,7 +714,10 @@ def run(argv, out=sys.stdout, err=sys.stderr) -> int:
                     os.remove(abspath)
             except OSError:
                 pass
-        print(f"ledgerwrite: write failed: {exc}", file=err)
+        if isinstance(exc, TodosProfileError):
+            print(str(exc), file=err)
+        else:
+            print(f"ledgerwrite: write failed: {exc}", file=err)
         return 2
     finally:
         if fd is not None:

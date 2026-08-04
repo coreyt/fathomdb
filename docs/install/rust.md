@@ -8,20 +8,19 @@ Two consumption paths for Rust users:
   `fathomdb recover` verbs. Operator-only; does **not**
   ship `search` / `get` / `list` query verbs.
 
-> **0.8.20 is not published yet.** Publishing 0.8.20 to crates.io is a
-> separate, gated step that has not run. Until it does, use the from-git path
-> below. FathomDB is pre-1.0 and the surface is **beta**.
+> **0.8.20 is published to crates.io.** FathomDB is pre-1.0 and the surface
+> is **beta**.
 
 ## Requirements
 
 - Rust **stable** toolchain (`rustup default stable`).
 - SQLite headers + a system `sqlite-vec` build, or vendored equivalent
   (the workspace builds `sqlite-vec` from source by default).
-- A platform that matches the
-  [release matrix](../compatibility/index.md): linux x86_64/aarch64,
-  darwin x86_64/arm64, windows x86_64.
+- A Rust-supported target and a working SQLite + `sqlite-vec` build. The
+  published Python and npm native-artifact boundary is Linux
+  `x86_64-unknown-linux-gnu` only; Rust crates compile from source.
 
-## Install (once 0.8.20 is published)
+## Install the published crates
 
 Library:
 

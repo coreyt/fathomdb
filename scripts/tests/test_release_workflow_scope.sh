@@ -5,9 +5,8 @@
 # Covers three signed acceptance criteria (dev/design/
 # 0.8.18-slice-0-vector-equivalence-publish-design.md §U2):
 #
-#   R-REL-4e (tag-matrix gate): the 0.8.18 GA tag must build ONLY
-#     x86_64-unknown-linux-gnu — the deferred macOS/Windows/aarch64/musl legs
-#     are excluded from THIS tag (re-enabled by the follow-on orchestrator).
+#   R-REL-4e successor: Linux x86_64 and AArch64 are the active native routes;
+#     macOS, Windows, and musl remain deferred.
 #     RED before gating (full 5-way python / 4-way napi matrix); GREEN after.
 #
 #   R-REL-4c (ordered commit points): every tiered cargo publish (t1..t7) is
@@ -16,8 +15,8 @@
 #     order. Also asserts the fixed `sleep 60` index-propagation heuristic is
 #     replaced by a poll-for-resolvability step (wait-for-crate-version.sh).
 #
-#   R-REL-4f (npm dist-tag): while platform coverage is partial (linux-x64-gnu
-#     only), npm must publish under a NON-`latest` dist-tag so mac/win users are
+#   R-REL-4f (npm dist-tag): while platform coverage is partial (Linux x64 and
+#     arm64 only), npm must publish under a NON-`latest` dist-tag so mac/win users are
 #     not served an install-incompatible package as the default.
 #
 # Pure static parse (python3 + PyYAML); does not run the workflow.
@@ -36,7 +35,7 @@ if [ ! -f "$WF" ]; then
   exit 1
 fi
 
-# --- R-REL-4e: matrix gated to x86_64-linux only ---------------------------
+# --- R-REL-4e successor: matrix carries both supported Linux architectures ---
 scope_out="$(python3 - "$WF" <<'PY'
 import sys, yaml
 wf = yaml.safe_load(open(sys.argv[1]))
@@ -48,21 +47,22 @@ def targets(job):
 
 py = targets("build-python")
 napi = targets("build-napi")
-ok_py = py == ["x86_64-unknown-linux-gnu"]
-ok_napi = napi == ["x86_64-unknown-linux-gnu"]
+expected = ["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu"]
+ok_py = py == expected
+ok_napi = napi == expected
 print("PY", ok_py, py)
 print("NAPI", ok_napi, napi)
 PY
 )"
 if printf '%s\n' "$scope_out" | grep -q '^PY True'; then
-  pass "build-python matrix gated to x86_64-unknown-linux-gnu only"
+  pass "build-python matrix carries Linux x86_64 and AArch64"
 else
-  fail "build-python matrix NOT gated to linux-x64 only: $(printf '%s' "$scope_out" | sed -n '1p')"
+  fail "build-python matrix must carry both supported Linux targets: $(printf '%s' "$scope_out" | sed -n '1p')"
 fi
 if printf '%s\n' "$scope_out" | grep -q '^NAPI True'; then
-  pass "build-napi matrix gated to x86_64-unknown-linux-gnu only"
+  pass "build-napi matrix carries Linux x86_64 and AArch64"
 else
-  fail "build-napi matrix NOT gated to linux-x64 only: $(printf '%s' "$scope_out" | sed -n '2p')"
+  fail "build-napi matrix must carry both supported Linux targets: $(printf '%s' "$scope_out" | sed -n '2p')"
 fi
 
 # --- R-REL-4c: ordered commit points (all-builds-passed -> tiered chain) ----
@@ -129,17 +129,18 @@ else
   fail "npm dist-tag must be non-latest for the linux-x64-only 0.8.18 tag: $(printf '%s' "$tag_out" | grep '^TAG')"
 fi
 
-# R-REL-4f: the per-platform binary package publish job + the publish-time
+# R-REL-4f: both Linux platform binary publish jobs + the publish-time
 # optionalDependencies injection are wired.
 if python3 - "$WF" <<'PY'
 import sys, yaml
 wf = yaml.safe_load(open(sys.argv[1]))
-sys.exit(0 if "publish-npm-platform-linux-x64-gnu" in wf["jobs"] else 1)
+required = {"publish-npm-platform-linux-x64-gnu", "publish-npm-platform-linux-arm64-gnu"}
+sys.exit(0 if required <= set(wf["jobs"]) else 1)
 PY
 then
-  pass "per-platform npm publish job (linux-x64-gnu) present"
+  pass "per-platform npm publish jobs (linux-x64-gnu, linux-arm64-gnu) present"
 else
-  fail "publish-npm-platform-linux-x64-gnu job missing"
+  fail "Linux npm platform publish jobs missing"
 fi
 if grep -q 'npm-inject-optional-deps.sh' "$WF"; then
   pass "publish-time optionalDependencies injection wired into publish-npm"
