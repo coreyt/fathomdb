@@ -157,6 +157,30 @@ def check_remote_landing(release, st):
     if _git("rev-parse", "--verify", "--quiet", "origin/main")[0] != 0:
         return  # No remote-tracking ref (fresh or detached clone): unverifiable.
 
+    # A SHALLOW clone cannot answer this question. `actions/checkout` defaults to
+    # `--depth=1`, so `origin/main` EXISTS but carries only the tip commit: every
+    # historical landed SHA is simply absent from the object store, and
+    # `merge-base --is-ancestor` cannot resolve it.
+    #
+    # WHY THIS GUARD EXISTS. Without it this check reported all 15 of 0.8.20's
+    # and all 5 of 0.8.21's landed slices as "not reachable from origin/main" and
+    # HARD-FAILED on `main` — on 2026-08-04 it red-lined four consecutive `main`
+    # runs. Every one of those SHAs was genuinely on the remote; the clone just
+    # could not see them. That is a false negative, and a permanently-red gate is
+    # the very antipattern this repository documents (a gate that is always red
+    # trains readers to discount red, which is how real failures survive).
+    #
+    # Absent history means UNVERIFIABLE, never FALSE — the same rule already
+    # applied above for a missing remote ref. To make the check meaningful in CI,
+    # give its job `fetch-depth: 0` rather than weakening the assertion here.
+    if _git("rev-parse", "--is-shallow-repository")[1] == "true":
+        if not QUIET:
+            sys.stderr.write(
+                "note  check-release-state-views: shallow clone — the `origin/main`\n"
+                "  landing claim is UNVERIFIABLE here and was not checked. Give this\n"
+                "  job `fetch-depth: 0` to verify it.\n")
+        return
+
     by = _by_slice(st)
     unpushed = []
     for n in st["landed"]:

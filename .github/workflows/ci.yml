@@ -559,6 +559,14 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          # The generated views assert slices are "LANDED on `origin/main`", and
+          # the gate verifies that with `merge-base --is-ancestor`. The default
+          # `--depth=1` clone carries only the tip, so every historical landed
+          # SHA is absent from the object store and the claim is UNVERIFIABLE —
+          # the gate then correctly declines to check it and this job would vouch
+          # for nothing. Full history is what makes the assertion real here.
+          fetch-depth: 0
       - name: Release-state generated views are current (DOC-HYGIENE-2 T2a)
         run: bash scripts/check-release-state-views.sh
       - name: Recurrence guard for the gate itself (fixture arms)

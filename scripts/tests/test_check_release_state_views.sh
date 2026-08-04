@@ -1358,6 +1358,10 @@ remote_fixture() {
   (
     cd "$FIX"
     git branch -M main
+    # rm first: `git init --bare` on an EXISTING bare repo is a no-op that keeps
+    # its refs, so a second remote_fixture call would push against the previous
+    # call's `main` and be rejected non-fast-forward.
+    rm -rf "$TMPROOT/remote.git"
     git init -q --bare "$TMPROOT/remote.git"
     git remote add origin "$TMPROOT/remote.git"
     git push -q origin main
@@ -1449,6 +1453,60 @@ if printf '%s' "$OUT" | grep -q '9.9.9 claims'; then
   pass "arm R4: the guard actually executes and names the release (not a no-op)"
 else
   fail "arm R4 (guard must not be vacuous): out=$OUT"
+fi
+
+# --- Arm R5: a SHALLOW clone is UNVERIFIABLE, never FALSE ---------------------
+# THE DEFECT THIS PINS. `actions/checkout` defaults to `--depth=1`. In that clone
+# `origin/main` EXISTS but holds only the tip commit, so every historical landed
+# SHA is absent from the object store and `merge-base --is-ancestor` cannot
+# resolve it. The first version of this guard read that as "not reachable from
+# origin/main" and HARD-FAILED on `main`: on 2026-08-04 it red-lined four
+# consecutive `main` runs while claiming 15 of 0.8.20's and 5 of 0.8.21's slices
+# were unpushed. All twenty were genuinely on the remote.
+#
+# A permanently-red gate is worse than no gate — it trains readers to discount
+# red, which is how a real failure survives. Absent history means UNVERIFIABLE.
+remote_fixture
+(cd "$FIX" && git push -q origin main)
+run_gate
+if [ "$RC" -ne 0 ]; then
+  # Baseline sanity: the unpushed-SHA arm must still be red before we shallow it,
+  # otherwise arm R5 below could pass for the wrong reason.
+  fail "arm R5 setup: expected a green gate on the pushed fixture, rc=$RC"
+fi
+
+SHALLOW="$TMPROOT/shallow"
+rm -rf "$SHALLOW"
+git clone -q --depth=1 "file://$TMPROOT/remote.git" "$SHALLOW" 2>/dev/null
+cp "$GATE" "$SHALLOW/scripts/check-release-state-views.sh" 2>/dev/null
+chmod +x "$SHALLOW/scripts/check-release-state-views.sh" 2>/dev/null
+if [ "$(git -C "$SHALLOW" rev-parse --is-shallow-repository 2>/dev/null)" = "true" ]; then
+  pass "arm R5 setup: the fixture clone really is shallow"
+else
+  fail "arm R5 setup: clone is not shallow, the arm would prove nothing"
+fi
+
+# Make a landed SHA unresolvable in the shallow clone the same way CI does: the
+# state file names commits the depth=1 clone never fetched.
+set +e
+SHALLOW_OUT="$(cd "$SHALLOW" && ./scripts/check-release-state-views.sh 2>&1)"
+SHALLOW_RC=$?
+set -e
+
+if [ "$SHALLOW_RC" -eq 0 ]; then
+  pass "arm R5: a shallow clone does not hard-fail the landing claim"
+else
+  fail "arm R5 (shallow must not hard-fail): rc=$SHALLOW_RC out=$SHALLOW_OUT"
+fi
+
+# Assert on the VERDICT LINE, not on one of its two possible reasons. In a
+# shallow clone the absent SHA reports as "not a commit in this repository"
+# rather than "not reachable from origin/main", so grepping the latter alone
+# passes whether or not the fix is present — a non-discriminating arm.
+if printf '%s' "$SHALLOW_OUT" | grep -qE 'claims [0-9]+ slice\(s\) LANDED'; then
+  fail "arm R5: shallow clone emitted a FALSE unpushed verdict: $SHALLOW_OUT"
+else
+  pass "arm R5: shallow clone emits no unpushed verdict at all"
 fi
 
 if [ "$FAILED" -gt 0 ]; then
