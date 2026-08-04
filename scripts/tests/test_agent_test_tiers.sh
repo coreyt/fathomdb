@@ -107,8 +107,12 @@ else
   fail "agent-test must default to --tier=all and document fast|heavy|all"
 fi
 
-verify_fast_block="$(awk '/^  verify-fast:$/ { active = 1; next } active && /^  [[:alnum:]_-]+:$/ { exit } active { print }' "$CI")"
-verify_heavy_block="$(awk '/^  verify:$/ { active = 1; next } active && /^  [[:alnum:]_-]+:$/ { exit } active { print }' "$CI")"
+verify_fast_block=""
+verify_heavy_block=""
+if [ -f "$CI" ]; then
+  verify_fast_block="$(awk '/^  verify-fast:$/ { active = 1; next } active && /^  [[:alnum:]_-]+:$/ { exit } active { print }' "$CI")"
+  verify_heavy_block="$(awk '/^  verify:$/ { active = 1; next } active && /^  [[:alnum:]_-]+:$/ { exit } active { print }' "$CI")"
+fi
 if [ -f "$CI" ] \
   && grep -qF 'bash scripts/agent-verify.sh --tier=fast' <<<"$verify_fast_block" \
   && grep -qF 'bash scripts/agent-verify.sh --tier=heavy' <<<"$verify_heavy_block"; then
