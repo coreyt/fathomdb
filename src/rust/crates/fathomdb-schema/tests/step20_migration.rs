@@ -84,8 +84,8 @@ fn s20_existence_columns_present_and_schema_version_is_head() {
     assert_eq!(user_version(&conn), SCHEMA_VERSION);
     assert_eq!(
         MIGRATIONS.last().expect("at least one migration").step_id,
-        24,
-        "step-24 (projection-registry EAV + property-FTS, Slice 15d) must be the last (head) migration"
+        25,
+        "step-25 (nested-source projection registry column, Slice 45) must be the last (head) migration"
     );
 
     let shape = table_shape(&conn, "canonical_nodes");

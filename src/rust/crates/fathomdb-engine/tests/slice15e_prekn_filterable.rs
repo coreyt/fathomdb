@@ -112,7 +112,7 @@ fn edge(logical: &str, from: &str, to: &str, body_json: &str) -> PreparedWrite {
 fn filterable_spec(name: &str) -> ProjectionSpec {
     let mut roles = BTreeSet::new();
     roles.insert(ProjectionRole::Filterable);
-    ProjectionSpec { name: name.to_string(), roles, fts: None, vector: None }
+    ProjectionSpec { name: name.to_string(), roles, fts: None, vector: None, source: None }
 }
 
 fn table_sql(path: &std::path::Path) -> String {

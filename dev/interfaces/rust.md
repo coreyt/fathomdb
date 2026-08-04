@@ -712,6 +712,29 @@ stays engine-internal in 0.8.20 — there is NO Py/TS wire exposure (that is a l
 slice), so `SearchFilterInput` / the Python `SearchFilter` binding input are
 unchanged.
 
+## Nested-source projections (0.8.21 Slice 45)
+
+**Status: local implementation, pending separate merge HITL.** `ProjectionSpec`
+adds `source: Option<Vec<String>>`. Omitted preserves direct top-level lookup;
+present paths are literal, safe JSON object-member segments stored durably in
+the registry. Missing/null terminals create no derived row. Object/array
+terminals reject both configuration backfill and normal writes atomically with
+`EngineError::WriteValidation`.
+
+`SearchFilter.attributes: Vec<(String, String)>` is portable public API: an AND
+of equality predicates over declared `Filterable` projections. Values use the
+existing canonical text representation, intentionally so string `"1"` and number
+`1` compare equal. `Filter::try_from(&SearchFilter)` rejects a non-empty
+attribute list with `EngineError::InvalidFilter`; reverse lowering has no
+attributes.
+
+- `Engine::search_projected_text(query, name, filter, &ReadView) ->
+  Result<SearchResult, EngineError>` searches exactly one declared
+  `Searchable` property-FTS projection. It applies metadata, validity, and
+  attribute filters; orders by ascending FTS5 `bm25` then write cursor; returns
+  `branch=Text`, `soft_fallback=None`, and no explanation. It never body-scans,
+  embeds, or fuses with body/vector retrieval.
+
 ## Errors
 
 Rust exposes typed open/runtime errors without message parsing:

@@ -32,7 +32,7 @@
 //! `ready`, which is what a naive test would assert after a drain). The falsifying
 //! oracle is `_fathomdb_vector_rows` + `vector_default` — the vectors at rest.
 //!
-//! **No schema step.** `SCHEMA_VERSION` stays 24 (asserted below). Re-enqueueing
+//! **No schema step.** This slice did not change `SCHEMA_VERSION`. Re-enqueueing
 //! embed work inside ONE live database is runtime reconfiguration, not a
 //! cross-version data migration (HITL 2026-07-21, cf. TC-46).
 //!
@@ -130,6 +130,7 @@ fn vector_spec(name: &str) -> ProjectionSpec {
         roles: roles(&[ProjectionRole::Searchable]),
         fts: None,
         vector: Some(ProjectionVector { embedder: None, dense_readiness: None }),
+        source: None,
     }
 }
 

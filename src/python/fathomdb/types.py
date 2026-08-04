@@ -186,6 +186,9 @@ class ProjectionSpec:
     #: hard :class:`fathomdb.errors.InvalidArgumentError` (it could not
     #: round-trip) — the EXISTING typed error, no new class minted.
     vector_dense_readiness: str | None = None
+    #: Ordered literal object-member path in the canonical body. ``None`` keeps
+    #: the legacy direct top-level lookup by ``name``.
+    source: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -284,6 +287,8 @@ class SearchFilter:
     kind: str | None = None
     created_after: int | None = None
     status: str | None = None
+    #: Ordered ``(projection_name, canonical_text)`` equality predicates.
+    attributes: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True)

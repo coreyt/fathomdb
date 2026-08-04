@@ -100,6 +100,7 @@ fn spec(name: &str, roles: &[ProjectionRole], fts: bool) -> ProjectionSpec {
         roles: roles.iter().copied().collect::<BTreeSet<_>>(),
         fts: fts.then_some(ProjectionFts { tokenizer: None }),
         vector: None,
+        source: None,
     }
 }
 

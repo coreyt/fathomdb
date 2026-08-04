@@ -407,6 +407,7 @@ fn slice15d_fix2_rebuild_projects_only_active_non_superseded_attributes() {
                 roles,
                 fts: Some(fathomdb_engine::ProjectionFts { tokenizer: None }),
                 vector: None,
+                source: None,
             }],
             &[],
         )

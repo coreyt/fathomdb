@@ -64,6 +64,13 @@ test("SearchFilter round-trips through the unified Filter", () => {
   assert.deepEqual(searchFilterToFilter({}).terms, []);
 });
 
+test("SearchFilter attributes reject lossy unified conversion", () => {
+  assert.throws(
+    () => searchFilterToFilter({ attributes: [["priority", "1"]] }),
+    InvalidFilterError,
+  );
+});
+
 // ----- D3 typed rejection (vec0 / search backend) ---------------------------
 
 test("filterToSearchFilter typed-rejects a json term", () => {

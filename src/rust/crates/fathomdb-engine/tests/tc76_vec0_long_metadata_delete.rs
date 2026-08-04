@@ -105,7 +105,7 @@ fn open(path: &std::path::Path) -> fathomdb_engine::OpenedEngine {
 fn filterable_spec(name: &str) -> ProjectionSpec {
     let mut roles = BTreeSet::new();
     roles.insert(ProjectionRole::Filterable);
-    ProjectionSpec { name: name.to_string(), roles, fts: None, vector: None }
+    ProjectionSpec { name: name.to_string(), roles, fts: None, vector: None, source: None }
 }
 
 fn node(kind: &str, logical: &str, body_json: &str, source: &str) -> PreparedWrite {

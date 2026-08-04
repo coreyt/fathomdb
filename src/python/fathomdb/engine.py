@@ -302,6 +302,7 @@ class Engine:
                 # Its VALUE is inert engine-side, which is what keeps
                 # ``read.projections`` output re-appliable as a no-op.
                 s.vector_dense_readiness,
+                list(s.source) if s.source is not None else None,
             )
             for s in specs
         ]
@@ -443,6 +444,7 @@ class Engine:
                 kind=filter.kind,
                 created_after=filter.created_after,
                 status=filter.status,
+                attributes=list(filter.attributes),
                 rerank_depth=rerank_depth,
                 use_graph_arm=use_graph_arm,
                 alpha=alpha,
@@ -496,6 +498,52 @@ class Engine:
                 for hit in result.results
             ],
             explanation=explanation,
+        )
+
+    def search_projected_text(
+        self,
+        query: str,
+        name: str,
+        filter: SearchFilter | None = None,
+        *,
+        view: ReadView | None = None,
+    ) -> SearchResult:
+        """Search one declared ``searchable`` property-FTS projection.
+
+        The projection ``name`` is the public query key; its nested source path
+        is never accepted from a query caller. This path does not body-scan,
+        invoke vector search, or fuse scores.
+        """
+        if not isinstance(filter, (SearchFilter, type(None))):
+            raise TypeError(f"filter must be a SearchFilter or None, got {type(filter).__name__!r}")
+        if not isinstance(view, (ReadView, type(None))):
+            raise TypeError(f"view must be a ReadView or None, got {type(view).__name__!r}")
+        kwargs: dict[str, Any] = {"view": _to_native_view(view)}
+        if filter is not None:
+            kwargs.update(
+                source_type=filter.source_type,
+                kind=filter.kind,
+                created_after=filter.created_after,
+                status=filter.status,
+                attributes=list(filter.attributes),
+            )
+        result = self._native.search_projected_text(query, name, **kwargs)
+        return SearchResult(
+            projection_cursor=result.projection_cursor,
+            soft_fallback=None,
+            results=[
+                SearchHit(
+                    id=IdSpace(space=hit.id.space, value=hit.id.value),
+                    kind=hit.kind,
+                    body=hit.body,
+                    score=hit.score,
+                    branch=cast(SoftFallbackBranch, hit.branch),
+                    source_id=hit.source_id,
+                    ce_score=hit.ce_score,
+                )
+                for hit in result.results
+            ],
+            explanation=None,
         )
 
     def search_text_only(

@@ -560,6 +560,8 @@ pub struct ProjectionSpec {
     /// reports the derived truth), so `read.projections` output still re-applies
     /// as a no-op.
     pub vector_dense_readiness: Option<String>,
+    /// Ordered literal object-member path; absent preserves top-level lookup.
+    pub source: Option<Vec<String>>,
 }
 
 impl ProjectionSpec {
@@ -576,6 +578,7 @@ impl ProjectionSpec {
                 .as_ref()
                 .and_then(|v| v.dense_readiness)
                 .map(|r| r.as_str().to_string()),
+            source: s.source.clone(),
         }
     }
 
@@ -589,6 +592,11 @@ impl ProjectionSpec {
         }
         if let Some(embedder) = &self.vector_embedder {
             validate_ffi_string_napi(embedder)?;
+        }
+        if let Some(source) = &self.source {
+            for segment in source {
+                validate_ffi_string_napi(segment)?;
+            }
         }
         // 0.8.20 keystone closeout fix-4 — ROUND-TRIP CONSISTENCY GATE. A spec
         // the binding ACCEPTS must round-trip through `read.projections`
@@ -716,6 +724,7 @@ impl ProjectionSpec {
                     .as_deref()
                     .and_then(RustDenseReadiness::from_str_opt),
             }),
+            source: self.source.clone(),
         })
     }
 }
@@ -920,6 +929,49 @@ pub struct SearchFilterInput {
     pub kind: Option<String>,
     pub created_after: Option<i64>,
     pub status: Option<String>,
+    /// Ordered `[projectionName, canonicalText]` pairs.
+    pub attributes: Option<Vec<Vec<String>>>,
+}
+
+fn search_filter_input_to_rust(
+    input: Option<SearchFilterInput>,
+) -> Result<Option<RustSearchFilter>> {
+    let Some(input) = input else { return Ok(None) };
+    for text in [input.source_type.as_deref(), input.kind.as_deref(), input.status.as_deref()]
+        .into_iter()
+        .flatten()
+    {
+        validate_ffi_string_napi(text)?;
+    }
+    let mut attributes = Vec::new();
+    for pair in input.attributes.unwrap_or_default() {
+        if pair.len() != 2 {
+            return Err(typed_error(
+                CODE_INVALID_ARGUMENT,
+                "each attributes entry must be a [projectionName, canonicalText] pair",
+                JsonValue::Null,
+            ));
+        }
+        validate_ffi_string_napi(&pair[0])?;
+        validate_ffi_string_napi(&pair[1])?;
+        attributes.push((pair[0].clone(), pair[1].clone()));
+    }
+    let mut rust = RustSearchFilter::default();
+    rust.source_type = input.source_type;
+    rust.kind = input.kind;
+    rust.created_after = input.created_after;
+    rust.status = input.status;
+    rust.attributes = attributes;
+    if rust.source_type.is_none()
+        && rust.kind.is_none()
+        && rust.created_after.is_none()
+        && rust.status.is_none()
+        && rust.attributes.is_empty()
+    {
+        Ok(None)
+    } else {
+        Ok(Some(rust))
+    }
 }
 
 #[napi(object)]
@@ -1548,36 +1600,7 @@ impl Engine {
         // sees them), so — like write/configure — the TS `search` wrapper guards
         // those JS-side (see src/validation.ts). Validating here leaves the
         // all-`None` collapse below (the byte-identical unfiltered path) intact.
-        if let Some(f) = filter.as_ref() {
-            for s in [f.source_type.as_deref(), f.kind.as_deref(), f.status.as_deref()]
-                .into_iter()
-                .flatten()
-            {
-                validate_ffi_string_napi(s)?;
-            }
-        }
-        // G10 — build the closed filter; an all-`None` (or omitted) filter stays
-        // the unfiltered, byte-identical path.
-        let filter = filter.and_then(|f| {
-            // `RustSearchFilter` is `#[non_exhaustive]` (0.8.20 Slice 15e fix-2),
-            // so an out-of-crate struct literal (even with `..Default::default()`)
-            // is rejected; build from `default()` and set the four legacy fields.
-            // `attributes` is NOT on the TS wire in 0.8.20 (engine-internal).
-            let mut rust = RustSearchFilter::default();
-            rust.source_type = f.source_type;
-            rust.kind = f.kind;
-            rust.created_after = f.created_after;
-            rust.status = f.status;
-            if rust.source_type.is_none()
-                && rust.kind.is_none()
-                && rust.created_after.is_none()
-                && rust.status.is_none()
-            {
-                None
-            } else {
-                Some(rust)
-            }
-        });
+        let filter = search_filter_input_to_rust(filter)?;
         // 0.8.1 R1: rerank_depth=None or 0 → soft-fallback (identity).
         let depth = rerank_depth.unwrap_or(0) as usize;
         // 0.8.1 R3: use_graph_arm=None or false → two-arm byte-identical path.
@@ -1599,6 +1622,25 @@ impl Engine {
             )
         })
         .await?;
+        Ok(SearchResult::from_rust(result))
+    }
+
+    /// Lexically search one declared property-FTS projection only.
+    #[napi]
+    pub async fn search_projected_text(
+        &self,
+        query: String,
+        name: String,
+        filter: Option<SearchFilterInput>,
+        view: Option<ReadViewInput>,
+    ) -> Result<SearchResult> {
+        validate_ffi_string_napi(&query)?;
+        validate_ffi_string_napi(&name)?;
+        let filter = search_filter_input_to_rust(filter)?;
+        let view = read_view_or_default(view);
+        let engine = Arc::clone(&self.inner);
+        let result =
+            call_engine(move || engine.search_projected_text(&query, &name, filter, &view)).await?;
         Ok(SearchResult::from_rust(result))
     }
 

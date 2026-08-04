@@ -182,19 +182,20 @@ fn s24_carries_the_accretion_exemption_marker() {
     );
 }
 
-/// Step 24 is head and `SCHEMA_VERSION` tracks it.
+/// Step 24 remains the projection-substrate migration immediately before the
+/// additive nested-source declaration migration.
 #[test]
-fn s24_is_head_and_schema_version_is_24() {
+fn s24_precedes_the_nested_source_head_migration() {
     register_sqlite_vec_once();
     let conn = Connection::open_in_memory().unwrap();
     set_user_version(&conn, 1);
     migrate_with_steps(&conn, MIGRATIONS).expect("migration must succeed");
 
     assert_eq!(user_version(&conn), SCHEMA_VERSION);
-    assert_eq!(SCHEMA_VERSION, 24, "SCHEMA_VERSION must be 24 (step-24 projection-registry EAV)");
+    assert_eq!(SCHEMA_VERSION, 25, "SCHEMA_VERSION must be 25 at the Slice-45 head");
     assert_eq!(
         MIGRATIONS.last().expect("at least one migration").step_id,
-        24,
-        "step-24 (projection-registry EAV + property-FTS) must be the last (head) migration"
+        25,
+        "step-25 (nested-source projection registry column) must be the last (head) migration"
     );
 }

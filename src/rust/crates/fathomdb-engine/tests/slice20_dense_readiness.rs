@@ -101,6 +101,7 @@ fn vector_spec(name: &str) -> ProjectionSpec {
         roles: roles(&[ProjectionRole::Searchable]),
         fts: None,
         vector: Some(ProjectionVector { embedder: None, dense_readiness: None }),
+        source: None,
     }
 }
 
@@ -788,6 +789,7 @@ fn default_path_is_unchanged_when_no_vector_projection_is_declared() {
                 roles: roles(&[ProjectionRole::Filterable]),
                 fts: None,
                 vector: None,
+                source: None,
             }],
             &[],
         )

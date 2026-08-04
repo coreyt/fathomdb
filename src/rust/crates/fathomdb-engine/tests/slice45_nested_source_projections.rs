@@ -104,8 +104,8 @@ fn nested_scalars_use_canonical_text_and_missing_or_null_do_not_project() {
             &[nested_spec(
                 "value",
                 &["attributes", "literal:key", "value"],
-                &[ProjectionRole::Filterable],
-                false,
+                &[ProjectionRole::Filterable, ProjectionRole::Searchable],
+                true,
             )],
             &[],
         )
@@ -123,14 +123,15 @@ fn nested_scalars_use_canonical_text_and_missing_or_null_do_not_project() {
 
     let mut filter = SearchFilter::default();
     filter.attributes = vec![("value".to_string(), "1".to_string())];
+    let result =
+        engine.search_projected_text("1", "value", Some(filter), &ReadView::default()).unwrap();
     assert_eq!(
-        engine
-            .search_projected_text("1", "value", Some(filter), &ReadView::default())
-            .unwrap()
-            .results
-            .len(),
-        0,
-        "a filterable-only projection is not searchable"
+        result.results.iter().map(|hit| hit.body.as_str()).collect::<Vec<_>>(),
+        vec![
+            r#"{"attributes":{"literal:key":{"value":"1"}}}"#,
+            r#"{"attributes":{"literal:key":{"value":1}}}"#,
+        ],
+        "canonical text equality deliberately collapses string \"1\" and number 1"
     );
     opened.engine.close().unwrap();
     assert_eq!(eav_values(&path, "value"), vec!["1", "1", "2.5", "true"]);

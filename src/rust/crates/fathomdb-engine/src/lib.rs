@@ -2832,12 +2832,22 @@ pub struct Filter {
     pub terms: Vec<FilterTerm>,
 }
 
-impl From<&SearchFilter> for Filter {
+impl TryFrom<&SearchFilter> for Filter {
+    type Error = EngineError;
+
     /// D4 sugar lowering — the shipped G10 [`SearchFilter`] re-expressed as the
-    /// unified [`Filter`]. Field → term in the **canonical** order
-    /// (`source_type`, `kind`, `created_after`, `status`) so the round-trip back
-    /// to a `SearchFilter` (and thus the produced vec0 SQL) is byte-identical.
-    fn from(sf: &SearchFilter) -> Self {
+    /// unified [`Filter`]. Attribute equality is intentionally not part of the
+    /// unified grammar, so it is refused rather than silently discarded. Field
+    /// → term uses canonical order (`source_type`, `kind`, `created_after`,
+    /// `status`) so an attribute-free round-trip stays byte-identical.
+    fn try_from(sf: &SearchFilter) -> Result<Self, Self::Error> {
+        if !sf.attributes.is_empty() {
+            return Err(EngineError::InvalidFilter {
+                reason:
+                    "projected attribute predicates are not supported by the unified Filter grammar"
+                        .to_string(),
+            });
+        }
         let mut terms = Vec::new();
         if let Some(s) = &sf.source_type {
             terms.push(FilterTerm::SourceType(s.clone()));
@@ -2851,7 +2861,7 @@ impl From<&SearchFilter> for Filter {
         if let Some(s) = &sf.status {
             terms.push(FilterTerm::Status(s.clone()));
         }
-        Filter { terms }
+        Ok(Filter { terms })
     }
 }
 
@@ -4150,6 +4160,9 @@ pub struct ProjectionSpec {
     pub roles: BTreeSet<ProjectionRole>,
     pub fts: Option<ProjectionFts>,
     pub vector: Option<ProjectionVector>,
+    /// Optional ordered literal object-member path in the canonical node body.
+    /// `None` preserves the legacy direct top-level lookup by `name`.
+    pub source: Option<Vec<String>>,
 }
 
 /// 0.8.20 Slice 15d (R-20-PR) — the diff [`Engine::configure_projections`]
@@ -5188,6 +5201,7 @@ impl Engine {
         let mut connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
         let connection = connection.as_mut().ok_or(EngineError::Closing)?;
         let plans = validate_batch(connection, batch)?;
+        validate_nested_projection_sources_for_write(connection, batch)?;
         // 0.8.20 Slice 20c (R-20-DR remainder) — LATE ENROLMENT, before
         // `collect_projection_jobs` reads the vector-kind registry to decide
         // whether the dispatcher needs waking. See
@@ -6186,9 +6200,11 @@ impl Engine {
         let lowered = filter
             .map(|sf| {
                 let attributes = sf.attributes.clone();
-                Filter::from(&sf).to_search_filter().map(|mut lo| {
-                    lo.attributes = attributes;
-                    lo
+                Filter::try_from(&sf).and_then(|filter| {
+                    filter.to_search_filter().map(|mut lo| {
+                        lo.attributes = attributes;
+                        lo
+                    })
                 })
             })
             .transpose()?;
@@ -6356,6 +6372,111 @@ impl Engine {
             }
         };
         Ok(SearchResult { projection_cursor: cursor, soft_fallback, results, explanation })
+    }
+
+    /// Search one declared `searchable→FTS` projection without invoking body
+    /// search, vector search, score fusion, or a fallback arm. Results carry the
+    /// ordinary text branch shape and are ordered by property-FTS bm25 ascending
+    /// then write cursor ascending.
+    pub fn search_projected_text(
+        &self,
+        query: &str,
+        name: &str,
+        filter: Option<SearchFilter>,
+        view: &ReadView,
+    ) -> Result<SearchResult, EngineError> {
+        self.ensure_open()?;
+        view.reject_existence_relaxation_on_search()?;
+        if query.trim().is_empty() {
+            return Err(EngineError::WriteValidation);
+        }
+
+        let compiled = compile_text_query(query);
+        let limit = self
+            .projection_runtime
+            .shared
+            .search_limit_override
+            .load(Ordering::SeqCst)
+            .max(SEARCH_RERANK_LIMIT);
+        let frozen = view.freeze();
+        let mut connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_mut().ok_or(EngineError::Closing)?;
+        let tx = connection
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Deferred)
+            .map_err(|_| EngineError::Storage)?;
+        let registry = load_projection_registry(&tx).map_err(|_| EngineError::Storage)?;
+        let declared = registry.get(name).ok_or_else(|| EngineError::InvalidFilter {
+            reason: format!("projected text field {name:?} is not declared"),
+        })?;
+        if !declared.wants_property_fts() {
+            return Err(EngineError::InvalidFilter {
+                reason: format!(
+                    "projected text field {name:?} is not a declared `searchable` projection with property FTS"
+                ),
+            });
+        }
+        if let Some(filter) = filter.as_ref() {
+            match validate_filter_attributes_on_snapshot(&tx, filter) {
+                Ok(()) => {}
+                Err(SearchReaderError::InvalidFilter(reason)) => {
+                    return Err(EngineError::InvalidFilter { reason });
+                }
+                Err(SearchReaderError::Sqlite(_)) => return Err(EngineError::Storage),
+            }
+        }
+
+        let validity = frozen.validity_sql("n", 3);
+        let sql = format!(
+            "SELECT p.write_cursor, bm25(property_search_index), n.kind, n.body, n.logical_id, n.source_id
+             FROM property_search_index p
+             JOIN canonical_nodes n ON n.write_cursor = p.write_cursor
+             WHERE p.attr_name = ?1 AND property_search_index MATCH ?2
+               AND n.superseded_at IS NULL AND n.state = 'active'{validity}
+             ORDER BY bm25(property_search_index) ASC, p.write_cursor ASC
+             LIMIT {limit}"
+        );
+        let mut params = vec![
+            rusqlite::types::Value::Text(name.to_string()),
+            rusqlite::types::Value::Text(compiled.match_expression),
+        ];
+        if let Some(now) = frozen.now_param() {
+            params.push(rusqlite::types::Value::Integer(now));
+        }
+        let mut stmt = tx.prepare(&sql).map_err(|_| EngineError::Storage)?;
+        let rows = stmt
+            .query_map(rusqlite::params_from_iter(params.iter()), |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, f64>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, Option<String>>(4)?,
+                    row.get::<_, Option<String>>(5)?,
+                ))
+            })
+            .map_err(|_| EngineError::Storage)?;
+        let mut results = Vec::new();
+        for row in rows {
+            let (cursor, bm25, kind, body, logical_id, source_id) =
+                row.map_err(|_| EngineError::Storage)?;
+            if !text_hit_passes_filter(&tx, cursor as u64, &kind, filter.as_ref())
+                .map_err(|_| EngineError::Storage)?
+            {
+                continue;
+            }
+            results.push(SearchHit {
+                id: derive_stable_id(logical_id.as_deref(), &body),
+                write_cursor: cursor as u64,
+                kind,
+                body,
+                score: -bm25,
+                branch: SoftFallbackBranch::Text,
+                source_id,
+                ce_score: None,
+            });
+        }
+        let projection_cursor = load_projection_cursor(&tx).map_err(|_| EngineError::Storage)?;
+        Ok(SearchResult { projection_cursor, soft_fallback: None, results, explanation: None })
     }
 
     /// 0.8.18 Slice 5 (R-VEQ-6) — degraded-open observability accessor. `true` iff
@@ -17087,6 +17208,7 @@ struct StoredProjection {
     fts_tokenizer: Option<String>,
     vector_declared: bool,
     vector_embedder: Option<String>,
+    source: Option<Vec<String>>,
 }
 
 impl StoredProjection {
@@ -17168,6 +17290,7 @@ impl StoredProjection {
                 .as_ref()
                 .and_then(|v| v.embedder.clone())
                 .filter(|e| !e.is_empty()),
+            source: spec.source.clone(),
         }
     }
 
@@ -17194,6 +17317,7 @@ impl StoredProjection {
             } else {
                 None
             },
+            source: self.source.clone(),
         }
     }
 
@@ -17242,6 +17366,106 @@ fn attribute_json_path(name: &str) -> String {
     format!("$.\"{name}\"")
 }
 
+/// SQLite JSON path for one declared projection. A declared source is an ordered
+/// list of literal object-member names; it is never a caller-provided JSONPath.
+/// Every segment is validated before persistence, and the resulting path is
+/// always bound as a parameter rather than interpolated into SQL.
+fn projection_json_path(name: &str, stored: &StoredProjection) -> String {
+    match &stored.source {
+        None => attribute_json_path(name),
+        Some(segments) => {
+            let mut path = String::from("$");
+            for segment in segments {
+                path.push_str(".\"");
+                path.push_str(segment);
+                path.push('"');
+            }
+            path
+        }
+    }
+}
+
+/// Refuse a source path that cannot be safely represented as SQLite quoted
+/// member selectors. Empty paths would select the whole body rather than one
+/// member and therefore do not meet the scalar-projection contract.
+fn is_valid_projection_source(source: &[String]) -> bool {
+    !source.is_empty() && source.iter().all(|segment| is_valid_attribute_name(segment))
+}
+
+/// Reject only nested-source object/array terminals. Legacy top-level
+/// projections retain their shipped skip-composite behaviour for compatibility.
+fn nested_projection_terminal_is_composite(
+    conn: &Connection,
+    body: &str,
+    name: &str,
+    stored: &StoredProjection,
+) -> rusqlite::Result<bool> {
+    if stored.source.is_none() {
+        return Ok(false);
+    }
+    let path = projection_json_path(name, stored);
+    let terminal: Option<String> = conn.query_row(
+        "SELECT CASE WHEN json_valid(?1) THEN json_type(?1, ?2) END",
+        params![body, path],
+        |row| row.get(0),
+    )?;
+    Ok(matches!(terminal.as_deref(), Some("object") | Some("array")))
+}
+
+/// Validate nested source terminals across the active rows a declaration would
+/// backfill. The caller owns the transaction, so `WriteValidation` aborts it
+/// rather than leaving a partly reconfigured registry.
+fn validate_projection_source_backfill(
+    conn: &Connection,
+    name: &str,
+    stored: &StoredProjection,
+) -> Result<(), EngineError> {
+    if stored.source.is_none() || !stored.wants_eav() {
+        return Ok(());
+    }
+    let mut stmt = conn
+        .prepare(
+            "SELECT body FROM canonical_nodes
+             WHERE superseded_at IS NULL AND state = 'active'",
+        )
+        .map_err(|_| EngineError::Storage)?;
+    let bodies =
+        stmt.query_map([], |row| row.get::<_, String>(0)).map_err(|_| EngineError::Storage)?;
+    for body in bodies {
+        let body = body.map_err(|_| EngineError::Storage)?;
+        if nested_projection_terminal_is_composite(conn, &body, name, stored)
+            .map_err(|_| EngineError::Storage)?
+        {
+            return Err(EngineError::WriteValidation);
+        }
+    }
+    Ok(())
+}
+
+/// Validate every nested source present in a normal node write before the write
+/// transaction starts. This keeps an object/array terminal in the existing
+/// `WriteValidation` family and guarantees the whole batch is rejected.
+fn validate_nested_projection_sources_for_write(
+    conn: &Connection,
+    batch: &[PreparedWrite],
+) -> Result<(), EngineError> {
+    let registry = load_projection_registry(conn).map_err(|_| EngineError::Storage)?;
+    if registry.values().all(|stored| stored.source.is_none()) {
+        return Ok(());
+    }
+    for write in batch {
+        let PreparedWrite::Node { body, .. } = write else { continue };
+        for (name, stored) in &registry {
+            if nested_projection_terminal_is_composite(conn, body, name, stored)
+                .map_err(|_| EngineError::Storage)?
+            {
+                return Err(EngineError::WriteValidation);
+            }
+        }
+    }
+    Ok(())
+}
+
 /// 0.8.20 Slice 15d (R-20-PR) — load the durable projection registry
 /// (`_fathomdb_projection_registry`) into a name→[`StoredProjection`] map. This
 /// is the derived-cache source (Q5) that boot re-derive and every
@@ -17267,7 +17491,7 @@ fn load_projection_registry(
         return Ok(out);
     }
     let mut stmt = conn.prepare(
-        "SELECT name, roles, fts_tokenizer, vector_embedder, vector_declared
+        "SELECT name, roles, fts_tokenizer, vector_embedder, vector_declared, source
          FROM _fathomdb_projection_registry",
     )?;
     let rows = stmt.query_map([], |row| {
@@ -17276,13 +17500,24 @@ fn load_projection_registry(
         let fts_tokenizer: Option<String> = row.get(2)?;
         let vector_embedder: Option<String> = row.get(3)?;
         let vector_declared: i64 = row.get(4)?;
-        Ok((name, roles_json, fts_tokenizer, vector_embedder, vector_declared))
+        let source_json: Option<String> = row.get(5)?;
+        Ok((name, roles_json, fts_tokenizer, vector_embedder, vector_declared, source_json))
     })?;
     for row in rows {
-        let (name, roles_json, fts_col, vector_embedder, vector_declared) = row?;
+        let (name, roles_json, fts_col, vector_embedder, vector_declared, source_json) = row?;
         let roles: BTreeSet<ProjectionRole> = parse_roles_json(&roles_json);
         let fts_present = fts_col.is_some();
         let fts_tokenizer = fts_col.filter(|t| !t.is_empty());
+        let source = source_json
+            .map(|encoded| serde_json::from_str::<Vec<String>>(&encoded))
+            .transpose()
+            .map_err(|err| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    5,
+                    rusqlite::types::Type::Text,
+                    Box::new(err),
+                )
+            })?;
         out.insert(
             name,
             StoredProjection {
@@ -17291,6 +17526,7 @@ fn load_projection_registry(
                 fts_tokenizer,
                 vector_declared: vector_declared != 0,
                 vector_embedder,
+                source,
             },
         );
     }
@@ -17313,21 +17549,29 @@ fn persist_projection_row(
     name: &str,
     stored: &StoredProjection,
 ) -> rusqlite::Result<()> {
+    let source = stored
+        .source
+        .as_ref()
+        .map(serde_json::to_string)
+        .transpose()
+        .map_err(|err| rusqlite::Error::ToSqlConversionFailure(Box::new(err)))?;
     tx.execute(
         "INSERT INTO _fathomdb_projection_registry
-             (name, roles, fts_tokenizer, vector_embedder, vector_declared)
-         VALUES(?1, ?2, ?3, ?4, ?5)
+             (name, roles, fts_tokenizer, vector_embedder, vector_declared, source)
+         VALUES(?1, ?2, ?3, ?4, ?5, ?6)
          ON CONFLICT(name) DO UPDATE SET
              roles = excluded.roles,
              fts_tokenizer = excluded.fts_tokenizer,
              vector_embedder = excluded.vector_embedder,
-             vector_declared = excluded.vector_declared",
+             vector_declared = excluded.vector_declared,
+             source = excluded.source",
         params![
             name,
             roles_to_storage(&stored.roles),
             stored.fts_column(),
             stored.vector_embedder,
             i64::from(stored.vector_declared),
+            source,
         ],
     )?;
     Ok(())
@@ -17392,7 +17636,7 @@ fn project_one_attribute(
     //                raw JSON text would be a footgun (nested-field filtering is the
     //                >=0.9.x multi-field work). Skipping is deliberate, not an
     //                accidental type-conversion drop — no scalar type is dropped.
-    let Some(value) = extract_scalar_attribute(tx, body, name)? else {
+    let Some(value) = extract_scalar_attribute(tx, body, name, stored)? else {
         return Ok(());
     };
     tx.execute(
@@ -17451,8 +17695,9 @@ fn extract_scalar_attribute(
     conn: &Connection,
     body: &str,
     name: &str,
+    stored: &StoredProjection,
 ) -> rusqlite::Result<Option<String>> {
-    let path = attribute_json_path(name);
+    let path = projection_json_path(name, stored);
     let value: Option<String> = conn
         .query_row(
             "SELECT CASE WHEN json_valid(?1) THEN
@@ -17486,6 +17731,7 @@ fn vector_attr_insert_fragments(
     start_idx: usize,
 ) -> rusqlite::Result<(String, String, Vec<rusqlite::types::Value>)> {
     let cols = actual_vector_attr_columns(conn)?;
+    let registry = load_projection_registry(conn)?;
     let mut col_sql = String::new();
     let mut ph_sql = String::new();
     let mut values: Vec<rusqlite::types::Value> = Vec::new();
@@ -17494,7 +17740,11 @@ fn vector_attr_insert_fragments(
         // fix-3 [P2] — a PRESENT scalar value is encoded `\x01 || V` so it is
         // DISJOINT from the `''`-absent sentinel (present-empty ⇒ the bare marker,
         // never `''`). Absent stays the bare `''` sentinel.
-        let value = match extract_scalar_attribute(conn, body, &name)? {
+        let scalar = match registry.get(&name) {
+            Some(stored) => extract_scalar_attribute(conn, body, &name, stored)?,
+            None => None,
+        };
+        let value = match scalar {
             Some(v) => encode_attr_vec0_present(&v),
             None => String::new(),
         };
@@ -17570,6 +17820,9 @@ fn is_destructive_projection_change(
     {
         return true;
     }
+    if existing.source != desired.source {
+        return true;
+    }
     false
 }
 
@@ -17591,6 +17844,9 @@ fn describe_projection_delta(existing: &StoredProjection, desired: &StoredProjec
         parts.push("vector sub-target removed".to_string());
     } else if existing.vector_declared && existing.vector_embedder != desired.vector_embedder {
         parts.push("vector embedder changed".to_string());
+    }
+    if existing.source != desired.source {
+        parts.push("source path changed".to_string());
     }
     if parts.is_empty() {
         "incompatible change".to_string()
@@ -17659,6 +17915,13 @@ fn apply_projection_config(
                 msg: format!("projection '{}' declares no roles", spec.name),
             });
         }
+        if let Some(source) = &spec.source {
+            if !is_valid_projection_source(source) {
+                return Err(EngineError::InvalidArgument {
+                    msg: format!("invalid projection source path for {:?}", spec.name),
+                });
+            }
+        }
         if !seen_spec_names.insert(spec.name.as_str()) {
             return Err(EngineError::InvalidArgument {
                 msg: format!("duplicate projection name in one request: '{}'", spec.name),
@@ -17717,6 +17980,14 @@ fn apply_projection_config(
         if spec.fts.is_some() || spec.vector.is_some() {
             return Err(EngineError::WriteValidation);
         }
+    }
+
+    // A declared nested source is scalar-only. Validate the complete backfill
+    // set before any registry mutation so a composite terminal rolls the whole
+    // configuration request back with the existing write-validation family.
+    for spec in specs {
+        let desired = StoredProjection::from_spec(spec);
+        validate_projection_source_backfill(tx, &spec.name, &desired)?;
     }
 
     let mut delta = ProjectionDelta::default();

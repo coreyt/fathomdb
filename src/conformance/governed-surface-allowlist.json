@@ -11,6 +11,8 @@
     "search",
     "search_text_only",
     "searchTextOnly",
+    "search_projected_text",
+    "searchProjectedText",
     "close",
     "read.get",
     "read.get_many",

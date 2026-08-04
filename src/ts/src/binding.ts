@@ -83,6 +83,8 @@ export interface NativeProjectionSpec {
   vectorEmbedder?: string | null;
   /** 0.8.20 Slice 20 (R-20-DR) — engine-set readiness ("ready"/"embedding"). */
   vectorDenseReadiness?: string | null;
+  /** 0.8.21 Slice 45 — declared literal body-member source path. */
+  source?: string[] | null;
 }
 
 /** 0.8.20 Slice 15d (R-20-PR) — native configure_projections diff. */
@@ -173,6 +175,7 @@ interface NativeSearchFilter {
   kind?: string;
   createdAfter?: number;
   status?: string;
+  attributes?: string[][];
 }
 
 interface NativeMigrationStepReport {
@@ -387,6 +390,12 @@ export interface NativeEngine {
   // 0.8.18 Slice 5 (#5 vector-equivalence probe) — text-only/FTS-only path +
   // degraded-state observability.
   searchTextOnly(query: string, view?: NativeReadView): Promise<NativeSearchResult>;
+  searchProjectedText(
+    query: string,
+    name: string,
+    filter?: NativeSearchFilter,
+    view?: NativeReadView,
+  ): Promise<NativeSearchResult>;
   denseDisabled(): boolean;
   denseDisabledReason(): string | null;
   vectorEquivalenceRefusalCount(): number;
