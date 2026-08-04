@@ -192,6 +192,24 @@ function skipNetwork(): boolean {
   return false;
 }
 
+test("the isolated raw SQLite oracle preserves scalar types and parameters", () => {
+  const path = freshDbPath();
+  const db = new DatabaseSync(path);
+  try {
+    db.exec("CREATE TABLE oracle (state TEXT, is_ready INTEGER)");
+    db.exec("INSERT INTO oracle VALUES ('ready', 1)");
+  } finally {
+    db.close();
+  }
+
+  assert.equal(readOnlyScalar(path, "SELECT state FROM oracle"), "ready");
+  assert.equal(readOnlyScalar(path, "SELECT is_ready FROM oracle"), 1);
+  assert.equal(
+    readOnlyScalar(path, "SELECT state FROM oracle WHERE state = ?", ["missing"]),
+    null,
+  );
+});
+
 test("declaring a vector projection backfills pre-existing rows and drain flushes to ready", async () => {
   if (skipNetwork()) return;
   const path = freshDbPath();
