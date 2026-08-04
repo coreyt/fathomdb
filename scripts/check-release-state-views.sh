@@ -605,10 +605,19 @@ RENDERERS = {
 
 def validate_ladder_progress(st):
     """Reject contradictory terminal and next-slice facts before rendering."""
+    landed = st.get("landed")
     remaining = st.get("remaining_ladder")
     next_slice = st.get("next_slice")
+    if not isinstance(landed, list):
+        raise ValueError("`landed` must be a list of slice ids")
     if not isinstance(remaining, list):
         raise ValueError("`remaining_ladder` must be a list of slice ids")
+    overlap = sorted({_slice_str(item) for item in landed}
+                     & {_slice_str(item) for item in remaining})
+    if overlap:
+        raise ValueError(
+            "`landed` and `remaining_ladder` overlap at slice(s) %s; a slice cannot "
+            "be both landed and remaining" % ", ".join(overlap))
     if not remaining:
         if next_slice is not None:
             raise ValueError(

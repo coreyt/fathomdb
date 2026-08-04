@@ -1673,6 +1673,25 @@ else
   fail "arm R8 (fabricated next slice): rc=$RC out=$OUT"
 fi
 
+# A slice cannot be both landed and remaining. Keeping it in both arrays renders
+# a self-contradictory board: "LANDED" and still awaiting the same slice.
+setup_fixture
+python3 - "$FIX/dev/plans/release-state-9.9.9.json" <<'PY'
+import json, sys
+p = sys.argv[1]
+s = json.load(open(p))
+s["remaining_ladder"] = [0, 10, 20, 30, 40]
+s["next_slice"] = 0
+json.dump(s, open(p, "w"), indent=2)
+PY
+run_gate
+if [ "$RC" -ne 0 ] && grep -q 'landed' <<<"$OUT" \
+   && grep -q 'remaining' <<<"$OUT"; then
+  pass "landed slices cannot remain in the remaining ladder"
+else
+  fail "arm R9 (landed/remaining overlap): rc=$RC out=$OUT"
+fi
+
 if [ "$FAILED" -gt 0 ]; then
   printf '\n%d test(s) failed\n' "$FAILED" >&2
   exit 1

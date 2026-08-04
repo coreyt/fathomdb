@@ -105,8 +105,8 @@
       "depends_on": [
         20
       ],
-      "status": "UNBLOCKED",
-      "sha": null,
+      "status": "LANDED",
+      "sha": "895d7cec",
       "design_refs": [
         "dev/design/pinned-override-rot-guard.md"
       ]
@@ -136,6 +136,19 @@
       "design_refs": [
         "dev/design/ci-verify-robustness-review.md"
       ]
+    },
+    {
+      "slice": 55,
+      "short": "FAST-HEAVY",
+      "title": "mechanically total fast and heavy verifier tiers",
+      "depends_on": [
+        45
+      ],
+      "status": "NOT_STARTED",
+      "sha": null,
+      "design_refs": [
+        "dev/design/ci-verify-robustness-review.md"
+      ]
     }
   ],
   "landed": [
@@ -144,15 +157,16 @@
     10,
     15,
     20,
-    25
+    25,
+    40
   ],
   "next_slice": 30,
   "remaining_ladder": [
     30,
     35,
-    40,
     45,
-    50
+    50,
+    55
   ],
   "generated_views": [
     {
