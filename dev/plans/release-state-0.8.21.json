@@ -160,6 +160,18 @@
       "file": "dev/plans/plan-0.8.21.md",
       "location": "Landed foundation",
       "renders": "every landed slice + its landing SHA, the SCHEMA version, and the remaining ladder"
+    },
+    {
+      "id": "plan-immediate-next",
+      "file": "dev/plans/plan-0.8.21.md",
+      "location": "Immediate next slice",
+      "renders": "next_slice, its ladder entry, and the remaining ladder"
+    },
+    {
+      "id": "status-current-state",
+      "file": "dev/plans/runs/STATUS-0.8.21.md",
+      "location": "Current state table's Next slice row",
+      "renders": "next_slice, its status, and every landed slice with its landing SHA"
     }
   ]
 }

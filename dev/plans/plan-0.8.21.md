@@ -199,10 +199,10 @@ retained in place; current indexes must identify current authority.
 
 ## Immediate next slice
 
-**Slice 25 (SHELL-FIX) — UNBLOCKED, and it is the next slice.** The foundation
-ladder 0–20 is complete; the ladder was extended on 2026-08-04 by HITL decision
-rather than closing the release. Slice 40 (PIN-ROT) is also UNBLOCKED and
-depends only on 20, so it may run in parallel with the 25 → 30 → 35 chain.
+<!-- BEGIN GENERATED release-state:0.8.21:plan-immediate-next -->
+**IMMEDIATE NEXT: Slice 30** (`SHELLCHECK`) — shellcheck in agent-lint.sh with .shellcheckrc and masked-return checks
+
+**Remaining ladder:** 30 → 35 → 40 → 45 → 50.<!-- END GENERATED release-state:0.8.21:plan-immediate-next -->
 
 Release closure and the opening of 0.8.22 remain explicit state transitions and
 are not implied by this plan.

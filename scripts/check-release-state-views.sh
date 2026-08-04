@@ -528,6 +528,27 @@ def render_plan_immediate_next(st):
                " → ".join(_slice_str(n) for n in st["remaining_ladder"])))
 
 
+def render_status_current_state(st):
+    """STATUS board's next-slice row, derived from the release state."""
+    nxt = st["next_slice"]
+    if isinstance(nxt, bool) or not isinstance(nxt, (int, float)):
+        raise ValueError(
+            "`next_slice` is %r, not a slice number. The STATUS board's next-slice "
+            "pointer cannot be rendered from it." % (nxt,))
+    by = _by_slice(st)
+    if nxt not in by:
+        raise ValueError(
+            "`next_slice` is %s but the ladder carries no such slice, so the STATUS "
+            "board would name a slice that does not exist." % _slice_str(nxt))
+    entry = by[nxt]
+    landed = " · ".join(
+        "%s (`%s`)" % (_slice_str(item["slice"]), item["sha"])
+        for item in st["ladder"] if item["slice"] in st["landed"])
+    return ("**Next is Slice %s (%s), %s.** Landed on `origin/main`: %s — "
+            "verified reachable, not asserted."
+            % (_slice_str(nxt), entry["short"], entry["status"], landed))
+
+
 def render_plan_landed_roll_up(st):
     """`plan-<release>.md` §9's LANDED roll-up (TC-89, second site).
 
@@ -568,6 +589,7 @@ RENDERERS = {
     "status-live-open-count":  render_status_live_open_count,
     "handoff-next-step":       render_handoff_next_step,
     "plan-immediate-next":     render_plan_immediate_next,
+    "status-current-state":    render_status_current_state,
 }
 
 # ---------------------------------------------------------------------------
