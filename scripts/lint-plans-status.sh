@@ -21,7 +21,10 @@
 #
 # Pass: silent, exit 0. Fail: one line per offending file + nonzero exit.
 set -euo pipefail
-cd "$(git rev-parse --show-toplevel)"
+# `git rev-parse` failing here used to degrade to `cd ""` — a bash no-op that
+# leaves the script running in an arbitrary cwd. Bind and check it instead.
+_repo_toplevel="$(git rev-parse --show-toplevel)" || exit 1
+cd "$_repo_toplevel" || exit 1
 
 ALLOWED_RE='^(ACTIVE|COMPLETE|PROPOSED|SUPERSEDED|UNKNOWN)$'
 FAIL=0

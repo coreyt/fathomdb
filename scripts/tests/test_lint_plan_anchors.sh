@@ -242,11 +242,13 @@ fi
 # --- Arm 3e: a soft wrap must not defeat the existence check ------------
 setup_fixture; baseline_plan
 printf -- '---\nstatus: ACTIVE\n---\n\n' >"$FIX/repo/dev/plans/wrapped.md"
-printf 'Plain wrap: the projector is `fn ghost_alpha` in\n' >>"$FIX/repo/dev/plans/wrapped.md"
-printf '`widget/src/lib.rs` — and it is not there.\n\n' >>"$FIX/repo/dev/plans/wrapped.md"
-printf '> Blockquote wrap: `fn ghost_beta` in\n' >>"$FIX/repo/dev/plans/wrapped.md"
-printf '>   `widget/src/lib.rs` — also not there.\n\n' >>"$FIX/repo/dev/plans/wrapped.md"
-printf 'Split after the symbol: `fn ghost_gamma`\nin `widget/src/lib.rs`.\n' >>"$FIX/repo/dev/plans/wrapped.md"
+{
+  printf 'Plain wrap: the projector is `fn ghost_alpha` in\n'
+  printf '`widget/src/lib.rs` — and it is not there.\n\n'
+  printf '> Blockquote wrap: `fn ghost_beta` in\n'
+  printf '>   `widget/src/lib.rs` — also not there.\n\n'
+  printf 'Split after the symbol: `fn ghost_gamma`\nin `widget/src/lib.rs`.\n'
+} >>"$FIX/repo/dev/plans/wrapped.md"
 run_lint
 n_hits=$(grep -c 'does NOT occur' <<<"$OUT" || true)
 if [ "$RC" -ne 0 ] && [ "$n_hits" -eq 3 ] \

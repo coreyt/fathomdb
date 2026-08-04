@@ -17,7 +17,8 @@ chmod +x "$fake_actionlint"
 # shellcheck source=../lib/actionlint-version.sh
 . "$REPO_ROOT/scripts/lib/actionlint-version.sh"
 
-if [ "$(read_actionlint_version "$fake_actionlint")" != "1.7.12" ]; then
+reported_version="$(read_actionlint_version "$fake_actionlint")"
+if [ "$reported_version" != "1.7.12" ]; then
   printf 'FAIL  Go-installed actionlint v1.7.12 must normalize to exact pin 1.7.12\n' >&2
   exit 1
 fi

@@ -277,6 +277,9 @@ collect_hits() {
 # `--root` mode would then scan the leak as if it were a file of the tree. That
 # is not hypothetical; it happened once during this fix.
 TC86_TMPFILES=()
+# Invoked indirectly by the `trap ... EXIT` below; a trap handler is not a
+# call site as far as SC2329 is concerned.
+# shellcheck disable=SC2329
 tc86_cleanup_tmpfiles() {
   [ "${#TC86_TMPFILES[@]}" -gt 0 ] || return 0
   rm -f "${TC86_TMPFILES[@]+"${TC86_TMPFILES[@]}"}" 2>/dev/null || true
@@ -296,6 +299,9 @@ redact_file() {
   # Fields 6/7 (predicate-2 detections) are not used by the banner; they are read
   # so that a future field cannot be swallowed by field 5.
   agent_state_redact_content_blocks "$p" "$tmp1" "$cf"
+  # shellcheck disable=SC2034  # hit_blocks/hit_lines are deliberately unread:
+  # they exist so that `read` cannot stuff fields 6/7 into field 5. See the
+  # comment above.
   read -r content_lines blocks fnames oor_blocks oor_lines hit_blocks hit_lines <"$cf" \
     || { content_lines=0; blocks=0; fnames=0; oor_blocks=0; oor_lines=0; hit_blocks=0; hit_lines=0; }
   rm -f "$cf"
