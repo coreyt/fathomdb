@@ -109,8 +109,61 @@ jobs:
             nonmd:
               - '!**/*.md'
 
-  # Single agent-loop gate. Mirrors what scripts/agent-verify.sh does locally,
-  # so a green CI run = `verify` is green on the same toolchain set.
+  # The fast verifier owns every cheap diagnostic suite plus lint, typecheck,
+  # and security. It runs alongside the heavy language-test tier below. The
+  # tier-totality fixture makes the partition fail closed: a new registration
+  # cannot be absent from both jobs, and no suite can be in both by accident.
+  verify-fast:
+    needs: changes
+    if: needs.changes.outputs.docs_only != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+      - name: Configure per-session TMPDIR
+        shell: bash
+        run: |
+          TMPDIR="$RUNNER_TEMP/fathomdb-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          mkdir -p "$TMPDIR"
+          echo "TMPDIR=$TMPDIR" >> "$GITHUB_ENV"
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "25.9.0"
+      - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # stable
+        with:
+          toolchain: "1.95.0"
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - name: Bootstrap dev tooling
+        run: bash scripts/bootstrap.sh
+      - name: agent-verify fast (lint -> typecheck -> security -> cheap suites)
+        env:
+          AGENT_VERBOSE: "1"
+        run: bash scripts/agent-verify.sh --tier=fast
+      - name: Collect redacted fast verifier spill logs
+        if: failure()
+        shell: bash
+        run: |
+          set -euo pipefail
+          spill_dir="${RUNNER_TEMP}/fathomdb-agent-spill-logs-fast"
+          bash scripts/collect-agent-spill-logs.sh --destination "$spill_dir"
+      - name: Upload redacted fast verifier spill logs
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: fathomdb-agent-spill-logs-fast-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/fathomdb-agent-spill-logs-fast
+          if-no-files-found: error
+
+  # Heavy language suites keep the established `verify` check name for the
+  # release tooling, but it deliberately runs only the complementary tier.
+  # Both jobs are gates; neither uses retries, quarantine, or path-based
+  # language skips.
   verify:
     needs: changes
     if: needs.changes.outputs.docs_only != 'true'
@@ -146,14 +199,14 @@ jobs:
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
       - name: Bootstrap dev tooling
         run: bash scripts/bootstrap.sh
-      - name: agent-verify (lint -> typecheck -> test)
+      - name: agent-verify heavy (Rust -> Python -> TypeScript)
         env:
           # run_capped is normally quiet on success. CI needs per-suite timing
           # and status to expose a growing slow tail before it becomes a
           # failure; agent-suite-run also mirrors this table to the step
           # summary.
           AGENT_VERBOSE: "1"
-        run: bash scripts/agent-verify.sh
+        run: bash scripts/agent-verify.sh --tier=heavy
       # run_capped keeps complete diagnostics in /tmp, while the log exposes
       # only its first 200 lines. Collect redacted, regular spill files after
       # any verify failure so a long test/ruff failure remains root-causable

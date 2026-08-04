@@ -255,13 +255,13 @@ else
   fail "arm C: the last executable line of agent-test.sh is NOT suite_summary_and_exit: [$LAST_EXEC_LINE]"
 fi
 
-if grep -qE '^run_suite test-rust bash scripts/test-rust-workspace\.sh --serial$' "$AGENT_TEST"; then
-  pass "arm C: test-rust delegates to the canonical serial workspace runner"
+if grep -qE '^run_tier_suite heavy test-rust bash scripts/test-rust-workspace\.sh --serial$' "$AGENT_TEST"; then
+  pass "arm C: the heavy tier delegates test-rust to the canonical serial workspace runner"
 else
-  fail "arm C: test-rust must delegate to scripts/test-rust-workspace.sh --serial"
+  fail "arm C: heavy test-rust must delegate to scripts/test-rust-workspace.sh --serial"
 fi
 
-if grep -qE '^run_suite test-cargo-publish-if-new bash scripts/tests/test_cargo_publish_if_new\.sh$' "$AGENT_TEST"; then
+if grep -qE '^run_tier_suite fast test-cargo-publish-if-new bash scripts/tests/test_cargo_publish_if_new\.sh$' "$AGENT_TEST"; then
   pass "arm C: normal agent-test runs cargo publish helper behavior coverage"
 else
   fail "arm C: agent-test must run test_cargo_publish_if_new.sh"

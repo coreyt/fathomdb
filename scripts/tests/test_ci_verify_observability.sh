@@ -14,7 +14,7 @@ SUITE_LIB="$REPO_ROOT/scripts/lib/agent-suite-run.sh"
 OUTPUT_LIB="$REPO_ROOT/scripts/lib/agent-output.sh"
 COLLECTOR="$REPO_ROOT/scripts/collect-agent-spill-logs.sh"
 NODE_BIN="${NODE_BIN:-node}"
-YAML_MODULE="$REPO_ROOT/node_modules/js-yaml"
+YAML_MODULE="${YAML_MODULE:-$REPO_ROOT/node_modules/js-yaml}"
 
 FAILED=0
 pass() { printf 'PASS  %s\n' "$1"; }
@@ -53,34 +53,42 @@ CONTRACT="$TMPROOT/workflow-contract.json"
 const fs = require("fs");
 const [workflowPath, yamlModule] = process.argv.slice(2);
 const workflow = require(yamlModule).load(fs.readFileSync(workflowPath, "utf8"));
-const verify = workflow.jobs.verify || {};
-const steps = verify.steps || [];
-const verifyStep = steps.find((step) => step.run && step.run.includes("bash scripts/agent-verify.sh"));
-const collectStep = steps.find((step) => step.run && step.run.includes("collect-agent-spill-logs.sh"));
-const uploadStep = steps.find((step) => (step.uses || "").startsWith("actions/upload-artifact@")
-  && step.with && String(step.with.name || "").startsWith("fathomdb-agent-spill-logs-"));
+function verifierContract(jobName, tier, spillDir) {
+  const job = workflow.jobs[jobName] || {};
+  const steps = job.steps || [];
+  const verifyStep = steps.find((step) => step.run
+    && step.run.includes(`bash scripts/agent-verify.sh --tier=${tier}`));
+  const collectStep = steps.find((step) => step.run && step.run.includes("collect-agent-spill-logs.sh"));
+  const uploadStep = steps.find((step) => (step.uses || "").startsWith("actions/upload-artifact@")
+    && step.with && String(step.with.name || "").startsWith("fathomdb-agent-spill-logs-"));
+  return {
+    tier: Boolean(verifyStep),
+    verbose: Boolean(verifyStep && verifyStep.env && String(verifyStep.env.AGENT_VERBOSE) === "1"),
+    collect_on_failure: Boolean(collectStep && collectStep.if === "failure()"),
+    collect_uses_runner_temp: Boolean(collectStep && collectStep.run.includes(`\${RUNNER_TEMP}/${spillDir}`)),
+    upload_on_failure: Boolean(uploadStep && uploadStep.if === "failure()"),
+    upload_pinned: Boolean(uploadStep && uploadStep.uses === "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a"),
+    upload_exact_path: Boolean(uploadStep && uploadStep.with.path === `\${{ runner.temp }}/${spillDir}`),
+    upload_no_files_hard_fail: Boolean(uploadStep && uploadStep.with["if-no-files-found"] === "error"),
+  };
+}
 console.log(JSON.stringify({
-  verbose: Boolean(verifyStep && verifyStep.env && String(verifyStep.env.AGENT_VERBOSE) === "1"),
-  collect_on_failure: Boolean(collectStep && collectStep.if === "failure()"),
-  collect_uses_runner_temp: Boolean(collectStep && collectStep.run.includes("${RUNNER_TEMP}/fathomdb-agent-spill-logs")),
-  upload_on_failure: Boolean(uploadStep && uploadStep.if === "failure()"),
-  upload_pinned: Boolean(uploadStep && uploadStep.uses === "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a"),
-  upload_exact_path: Boolean(uploadStep && uploadStep.with.path === "${{ runner.temp }}/fathomdb-agent-spill-logs"),
-  upload_no_files_hard_fail: Boolean(uploadStep && uploadStep.with["if-no-files-found"] === "error"),
+  fast: verifierContract("verify-fast", "fast", "fathomdb-agent-spill-logs-fast"),
+  heavy: verifierContract("verify", "heavy", "fathomdb-agent-spill-logs"),
 }, null, 2));
 JS
 
 contract_value() {
-  "$NODE_BIN" - "$CONTRACT" "$1" <<'JS'
+  "$NODE_BIN" - "$CONTRACT" "$1" "$2" <<'JS'
 const fs = require("fs");
-const [contractPath, key] = process.argv.slice(2);
-process.stdout.write(String(JSON.parse(fs.readFileSync(contractPath, "utf8"))[key]));
+const [contractPath, tier, key] = process.argv.slice(2);
+process.stdout.write(String(JSON.parse(fs.readFileSync(contractPath, "utf8"))[tier][key]));
 JS
 }
 
 assert_true() {
-  local key="$1" description="$2" actual
-  actual="$(contract_value "$key")" || {
+  local tier="$1" key="$2" description="$3" actual
+  actual="$(contract_value "$tier" "$key")" || {
     fail "$description (could not read workflow contract)"
     return
   }
@@ -91,13 +99,16 @@ assert_true() {
   fi
 }
 
-assert_true verbose "verify enables verbose per-suite status/timing on a green run"
-assert_true collect_on_failure "spill collection runs only after a verify failure"
-assert_true collect_uses_runner_temp "spill collection uses runner-owned temporary storage"
-assert_true upload_on_failure "spill artifact upload runs after a verify failure"
-assert_true upload_pinned "spill artifact upload pins actions/upload-artifact"
-assert_true upload_exact_path "spill artifact uploads only the collector output directory"
-assert_true upload_no_files_hard_fail "spill artifact upload refuses a silently empty artifact"
+for verifier_tier in fast heavy; do
+  assert_true "$verifier_tier" tier "$verifier_tier verifier runs its explicit tier"
+  assert_true "$verifier_tier" verbose "$verifier_tier verifier enables per-suite status/timing on a green run"
+  assert_true "$verifier_tier" collect_on_failure "$verifier_tier spill collection runs only after a verifier failure"
+  assert_true "$verifier_tier" collect_uses_runner_temp "$verifier_tier spill collection uses runner-owned temporary storage"
+  assert_true "$verifier_tier" upload_on_failure "$verifier_tier spill artifact upload runs after a verifier failure"
+  assert_true "$verifier_tier" upload_pinned "$verifier_tier spill artifact upload pins actions/upload-artifact"
+  assert_true "$verifier_tier" upload_exact_path "$verifier_tier spill artifact uploads only the collector output directory"
+  assert_true "$verifier_tier" upload_no_files_hard_fail "$verifier_tier spill artifact upload refuses a silently empty artifact"
+done
 
 DRIVER="$TMPROOT/github-summary-driver.sh"
 SUMMARY="$TMPROOT/github-step-summary.md"

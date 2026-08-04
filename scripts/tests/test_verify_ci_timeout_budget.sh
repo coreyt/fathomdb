@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
-# Structural guard for the CI agent-loop timeout budget.  A clean bootstrap
-# plus the documented full local `scripts/agent-verify.sh` gate needs more
-# than the former 30-minute CI allowance; retain the approved 60-minute
-# budget so CI can complete the same prework it asks developers to run.
+# Structural guard for the split CI verifier budgets. The heavy language tier
+# retains the approved 60-minute allowance; the fast diagnostic tier gets its
+# own bounded 30-minute budget instead of hiding behind that slow tail.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -18,20 +17,34 @@ if [ ! -f "$CI" ]; then
   exit 1
 fi
 
-# Restrict the assertion to the top-level verify job, so another job's
-# timeout cannot accidentally satisfy this contract.
+# Restrict each assertion to its own top-level job, so another job's timeout
+# cannot accidentally satisfy this contract.
 verify_block="$(awk '
   /^  verify:$/ { in_verify = 1; next }
   in_verify && /^  [[:alnum:]_-]+:$/ { exit }
   in_verify { print }
 ' "$CI")"
 
+fast_block="$(awk '
+  /^  verify-fast:$/ { in_fast = 1; next }
+  in_fast && /^  [[:alnum:]_-]+:$/ { exit }
+  in_fast { print }
+' "$CI")"
+
 if [ -z "$verify_block" ]; then
   fail "ci.yml must retain the top-level verify job"
 elif grep -qE '^[[:space:]]*timeout-minutes:[[:space:]]*60[[:space:]]*$' <<<"$verify_block"; then
-  pass "CI verify job preserves the 60-minute bootstrap plus agent-verify budget"
+  pass "CI heavy verify job preserves the 60-minute language-suite budget"
 else
-  fail "CI verify job must allow 60 minutes for bootstrap plus agent-verify"
+  fail "CI heavy verify job must allow 60 minutes"
+fi
+
+if [ -z "$fast_block" ]; then
+  fail "ci.yml must define the top-level verify-fast job"
+elif grep -qE '^[[:space:]]*timeout-minutes:[[:space:]]*30[[:space:]]*$' <<<"$fast_block"; then
+  pass "CI fast verify job has its own 30-minute diagnostic budget"
+else
+  fail "CI fast verify job must allow 30 minutes"
 fi
 
 if [ "$FAILED" -gt 0 ]; then
