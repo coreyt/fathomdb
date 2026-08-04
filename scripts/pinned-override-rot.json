@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "advisory_snapshot": {
+    "source": "GitHub Advisory Database",
+    "retrieved_at": "2026-08-04",
+    "provenance": "Human-reviewed, minimal npm advisory snapshot for governed root overrides. It is intentionally checked in so verify is deterministic and network-free; refresh it deliberately when an override or advisory changes."
+  },
+  "scope": {
+    "npm": "All root package.json overrides are governed. Each must have a matching npm_overrides record with a rationale and recorded no-override resolution evidence.",
+    "cargo": "Cargo [patch], [replace], and git dependencies are governed override mechanisms. No such pins exist today; their appearance hard-fails until this record and checker gain an explicit advisory/rationale entry.",
+    "governed_commit_pins": "scripts/governed-surface-pin.json pins repository contract content, not an external dependency version. Its commit/hash integrity is enforced by scripts/check-governed-surface-pin.sh; it has no package-advisory semantics and is explicitly not reinterpreted here."
+  },
+  "advisories": [
+    {
+      "id": "GHSA-6v5v-wf23-fmfq",
+      "package": "markdown-it",
+      "vulnerable_range": "<=14.1.1",
+      "url": "https://github.com/advisories/GHSA-6v5v-wf23-fmfq"
+    },
+    {
+      "id": "GHSA-h67p-54hq-rp68",
+      "package": "js-yaml",
+      "vulnerable_range": ">=4.0.0, <=4.1.1",
+      "url": "https://github.com/advisories/GHSA-h67p-54hq-rp68"
+    },
+    {
+      "id": "GHSA-52cp-r559-cp3m",
+      "package": "js-yaml",
+      "vulnerable_range": ">=4.0.0, <4.3.0",
+      "url": "https://github.com/advisories/GHSA-52cp-r559-cp3m"
+    },
+    {
+      "id": "GHSA-v245-v573-v5vm",
+      "package": "linkify-it",
+      "vulnerable_range": "<=5.0.1",
+      "url": "https://github.com/advisories/GHSA-v245-v573-v5vm"
+    }
+  ],
+  "npm_overrides": []
+}

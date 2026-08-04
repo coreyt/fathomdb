@@ -479,6 +479,20 @@ jobs:
       - name: Governed-surface pin vs the AC-079 pre-sign (DOC-HYGIENE-2 T1e)
         run: bash scripts/check-governed-surface-pin.sh
 
+  # 0.8.21 Slice 40 — dependency override rot is a fast static failure. It has
+  # no `needs:` and no docs-only condition: a package manifest or advisory
+  # snapshot can change on any push, and its checked-in evidence is deliberately
+  # offline so an unavailable network cannot manufacture a green verdict.
+  pinned-override-rot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Dependency overrides remain justified and non-vulnerable
+        run: bash scripts/check-pinned-override-rot.sh
+      - name: Recurrence guard for vulnerable, obsolete, and unrationalized pins
+        run: bash scripts/tests/test_check_pinned_override_rot.sh
+
   # R-20-H7 — the always-on RUBRIC-H7 `can-i-deploy` contract-conformance
   # backstop. `preflight.sh --landing` is the PREVENT gate at land time; this job
   # is the DETECT gate for whatever slips it. Reuses
