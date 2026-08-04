@@ -537,6 +537,56 @@ def render_plan_landed_roll_up(st):
                _remaining_ladder(st)))
 
 
+def release_attempt_facts(st):
+    """Read the partial-publish attempt record without inferring its cause.
+
+    The record distinguishes observed facts (tag, failed jobs, skips and
+    registry checks) from the unavailable original job log. Recovery workflow
+    changes may be prudent remedies, but they are not evidence of the original
+    failure's raw cause. Every field is required: omitting a failed tier or
+    silently converting an unknown registry state into a claim would make the
+    recovery record less trustworthy than no generated record at all.
+    """
+    attempt = st["release_attempt"]
+    tag = attempt["tag"]
+    workflow = attempt["workflow_run"]
+    for key in ("name", "annotated_object", "commit"):
+        if not tag[key]:
+            raise ValueError("release_attempt.tag.%s must be non-empty" % key)
+    for key in ("id", "url", "conclusion"):
+        if not workflow[key]:
+            raise ValueError("release_attempt.workflow_run.%s must be non-empty" % key)
+    if workflow["conclusion"] != "failure":
+        raise ValueError(
+            "release_attempt.workflow_run.conclusion is %r; this renderer is reserved "
+            "for a failed release attempt, not a guessed status." % workflow["conclusion"])
+    if not attempt["failed_tiers"]:
+        raise ValueError("release_attempt.failed_tiers must name every observed failed tier")
+    if not attempt["skipped"]:
+        raise ValueError("release_attempt.skipped must name the intentionally unexecuted work")
+    for key in ("registry_boundary", "evidence_limit", "recovery_remedies"):
+        if not attempt[key]:
+            raise ValueError("release_attempt.%s must be non-empty" % key)
+    return attempt
+
+
+def render_release_attempt(st):
+    """Board §1 recovery record: immutable facts and the inference boundary."""
+    attempt = release_attempt_facts(st)
+    tag = attempt["tag"]
+    workflow = attempt["workflow_run"]
+    failed = ", ".join("`%s`" % job for job in attempt["failed_tiers"])
+    skipped = "; ".join(attempt["skipped"])
+    return (
+        "\n**Failed release attempt — `%s`:** Annotated tag object `%s` resolves to "
+        "commit `%s`. [Release workflow run %s](%s) concluded **failure**. "
+        "**Failed tiers:** %s. **Skipped:** %s. **Registry boundary:** %s "
+        "**Evidence limit:** %s **Recovery posture:** %s\n"
+        % (tag["name"], tag["annotated_object"], tag["commit"], workflow["id"],
+           workflow["url"], failed, skipped, attempt["registry_boundary"],
+           attempt["evidence_limit"], attempt["recovery_remedies"]))
+
+
 RENDERERS = {
     "master-ladder-progress":  render_master_ladder_progress,
     "plan-landed-roll-up":     render_plan_landed_roll_up,
@@ -544,6 +594,7 @@ RENDERERS = {
     "status-live-open-count":  render_status_live_open_count,
     "handoff-next-step":       render_handoff_next_step,
     "plan-immediate-next":     render_plan_immediate_next,
+    "release-attempt":         render_release_attempt,
 }
 
 # ---------------------------------------------------------------------------
