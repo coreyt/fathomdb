@@ -158,7 +158,11 @@
         20
       ],
       "status": "UNBLOCKED",
-      "sha": null
+      "sha": null,
+      "design_refs": [
+        "dev/adr/ADR-0.8.21-nested-source-projections.md",
+        "dev/design/nested-source-projections.md"
+      ]
     }
   ],
   "landed": [

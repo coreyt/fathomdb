@@ -189,6 +189,10 @@ the landed CI-observability work. Slice 60 may begin with a fresh rebase of the
 candidate onto current `origin/main`; its implementation, governed-surface
 change, independent review, and merge remain separate gates.
 
+The design of record is [Nested-Source Projections](../design/nested-source-projections.md)
+and its accepted [ADR](../adr/ADR-0.8.21-nested-source-projections.md). These
+documents commission the work; they do not authorize implementation merge.
+
 ## Landed foundation
 
 <!-- BEGIN GENERATED release-state:0.8.21:plan-landed-roll-up -->
