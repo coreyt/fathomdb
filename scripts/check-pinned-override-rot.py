@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import sys
@@ -15,8 +16,10 @@ class Unverified(Exception):
     """The checked-in evidence cannot support a trustworthy verdict."""
 
 
-VERSION = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?$")
+VERSION = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
+PRERELEASE_VERSION = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)-[0-9A-Za-z.-]+$")
 COMPARATOR = re.compile(r"^(<=|>=|<|>|=)?\s*(\d+\.\d+\.\d+)$")
+SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 
 def read_json(path: Path, label: str) -> dict[str, Any]:
@@ -32,10 +35,14 @@ def read_json(path: Path, label: str) -> dict[str, Any]:
 
 
 def version_tuple(version: str) -> tuple[int, int, int]:
+    if PRERELEASE_VERSION.fullmatch(version):
+        raise Unverified(
+            f"prerelease version {version!r} is unsupported by the stable-only semver comparator"
+        )
     match = VERSION.fullmatch(version)
     if not match:
         raise Unverified(f"unsupported non-exact semver version {version!r}")
-    return tuple(int(component) for component in version.split("-", 1)[0].split("."))  # type: ignore[return-value]
+    return tuple(int(component) for component in version.split("."))  # type: ignore[return-value]
 
 
 def satisfies(version: str, range_text: str) -> bool:
@@ -84,42 +91,86 @@ def records_by_package(metadata: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return indexed
 
 
-def validate_metadata(metadata: dict[str, Any]) -> None:
-    if metadata.get("schema_version") != 1:
-        raise Unverified("metadata schema_version must be 1")
+def advisory_snapshot_path(root: Path, metadata: dict[str, Any]) -> Path:
     snapshot = metadata.get("advisory_snapshot")
     if not isinstance(snapshot, dict):
         raise Unverified("metadata has no advisory_snapshot object")
-    for key in ("source", "retrieved_at", "provenance"):
+    for key in ("source", "retrieved_at", "path", "provenance"):
         nonempty_string(snapshot.get(key), f"advisory_snapshot.{key}")
+    expected_digest = nonempty_string(snapshot.get("sha256"), "advisory_snapshot.sha256")
+    if not SHA256.fullmatch(expected_digest):
+        raise Unverified("advisory_snapshot.sha256 must be a lowercase SHA-256 digest")
+    path = root / snapshot["path"]
+    try:
+        actual_digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError as exc:
+        raise Unverified(f"cannot read advisory snapshot {path}: {exc}") from exc
+    if actual_digest != expected_digest:
+        raise Unverified(
+            f"advisory snapshot sha256 {actual_digest} does not match governed digest {expected_digest}"
+        )
+    return path
+
+
+def validate_advisories(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
+    if snapshot.get("schema_version") != 1:
+        raise Unverified("advisory snapshot schema_version must be 1")
+    source = snapshot.get("source")
+    if not isinstance(source, dict):
+        raise Unverified("advisory snapshot has no source object")
+    for key in ("name", "retrieved_at", "provenance"):
+        nonempty_string(source.get(key), f"advisory snapshot source.{key}")
+    advisories = snapshot.get("advisories")
+    if not isinstance(advisories, list) or not advisories:
+        raise Unverified("advisory snapshot advisories must be a non-empty list")
+    seen_ids: set[str] = set()
+    validated: list[dict[str, Any]] = []
+    for index, advisory in enumerate(advisories):
+        if not isinstance(advisory, dict):
+            raise Unverified(f"advisory snapshot advisories[{index}] must be an object")
+        advisory_id = nonempty_string(advisory.get("id"), f"advisory snapshot advisories[{index}].id")
+        if advisory_id in seen_ids:
+            raise Unverified(f"advisory snapshot advisory {advisory_id!r} appears more than once")
+        seen_ids.add(advisory_id)
+        nonempty_string(advisory.get("package"), f"advisory snapshot advisories[{index}].package")
+        nonempty_string(
+            advisory.get("vulnerable_range"), f"advisory snapshot advisories[{index}].vulnerable_range"
+        )
+        nonempty_string(advisory.get("url"), f"advisory snapshot advisories[{index}].url")
+        satisfies("0.0.0", advisory["vulnerable_range"])
+        validated.append(advisory)
+    return validated
+
+
+def validate_metadata(metadata: dict[str, Any], advisories: list[dict[str, Any]]) -> None:
+    if metadata.get("schema_version") != 2:
+        raise Unverified("metadata schema_version must be 2")
+    records = records_by_package(metadata)
     scope = metadata.get("scope")
     if not isinstance(scope, dict):
         raise Unverified("metadata has no scope object")
     for key in ("npm", "cargo", "governed_commit_pins"):
         nonempty_string(scope.get(key), f"scope.{key}")
-    advisories = metadata.get("advisories")
-    if not isinstance(advisories, list):
-        raise Unverified("metadata has no advisories list")
-    seen_ids: set[str] = set()
-    for index, advisory in enumerate(advisories):
-        if not isinstance(advisory, dict):
-            raise Unverified(f"advisories[{index}] must be an object")
-        advisory_id = nonempty_string(advisory.get("id"), f"advisories[{index}].id")
-        if advisory_id in seen_ids:
-            raise Unverified(f"advisory {advisory_id!r} appears more than once")
-        seen_ids.add(advisory_id)
-        nonempty_string(advisory.get("package"), f"advisories[{index}].package")
-        nonempty_string(advisory.get("vulnerable_range"), f"advisories[{index}].vulnerable_range")
-        nonempty_string(advisory.get("url"), f"advisories[{index}].url")
-        # Parse now, even when there is no matching pin, so a malformed snapshot
-        # cannot turn into a clean pass merely because today has zero overrides.
-        satisfies("0.0.0", advisory["vulnerable_range"])
-    records_by_package(metadata)
+    advisory_ids = {advisory["id"]: advisory for advisory in advisories}
+    for package, record in records.items():
+        mapped = record.get("advisory_ids")
+        if not isinstance(mapped, list) or not mapped or not all(isinstance(item, str) and item for item in mapped):
+            raise Unverified(f"npm override {package}.advisory_ids must be a non-empty string list")
+        if len(set(mapped)) != len(mapped):
+            raise Unverified(f"npm override {package}.advisory_ids names an advisory more than once")
+        expected = {advisory["id"] for advisory in advisories if advisory["package"] == package}
+        if set(mapped) != expected:
+            raise Unverified(
+                f"npm override {package}.advisory_ids must exactly map this package's snapshot advisories "
+                f"(expected {sorted(expected)}, got {sorted(mapped)})"
+            )
+        if any(advisory_id not in advisory_ids for advisory_id in mapped):
+            raise Unverified(f"npm override {package}.advisory_ids names an unknown snapshot advisory")
 
 
-def advisory_index(metadata: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+def advisory_index(advisories: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
     indexed: dict[str, list[dict[str, Any]]] = {}
-    for advisory in metadata["advisories"]:
+    for advisory in advisories:
         indexed.setdefault(advisory["package"], []).append(advisory)
     return indexed
 
@@ -138,40 +189,37 @@ def cargo_governed_pins(root: Path) -> list[str]:
             parsed = tomllib.loads(manifest.read_text(encoding="utf-8"))
         except (OSError, tomllib.TOMLDecodeError) as exc:
             raise Unverified(f"cannot parse Cargo manifest {manifest}: {exc}") from exc
+        relative = manifest.relative_to(root)
         if parsed.get("patch") or parsed.get("replace"):
-            found.append(str(manifest.relative_to(root)))
-        for section in ("dependencies", "dev-dependencies", "build-dependencies"):
-            for name, spec in parsed.get(section, {}).items():
-                if isinstance(spec, dict) and "git" in spec:
-                    found.append(f"{manifest.relative_to(root)}:{section}.{name}")
+            found.append(str(relative))
+
+        def find_git_dependencies(value: Any, path: list[str]) -> None:
+            if not isinstance(value, dict):
+                return
+            for key, child in value.items():
+                child_path = [*path, str(key)]
+                if key in {"dependencies", "dev-dependencies", "build-dependencies"}:
+                    if not isinstance(child, dict):
+                        raise Unverified(
+                            f"Cargo dependency table {relative}:{'.'.join(child_path)} must be an object"
+                        )
+                    for name, spec in child.items():
+                        if isinstance(spec, dict) and "git" in spec:
+                            found.append(f"{relative}:{'.'.join(child_path)}.{name}")
+                find_git_dependencies(child, child_path)
+
+        find_git_dependencies(parsed, [])
     return found
-
-
-def lockfile_dependent_ranges(lockfile: dict[str, Any], package: str) -> list[str]:
-    """Return every dependency constraint the checked-in lock records for a pin."""
-    packages = lockfile.get("packages")
-    if not isinstance(packages, dict):
-        raise Unverified("npm lockfile has no packages object")
-    ranges: list[str] = []
-    for location, entry in packages.items():
-        if not isinstance(location, str) or not isinstance(entry, dict):
-            raise Unverified("npm lockfile packages must map string paths to objects")
-        dependencies = entry.get("dependencies", {})
-        if not isinstance(dependencies, dict):
-            raise Unverified(f"npm lockfile {location or '<root>'} has non-object dependencies")
-        required_range = dependencies.get(package)
-        if required_range is not None:
-            if not isinstance(required_range, str):
-                raise Unverified(f"npm lockfile dependency range for {package!r} is not a string")
-            ranges.append(required_range)
-    return sorted(set(ranges))
 
 
 def check(root: Path, manifest_path: Path, lockfile_path: Path, metadata_path: Path) -> list[str]:
     manifest = read_json(manifest_path, "npm manifest")
-    lockfile = read_json(lockfile_path, "npm lockfile")
+    read_json(lockfile_path, "npm lockfile")
     metadata = read_json(metadata_path, "pinned-override metadata")
-    validate_metadata(metadata)
+    snapshot_path = advisory_snapshot_path(root, metadata)
+    advisories = validate_advisories(read_json(snapshot_path, "advisory snapshot"))
+    validate_metadata(metadata, advisories)
+    indexed_advisories = advisory_index(advisories)
 
     overrides = manifest.get("overrides", {})
     if not isinstance(overrides, dict):
@@ -192,32 +240,12 @@ def check(root: Path, manifest_path: Path, lockfile_path: Path, metadata_path: P
         rationale = record.get("rationale")
         if not isinstance(rationale, str) or not rationale.strip():
             failures.append(f"R3 npm override {package}@{override} has no recorded rationale")
-        for advisory in advisory_index(metadata).get(package, []):
+        for advisory in indexed_advisories.get(package, []):
             if satisfies(override, advisory["vulnerable_range"]):
                 failures.append(
                     f"R1 npm override {package}@{override} is vulnerable to {advisory['id']} "
                     f"({advisory['vulnerable_range']})"
                 )
-        evidence = record.get("unpin_evidence")
-        if not isinstance(evidence, dict):
-            raise Unverified(f"npm override {package} has no unpin_evidence object")
-        natural = nonempty_string(evidence.get("resolved_version"), f"npm override {package}.unpin_evidence.resolved_version")
-        nonempty_string(evidence.get("provenance"), f"npm override {package}.unpin_evidence.provenance")
-        ranges = evidence.get("dependent_ranges")
-        if not isinstance(ranges, list) or not all(isinstance(item, str) and item for item in ranges):
-            raise Unverified(f"npm override {package}.unpin_evidence.dependent_ranges must be a non-empty string list")
-        lockfile_ranges = lockfile_dependent_ranges(lockfile, package)
-        if sorted(set(ranges)) != lockfile_ranges:
-            raise Unverified(
-                f"npm override {package}.unpin_evidence.dependent_ranges {sorted(set(ranges))} does not match "
-                f"the checked-in lockfile constraints {lockfile_ranges}"
-            )
-        safe = all(not satisfies(natural, advisory["vulnerable_range"]) for advisory in advisory_index(metadata).get(package, []))
-        if safe and all(satisfies(natural, required_range) for required_range in ranges):
-            failures.append(
-                f"R2 npm override {package}@{override} is obsolete: recorded no-override resolution "
-                f"{natural} satisfies every dependent range and known advisory"
-            )
     for extra in sorted(records):
         failures.append(f"metadata records npm override {extra!r}, but package.json has no such override")
 
@@ -226,6 +254,12 @@ def check(root: Path, manifest_path: Path, lockfile_path: Path, metadata_path: P
         failures.append(
             "Cargo override/git pin(s) require an explicit governed record before this gate can verify them: "
             + ", ".join(cargo_pins)
+        )
+    if not failures and overrides:
+        packages = ", ".join(sorted(overrides))
+        raise Unverified(
+            "R2 cannot derive a no-override resolution from package.json and a lockfile generated with "
+            f"overrides ({packages}); self-attested unpin_evidence is not accepted"
         )
     return failures
 
