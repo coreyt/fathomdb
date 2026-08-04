@@ -38,7 +38,10 @@ input="$(cat)"
 printf 'sha256sum invoked: %s\n' "$input" >>"$SHELLCHECK_TEST_MARKERS"
 case "${SHELLCHECK_TEST_SHA_MODE:-pass}" in
   pass)
-    printf '%s\n' "$input" | grep -Fq "$SHELLCHECK_TEST_SHA" || exit 1
+    case "$input" in
+      *"$SHELLCHECK_TEST_SHA"*) ;;
+      *) exit 1 ;;
+    esac
     exit 0
     ;;
   fail) exit 1 ;;
