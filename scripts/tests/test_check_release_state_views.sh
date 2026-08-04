@@ -801,8 +801,14 @@ fi
 # lands, the single writer is updated, and the plan's prose is not.
 setup_fixture
 plannext_fixture
-perl -0777 -pi -e 's/"next_slice": 10/"next_slice": 20/' \
-  "$FIX/dev/plans/release-state-9.9.9.json"
+python3 - "$FIX/dev/plans/release-state-9.9.9.json" <<'PY'
+import json, sys
+p = sys.argv[1]
+s = json.load(open(p))
+s["next_slice"] = 20
+s["remaining_ladder"] = [20, 30, 40]
+json.dump(s, open(p, "w"), indent=2)
+PY
 run_gate
 if [ "$RC" -ne 0 ] && grep -q 'is STALE' <<<"$OUT" && grep -q 'plan-immediate-next' <<<"$OUT" \
    && grep -q 'Slice 20' <<<"$OUT"; then
@@ -846,8 +852,14 @@ fi
 # exists to close, wearing a different hat. It must fail with the REASON.
 setup_fixture
 plannext_fixture
-perl -0777 -pi -e 's/"next_slice": 10/"next_slice": null/' \
-  "$FIX/dev/plans/release-state-9.9.9.json"
+python3 - "$FIX/dev/plans/release-state-9.9.9.json" <<'PY'
+import json, sys
+p = sys.argv[1]
+s = json.load(open(p))
+s["next_slice"] = None
+s["remaining_ladder"] = []
+json.dump(s, open(p, "w"), indent=2)
+PY
 run_gate
 # `plan-immediate-next` must be NAMED in the failure: `handoff-next-step` also
 # reads `next_slice` and also refuses to render it, so an assertion that merely
@@ -944,6 +956,7 @@ import json, sys
 p = sys.argv[1]
 s = json.load(open(p))
 s["remaining_ladder"] = []
+s["next_slice"] = None
 json.dump(s, open(p, "w"), indent=2)
 PY
 run_gate
@@ -1570,6 +1583,94 @@ if [ -x "$SHALLOW/scripts/check-release-state-views.sh" ]; then
   fi
 else
   fail "arm R5: gate was not runnable after shallow-fixture setup; see prior R5 setup failures"
+fi
+
+# --- Arm R6: every live release owns its plan AND board next-state pointer ---
+# A nonterminal release has two commission surfaces: the plan's mandate and the
+# STATUS board's current-state row.  Both must be rendered from `next_slice`.
+# Naming only the plan leaves the board free to keep commissioning a landed
+# slice, which is the same stale-pointer defect on a second surface.
+set +e
+LIVE_POINTER_ERRORS="$(python3 - "$REPO_ROOT" <<'PY'
+import glob
+import json
+import os
+import sys
+
+root = sys.argv[1]
+errors = []
+for state_path in sorted(glob.glob(os.path.join(root, "dev/plans/release-state-*.json"))):
+    with open(state_path, encoding="utf-8") as handle:
+        state = json.load(handle)
+    next_slice = state.get("next_slice")
+    if next_slice is None:
+        continue
+    views = {view.get("id"): view.get("file") for view in state.get("generated_views", [])}
+    remaining = state.get("remaining_ladder")
+    if not isinstance(remaining, list):
+        errors.append(f"{os.path.basename(state_path)}: remaining_ladder must be a list")
+        continue
+    if not remaining:
+        if next_slice is not None:
+            errors.append(f"{os.path.basename(state_path)}: terminal ladder requires next_slice null")
+        continue
+    if next_slice != remaining[0]:
+        errors.append(
+            f"{os.path.basename(state_path)}: remaining_ladder starts at {remaining[0]}, not next_slice {next_slice}"
+        )
+        continue
+    for view_id, document_key in (("plan-immediate-next", "plan"), ("status-current-state", "board"), ("status-next-action", "board")):
+        document = state.get(document_key, "")
+        if views.get(view_id) != document:
+            errors.append(
+                f"{os.path.basename(state_path)}: next_slice {next_slice} requires {view_id} for {document}"
+            )
+            continue
+        marker = f"BEGIN GENERATED release-state:{state['release']}:{view_id}"
+        document_path = os.path.join(root, document)
+        if not os.path.isfile(document_path) or marker not in open(document_path, encoding="utf-8").read():
+            errors.append(f"{os.path.basename(state_path)}: {view_id} marker missing from {document}")
+if errors:
+    print("\n".join(errors))
+    sys.exit(1)
+PY
+)"
+LIVE_POINTER_RC=$?
+set -e
+if [ "$LIVE_POINTER_RC" -eq 0 ]; then
+  pass "real repo — every nonterminal release generates both its plan and STATUS next-state pointers"
+else
+  fail "arm R6 (all-live current-state pointers): rc=$LIVE_POINTER_RC errors=$LIVE_POINTER_ERRORS"
+fi
+
+# --- Arm R7: terminalness is derived from the remaining ladder, not asserted ---
+setup_fixture
+perl -0777 -pi -e 's/"next_slice": 10/"next_slice": null/' \
+  "$FIX/dev/plans/release-state-9.9.9.json"
+run_gate
+if [ "$RC" -ne 0 ] && grep -q 'remaining_ladder' <<<"$OUT" \
+   && grep -q 'next_slice' <<<"$OUT"; then
+  pass "remaining ladder with null next_slice HARD-fails as malformed state"
+else
+  fail "arm R7 (malformed terminal state): rc=$RC out=$OUT"
+fi
+
+# The inverse is equally dangerous: a completed ladder carrying a numeric next
+# slice would fabricate work for the next commission.
+setup_fixture
+python3 - "$FIX/dev/plans/release-state-9.9.9.json" <<'PY'
+import json, sys
+p = sys.argv[1]
+s = json.load(open(p))
+s["remaining_ladder"] = []
+json.dump(s, open(p, "w"), indent=2)
+PY
+run_gate
+if [ "$RC" -ne 0 ] && grep -q 'remaining_ladder' <<<"$OUT" \
+   && grep -q 'next_slice' <<<"$OUT"; then
+  pass "empty remaining ladder with numeric next_slice HARD-fails as malformed state"
+else
+  fail "arm R8 (fabricated next slice): rc=$RC out=$OUT"
 fi
 
 if [ "$FAILED" -gt 0 ]; then
