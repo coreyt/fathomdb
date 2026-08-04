@@ -294,6 +294,12 @@ run_suite test-install-shellcheck bash scripts/tests/test_install_shellcheck.sh
 # against a stub gate that accepts the same fixture.
 run_suite test-shell-lint-ci-job bash scripts/tests/test_shell_lint_ci_job.sh
 
+# CI observability (0.8.21 Slice 45): every collect-all result, including a
+# green run's status/timing, reaches the GitHub step summary; failed suites
+# annotate the run; and the otherwise-ephemeral spill logs are artifacted only
+# after redaction. The fixture test executes the real harness and collector.
+run_suite test-ci-verify-observability bash scripts/tests/test_ci_verify_observability.sh
+
 # TC-37 recurrence guard: agent-lint-md.sh must HARD-fail (not skip_notice/exit 0)
 # when markdownlint-cli2 is genuinely unresolvable. Builds its own throwaway
 # fixture repo under mktemp -d; never touches this checkout's node_modules.

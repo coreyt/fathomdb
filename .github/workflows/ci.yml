@@ -147,7 +147,32 @@ jobs:
       - name: Bootstrap dev tooling
         run: bash scripts/bootstrap.sh
       - name: agent-verify (lint -> typecheck -> test)
+        env:
+          # run_capped is normally quiet on success. CI needs per-suite timing
+          # and status to expose a growing slow tail before it becomes a
+          # failure; agent-suite-run also mirrors this table to the step
+          # summary.
+          AGENT_VERBOSE: "1"
         run: bash scripts/agent-verify.sh
+      # run_capped keeps complete diagnostics in /tmp, while the log exposes
+      # only its first 200 lines. Collect redacted, regular spill files after
+      # any verify failure so a long test/ruff failure remains root-causable
+      # after this ephemeral runner exits. The collector deliberately rejects
+      # symlinks and removes environment-transcript lines before artifacting.
+      - name: Collect redacted agent verifier spill logs
+        if: failure()
+        shell: bash
+        run: |
+          set -euo pipefail
+          spill_dir="${RUNNER_TEMP}/fathomdb-agent-spill-logs"
+          bash scripts/collect-agent-spill-logs.sh --destination "$spill_dir"
+      - name: Upload redacted agent verifier spill logs
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: fathomdb-agent-spill-logs-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/fathomdb-agent-spill-logs
+          if-no-files-found: error
 
   # TC-74 diagnostic only: retain the parallel workspace run as an artifact
   # without allowing its known scheduling-sensitive failures to gate a release.

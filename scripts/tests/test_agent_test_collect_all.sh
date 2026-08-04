@@ -281,11 +281,14 @@ fi
 # file (a `.`/`source` statement); otherwise this false-positives on any
 # prose mention of the filename in a doc, JSON witness or markdown record
 # (e.g. this very suite's own closure output.json, which names the file in
-# its rationale).
+# its rationale). The two named test drivers source the real library in
+# disposable fixtures; only an additional production sourcer would violate
+# this contract.
 OTHER_SOURCERS="$(grep -rl --include='*.sh' 'agent-suite-run.sh' "$REPO_ROOT/scripts" "$REPO_ROOT/dev" 2>/dev/null \
   | grep -v -F "$AGENT_TEST" \
   | grep -v -F "$AGENT_SUITE_RUN_LIB" \
   | grep -v -F "$SCRIPT_DIR/test_agent_test_collect_all.sh" \
+  | grep -v -F "$SCRIPT_DIR/test_ci_verify_observability.sh" \
   || true)"
 if [ -z "$OTHER_SOURCERS" ]; then
   pass "arm D: no other script in the repo sources agent-suite-run.sh"

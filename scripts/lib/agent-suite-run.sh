@@ -91,6 +91,66 @@ _record() {
   _SUITE_MS+=("$ms")
 }
 
+# Escape data sent through GitHub's workflow-command protocol. Suite labels are
+# currently static repository-owned strings, but this keeps a future label from
+# opening a second command or annotation line.
+_github_escape_command_data() {
+  local value="$1"
+  value="${value//%/%25}"
+  value="${value//$'\r'/%0D}"
+  value="${value//$'\n'/%0A}"
+  printf '%s' "$value"
+}
+
+# Write a compact, deterministic result table to the GitHub run's front-page
+# summary. It is intentionally emitted on success too: passing runs otherwise
+# discard run_capped's per-suite timings, which made the slow tail impossible to
+# measure. A missing summary path is a CI infrastructure failure, not a reason
+# to silently drop observability.
+_github_write_suite_summary() {
+  local i n label state rc ms markdown_label
+
+  [ -n "${GITHUB_ACTIONS:-}" ] || return 0
+  if [ -z "${GITHUB_STEP_SUMMARY:-}" ]; then
+    printf 'agent-test.sh: GITHUB_ACTIONS is set but GITHUB_STEP_SUMMARY is missing\n' >&2
+    return 1
+  fi
+
+  n="${#_SUITE_LABELS[@]}"
+  {
+    printf '## FathomDB agent-test suite results\n\n'
+    printf '| Suite | Status | Exit | Duration (ms) |\n'
+    printf '| --- | --- | ---: | ---: |\n'
+    for ((i = 0; i < n; i++)); do
+      label="${_SUITE_LABELS[$i]}"
+      state="${_SUITE_STATES[$i]}"
+      rc="${_SUITE_RCS[$i]}"
+      ms="${_SUITE_MS[$i]}"
+      markdown_label="${label//|/\\|}"
+      printf '| %s | %s | %s | %s |\n' "$markdown_label" "$state" "$rc" "$ms"
+    done
+    if [ "${#failed_labels[@]}" -gt 0 ]; then
+      printf '\n### Failed suites\n\n'
+      printf 'FAILED SUITES: %s\n' "${failed_labels[*]}"
+    fi
+  } >>"$GITHUB_STEP_SUMMARY"
+}
+
+_github_emit_failure_annotations() {
+  local label escaped_label state i n
+
+  [ -n "${GITHUB_ACTIONS:-}" ] || return 0
+  n="${#_SUITE_LABELS[@]}"
+  for ((i = 0; i < n; i++)); do
+    state="${_SUITE_STATES[$i]}"
+    [ "$state" = "FAIL" ] || continue
+    label="${_SUITE_LABELS[$i]}"
+    escaped_label="$(_github_escape_command_data "$label")"
+    printf '::error title=agent-test suite failed::%s (exit=%s, duration=%sms)\n' \
+      "$escaped_label" "${_SUITE_RCS[$i]}" "${_SUITE_MS[$i]}"
+  done
+}
+
 # Usage: run_suite <label> <cmd...>
 # Runs <cmd...> under the REAL run_capped (agent-output.sh), records the
 # outcome, and ALWAYS returns 0 so `set -e` in the caller cannot abort the
@@ -212,6 +272,12 @@ suite_summary_and_exit() {
     printf 'agent-test.sh: %d/%d suites passed (skipped=%d excluded=%d)\n' \
       "$passed" "$registered" "$skipped" "$excluded"
   fi
+
+  if ! _github_write_suite_summary; then
+    printf 'agent-test.sh: failed to write GitHub suite summary\n' >&2
+    exit 1
+  fi
+  _github_emit_failure_annotations
 
   if [ "$failed" -gt 0 ]; then
     exit 1
