@@ -33,6 +33,10 @@ cp "$REPO_ROOT/scripts/lib/shell-early-consumer.sh" "$FIX/scripts/lib/shell-earl
 : >"$FIX/scripts/shell-early-consumer-ratchet.txt"
 printf '#!/usr/bin/env bash\nprintf "1.7.12\\n"\n' >"$FIX/bin/actionlint"
 printf '#!/usr/bin/env bash\nprintf "ruff 0.15.17\\n"\n' >"$FIX/bin/ruff"
+for required_tool in bash dirname git sed; do
+  required_tool_path="$(command -v "$required_tool")"
+  ln -s "$required_tool_path" "$FIX/bin/$required_tool"
+done
 chmod +x "$FIX/scripts/agent-lint.sh" "$FIX/scripts/agent-lint-shell.sh" \
   "$FIX/bin/actionlint" "$FIX/bin/ruff"
 (
@@ -57,6 +61,13 @@ chmod +x "$FIX/home/.local/bin/shellcheck"
 run_fixture_lint() {
   set +e
   OUT="$(cd "$FIX" && HOME="$FIX/home" PATH="$FIX/bin:/usr/bin:/bin" bash scripts/agent-lint.sh 2>&1)"
+  RC=$?
+  set -e
+}
+
+run_fixture_lint_without_shellcheck() {
+  set +e
+  OUT="$(cd "$FIX" && HOME="$FIX/home" PATH="$FIX/bin" "$FIX/bin/bash" scripts/agent-lint.sh 2>&1)"
   RC=$?
   set -e
 }
@@ -102,7 +113,7 @@ printf 'PASS  find_shellcheck_bin prefers the bootstrap-installed ~/.local/bin b
 
 # --- arm 4: shellcheck ABSENT is a FAILURE, never a skip (TC-37) ------------
 rm -f "$FIX/home/.local/bin/shellcheck" "$FIX/bin/shellcheck"
-run_fixture_lint
+run_fixture_lint_without_shellcheck
 printf '%s\n' "$OUT"
 printf 'exit=%d\n' "$RC"
 
