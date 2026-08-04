@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from datetime import date
 import hashlib
 import json
 import re
@@ -20,6 +21,9 @@ VERSION = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
 PRERELEASE_VERSION = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)-[0-9A-Za-z.-]+$")
 COMPARATOR = re.compile(r"^(<=|>=|<|>|=)?\s*(\d+\.\d+\.\d+)$")
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
+ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+GHSA_ID = re.compile(r"^GHSA-[23456789cfghjmpqrvwx]{4}-[23456789cfghjmpqrvwx]{4}-[23456789cfghjmpqrvwx]{4}$")
+GITHUB_ADVISORY_SOURCE = "GitHub Advisory Database"
 
 
 def read_json(path: Path, label: str) -> dict[str, Any]:
@@ -76,6 +80,18 @@ def nonempty_string(value: Any, name: str) -> str:
     return value
 
 
+def advisory_date(value: Any, name: str) -> str:
+    """Require an unambiguous calendar date for checked-in advisory evidence."""
+    text = nonempty_string(value, name)
+    if not ISO_DATE.fullmatch(text):
+        raise Unverified(f"{name} must be an ISO-8601 calendar date")
+    try:
+        date.fromisoformat(text)
+    except ValueError as exc:
+        raise Unverified(f"{name} must be an ISO-8601 calendar date") from exc
+    return text
+
+
 def records_by_package(metadata: dict[str, Any]) -> dict[str, dict[str, Any]]:
     records = metadata.get("npm_overrides")
     if not isinstance(records, list):
@@ -95,7 +111,13 @@ def advisory_snapshot_path(root: Path, metadata: dict[str, Any]) -> Path:
     snapshot = metadata.get("advisory_snapshot")
     if not isinstance(snapshot, dict):
         raise Unverified("metadata has no advisory_snapshot object")
-    for key in ("source", "retrieved_at", "path", "provenance"):
+    source = nonempty_string(snapshot.get("source"), "advisory_snapshot.source")
+    if source != GITHUB_ADVISORY_SOURCE:
+        raise Unverified(
+            f"advisory_snapshot.source must be {GITHUB_ADVISORY_SOURCE!r}, got {source!r}"
+        )
+    advisory_date(snapshot.get("retrieved_at"), "advisory_snapshot.retrieved_at")
+    for key in ("path", "provenance"):
         nonempty_string(snapshot.get(key), f"advisory_snapshot.{key}")
     expected_digest = nonempty_string(snapshot.get("sha256"), "advisory_snapshot.sha256")
     if not SHA256.fullmatch(expected_digest):
@@ -118,8 +140,13 @@ def validate_advisories(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
     source = snapshot.get("source")
     if not isinstance(source, dict):
         raise Unverified("advisory snapshot has no source object")
-    for key in ("name", "retrieved_at", "provenance"):
-        nonempty_string(source.get(key), f"advisory snapshot source.{key}")
+    source_name = nonempty_string(source.get("name"), "advisory snapshot source.name")
+    if source_name != GITHUB_ADVISORY_SOURCE:
+        raise Unverified(
+            f"advisory snapshot source.name must be {GITHUB_ADVISORY_SOURCE!r}, got {source_name!r}"
+        )
+    advisory_date(source.get("retrieved_at"), "advisory snapshot source.retrieved_at")
+    nonempty_string(source.get("provenance"), "advisory snapshot source.provenance")
     advisories = snapshot.get("advisories")
     if not isinstance(advisories, list) or not advisories:
         raise Unverified("advisory snapshot advisories must be a non-empty list")
@@ -129,6 +156,10 @@ def validate_advisories(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
         if not isinstance(advisory, dict):
             raise Unverified(f"advisory snapshot advisories[{index}] must be an object")
         advisory_id = nonempty_string(advisory.get("id"), f"advisory snapshot advisories[{index}].id")
+        if not GHSA_ID.fullmatch(advisory_id):
+            raise Unverified(
+                f"advisory snapshot advisories[{index}].id must be a canonical GitHub GHSA identifier"
+            )
         if advisory_id in seen_ids:
             raise Unverified(f"advisory snapshot advisory {advisory_id!r} appears more than once")
         seen_ids.add(advisory_id)
@@ -136,7 +167,12 @@ def validate_advisories(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
         nonempty_string(
             advisory.get("vulnerable_range"), f"advisory snapshot advisories[{index}].vulnerable_range"
         )
-        nonempty_string(advisory.get("url"), f"advisory snapshot advisories[{index}].url")
+        url = nonempty_string(advisory.get("url"), f"advisory snapshot advisories[{index}].url")
+        expected_url = f"https://github.com/advisories/{advisory_id}"
+        if url != expected_url:
+            raise Unverified(
+                f"advisory snapshot advisories[{index}].url must exactly equal {expected_url!r}"
+            )
         satisfies("0.0.0", advisory["vulnerable_range"])
         validated.append(advisory)
     return validated

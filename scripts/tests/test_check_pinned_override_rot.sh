@@ -66,6 +66,19 @@ if mode == "empty-valid-advisory-snapshot":
     snapshot["advisories"] = []
     source.write_text(json.dumps(snapshot), encoding="utf-8")
     data["advisory_snapshot"]["sha256"] = hashlib.sha256(source.read_bytes()).hexdigest()
+if mode in {"forged-metadata-source", "forged-source", "malformed-advisory-id", "mismatched-advisory-url"}:
+    source = root / "scripts/pinned-override-advisories.json"
+    snapshot = json.loads(source.read_text())
+    if mode == "forged-metadata-source":
+        data["advisory_snapshot"]["source"] = "Invented advisory source"
+    elif mode == "forged-source":
+        snapshot["source"]["name"] = "Invented advisory source"
+    elif mode == "malformed-advisory-id":
+        snapshot["advisories"][0]["id"] = "NOT-A-GHSA"
+    else:
+        snapshot["advisories"][0]["url"] = "https://github.com/advisories/GHSA-0000-0000-0000"
+    source.write_text(json.dumps(snapshot), encoding="utf-8")
+    data["advisory_snapshot"]["sha256"] = hashlib.sha256(source.read_bytes()).hexdigest()
 metadata.write_text(json.dumps(data), encoding="utf-8")
 (root / "package.json").write_text(json.dumps({"overrides": {package: version}}), encoding="utf-8")
 (root / "package-lock.json").write_text(json.dumps({
@@ -185,6 +198,37 @@ if [ "$RC" -ne 2 ]; then
 fi
 expect_failure 'UNVERIFIED pinned-override-rot: npm override js-yaml.advisory_ids' \
   'per-pin advisory mapping cannot be omitted'
+
+# The digest binds a checked-in snapshot, but it must not let a rehashed
+# arbitrary source, identifier, or URL impersonate the GitHub Advisory DB.
+# Each arm deliberately recomputes the digest after mutating that field.
+run_fixture "$(make_fixture forged-metadata-source forged-metadata-source)"
+if [ "$RC" -ne 2 ]; then
+  fail "forged metadata advisory source must be unverified, got rc=$RC output=$OUT"
+fi
+expect_failure 'UNVERIFIED pinned-override-rot: advisory_snapshot.source' \
+  'metadata source must be the canonical GitHub Advisory Database'
+
+run_fixture "$(make_fixture forged-source forged-source)"
+if [ "$RC" -ne 2 ]; then
+  fail "forged advisory source must be unverified, got rc=$RC output=$OUT"
+fi
+expect_failure 'UNVERIFIED pinned-override-rot: advisory snapshot source.name' \
+  'snapshot source must be the canonical GitHub Advisory Database'
+
+run_fixture "$(make_fixture malformed-advisory-id malformed-advisory-id)"
+if [ "$RC" -ne 2 ]; then
+  fail "malformed GitHub advisory id must be unverified, got rc=$RC output=$OUT"
+fi
+expect_failure 'UNVERIFIED pinned-override-rot: advisory snapshot advisories[0].id' \
+  'snapshot advisory id must use the canonical GHSA form'
+
+run_fixture "$(make_fixture mismatched-advisory-url mismatched-advisory-url)"
+if [ "$RC" -ne 2 ]; then
+  fail "mismatched GitHub advisory URL must be unverified, got rc=$RC output=$OUT"
+fi
+expect_failure 'UNVERIFIED pinned-override-rot: advisory snapshot advisories[0].url' \
+  'snapshot advisory URL must exactly name its GHSA identifier'
 
 # Cargo git sources can appear in workspace and target-specific dependency
 # tables, not just root dependency sections. Both must block a clean result.
