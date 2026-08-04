@@ -14,9 +14,22 @@ version: 2
 #   - dev/research/**, data/corpus-data/** requirements*.txt  (eval/corpus fetch artifacts).
 #   - dev/release/fixtures/cargo-skew/**  (intentional mock crates for release-skew tests).
 #
-# Dependabot PR creation is paused during the v0.8.20 registry recovery. Restore
-# automatic updates in a dedicated dependency-maintenance change by removing the
-# five `open-pull-requests-limit: 0` entries below.
+# Dependabot PR creation is PAUSED by the five `open-pull-requests-limit: 0`
+# entries below. Restore automatic updates in a dedicated dependency-maintenance
+# change by removing them.
+#
+# Originally paused for the v0.8.20 registry recovery. That recovery COMPLETED
+# (v0.8.20 is published; steward ledger seq-239), so the pause no longer rests
+# on its original reason. It was carried onto `main` on 2026-08-04 by explicit
+# HITL decision, as a standing posture rather than a recovery measure.
+#
+# ⚠ WHAT THIS COSTS. GitHub currently reports SIX open advisories on the default
+# branch, TWO of them HIGH. Pausing PR creation does not silence the advisories
+# themselves, but it does remove the automated pull requests that would
+# otherwise surface and remediate them. While this pause stands, dependency
+# advisories must be tracked and remediated MANUALLY. Re-check
+# https://github.com/coreyt/fathomdb/security/dependabot before assuming the
+# tree is current.
 updates:
   - package-ecosystem: "pip"
     directory: "/src/python"
