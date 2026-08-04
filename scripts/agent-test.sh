@@ -172,6 +172,12 @@ run_suite test-staged-ledger-sidecar bash scripts/tests/test_staged_ledger_sidec
 # src/conformance/governed-surface-allowlist.json is never written.
 run_suite test-check-governed-surface-pin bash scripts/tests/test_check_governed_surface_pin.sh
 
+# 0.8.21 Slice 40: an offline GitHub-advisory snapshot and recorded
+# no-override evidence make a root npm override fail the moment it becomes
+# vulnerable, obsolete, or undocumented. The fixture includes the historical
+# js-yaml@4.2.0 regression and malformed-input fail-closed arms.
+run_suite test-check-pinned-override-rot bash scripts/tests/test_check_pinned_override_rot.sh
+
 # Scripts (bash): R-20-H7 — the shared scripts/check-c1-conformance.sh predicate
 # (contract content pin + clause-registry bijection + pinned counts + the 26
 # CHECKABLE clause assertions against as-built code), its --landing wiring in
