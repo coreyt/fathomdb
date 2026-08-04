@@ -32,6 +32,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { DatabaseSync } from "node:sqlite";
 
 import { Engine, read } from "../src/index.js";
@@ -49,6 +50,52 @@ const WEDGE_TIMEOUT_MS = 30_000;
 // no-embedder arm waits it out so its terminal/audit probes are FALSIFYING at
 // baseline rather than merely early.
 const LADDER_SETTLE_MS = 24_000;
+
+const READ_ONLY_SQL_CHILD = `
+import { DatabaseSync } from "node:sqlite";
+
+const [path, sql, parametersJson] = process.argv.slice(1);
+const db = new DatabaseSync(path, { readOnly: true });
+try {
+  const row = db.prepare(sql).get(...JSON.parse(parametersJson));
+  console.log(JSON.stringify(row === undefined ? null : Object.values(row)[0]));
+} finally {
+  db.close();
+}
+`;
+
+type ReadOnlySqlScalar = number | string | null;
+
+/**
+ * Read a single scalar through a separate Node process.
+ *
+ * The native engine's projection worker can commit while this suite probes the
+ * database. `node:sqlite` shares process-global SQLite state with the native
+ * addon, so even a `readOnly` handle in this process can crash under that
+ * overlap. An exec'd child preserves the mode=ro oracle while isolating that
+ * SQLite state from the engine.
+ */
+function readOnlyScalar(
+  path: string,
+  sql: string,
+  parameters: readonly (number | string)[] = [],
+): ReadOnlySqlScalar {
+  const result = spawnSync(
+    process.execPath,
+    ["--input-type=module", "--eval", READ_ONLY_SQL_CHILD, path, sql, JSON.stringify(parameters)],
+    { encoding: "utf8" },
+  );
+  if (result.error) throw result.error;
+  if (result.status !== 0) {
+    throw new Error(`isolated read-only SQLite query failed: ${result.stderr}`);
+  }
+
+  const scalar: unknown = JSON.parse(result.stdout);
+  if (scalar === null || typeof scalar === "number" || typeof scalar === "string") {
+    return scalar;
+  }
+  throw new TypeError(`unexpected read-only SQLite scalar type: ${typeof scalar}`);
+}
 
 function node(logicalId: string, bodyJson: string): object {
   return nodeOfKind("doc", logicalId, bodyJson);
@@ -73,22 +120,18 @@ async function readiness(engine: Engine, name = "summary"): Promise<string | nul
  *
  * `{ readOnly: true }` is LOAD-BEARING, not tidiness. Unlike the shipped
  * Slice-20 harness — which only probes a CLOSED database — this suite reads
- * while the engine is open, and a third-party READ-WRITE `DatabaseSync` opened
- * and closed against a live WAL database WEDGES the engine's projection
- * pipeline: measured here, the post-declaration `drain` then burns its full
- * 120 s timeout into `SchedulerError` with the backfill never committing,
- * although the engine's own state was correct. Read-only observation reproduces
- * none of it. (The engine's exclusive hold is a lock FILE, not a SQLite lock, so
- * a read-only connection still sees committed WAL frames — `mode=ro`, never
- * `immutable=1`.)
+ * while the engine is open. The query runs in `readOnlyScalar`'s exec'd child:
+ * a same-process `node:sqlite` handle can crash while the native projection
+ * worker commits. (The engine's exclusive hold is a lock FILE, not a SQLite
+ * lock, so a read-only connection still sees committed WAL frames — `mode=ro`,
+ * never `immutable=1`.)
  */
 function count(path: string, sql: string): number {
-  const db = new DatabaseSync(path, { readOnly: true });
-  try {
-    return Number((db.prepare(sql).get() as { c: number }).c);
-  } finally {
-    db.close();
+  const scalar = readOnlyScalar(path, sql);
+  if (typeof scalar !== "number") {
+    throw new TypeError(`expected integer raw SQLite result, got ${String(scalar)}`);
   }
+  return scalar;
 }
 
 function vectorRows(path: string): number {
@@ -161,15 +204,16 @@ function activeCursor(path: string, logicalId: string): number {
  * here LOSES the write.
  */
 function terminalState(path: string, cursor: number): string | null {
-  const db = new DatabaseSync(path, { readOnly: true });
-  try {
-    const row = db
-      .prepare("SELECT state AS s FROM _fathomdb_projection_terminal WHERE write_cursor = ?")
-      .get(cursor) as { s: string } | undefined;
-    return row ? String(row.s) : null;
-  } finally {
-    db.close();
-  }
+  const scalar = readOnlyScalar(
+    path,
+    "SELECT state FROM _fathomdb_projection_terminal WHERE write_cursor = ?",
+    [cursor],
+  );
+  assert.ok(
+    scalar === null || typeof scalar === "string",
+    `unexpected terminal state: ${String(scalar)}`,
+  );
+  return scalar;
 }
 
 function ftsRowExists(path: string, cursor: number): boolean {
@@ -191,6 +235,24 @@ function skipNetwork(): boolean {
   }
   return false;
 }
+
+test("the isolated raw SQLite oracle preserves scalar types and parameters", () => {
+  const path = freshDbPath();
+  const db = new DatabaseSync(path);
+  try {
+    db.exec("CREATE TABLE oracle (state TEXT, is_ready INTEGER)");
+    db.exec("INSERT INTO oracle VALUES ('ready', 1)");
+  } finally {
+    db.close();
+  }
+
+  assert.equal(readOnlyScalar(path, "SELECT state FROM oracle"), "ready");
+  assert.equal(readOnlyScalar(path, "SELECT is_ready FROM oracle"), 1);
+  assert.equal(
+    readOnlyScalar(path, "SELECT state FROM oracle WHERE state = ?", ["missing"]),
+    null,
+  );
+});
 
 test("declaring a vector projection backfills pre-existing rows and drain flushes to ready", async () => {
   if (skipNetwork()) return;
