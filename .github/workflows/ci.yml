@@ -12,6 +12,13 @@ on:
 permissions:
   contents: read
 
+# A newer pull-request commit supersedes its older run, so cancel that work
+# promptly. Main/push runs must finish: each landed commit needs an unambiguous
+# result, and release workflows intentionally have no cancellation policy.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   # Docs-only fast-path detector. Computes whether the diff touches ANY
   # non-markdown file. A markdown/docs-only change then runs ONLY the lightweight

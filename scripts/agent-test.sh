@@ -268,6 +268,8 @@ run_suite test-actionlint-go-install-version bash scripts/tests/test_actionlint_
 # asserts the wrapper fails before attempting any other lint leg.
 run_suite test-agent-lint-ruff-version bash scripts/tests/test_agent_lint_ruff_version.sh
 run_suite test-agent-lint-actionlint-version bash scripts/tests/test_agent_lint_actionlint_version.sh
+run_suite test-agent-typecheck-pyright-version bash scripts/tests/test_agent_typecheck_pyright_version.sh
+run_suite test-ci-run-hygiene bash scripts/tests/test_ci_run_hygiene.sh
 
 # TC-37 recurrence guard: agent-lint-md.sh must HARD-fail (not skip_notice/exit 0)
 # when markdownlint-cli2 is genuinely unresolvable. Builds its own throwaway
