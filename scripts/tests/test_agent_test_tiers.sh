@@ -45,15 +45,15 @@ fi
 
 DUPLICATE="$TMPROOT/agent-test-duplicate.sh"
 cp "$AGENT_TEST" "$DUPLICATE"
-sed -i '0,/^[[:space:]]*run_tier_suite fast test-set-version /s//run_tier_suite fast test-rust /' "$DUPLICATE"
+sed -i '0,/^[[:space:]]*run_tier_suite fast test-release-version-surfaces /s//run_tier_suite fast test-set-version /' "$DUPLICATE"
 set +e
 DUPLICATE_OUT="$("$CHECKER" --script "$DUPLICATE" 2>&1)"
 DUPLICATE_RC=$?
 set -e
-if [ "$DUPLICATE_RC" -ne 0 ] && grep -qF 'duplicate tier assignment' <<<"$DUPLICATE_OUT"; then
-  pass "mutation: a suite assigned to both tiers hard-fails"
+if [ "$DUPLICATE_RC" -ne 0 ] && grep -qF 'duplicate suite label' <<<"$DUPLICATE_OUT"; then
+  pass "mutation: a duplicate suite label in the same tier hard-fails"
 else
-  fail "mutation: a suite assigned to both tiers must hard-fail: $DUPLICATE_OUT"
+  fail "mutation: a duplicate suite label in the same tier must hard-fail: $DUPLICATE_OUT"
 fi
 
 RAW="$TMPROOT/agent-test-raw-registration.sh"
@@ -67,6 +67,23 @@ if [ "$RAW_RC" -ne 0 ] && grep -qF 'raw run_suite registration' <<<"$RAW_OUT"; t
   pass "mutation: a raw unpartitioned registration hard-fails"
 else
   fail "mutation: a raw unpartitioned registration must hard-fail: $RAW_OUT"
+fi
+
+INDIRECT="$TMPROOT/agent-test-indirect-registration.sh"
+cp "$AGENT_TEST" "$INDIRECT"
+sed -i '$a\
+indirect_run() {\
+  run_suite "$@"\
+}\
+indirect_run silently-unassigned true' "$INDIRECT"
+set +e
+INDIRECT_OUT="$("$CHECKER" --script "$INDIRECT" 2>&1)"
+INDIRECT_RC=$?
+set -e
+if [ "$INDIRECT_RC" -ne 0 ] && grep -qF 'raw run_suite registration' <<<"$INDIRECT_OUT"; then
+  pass "mutation: a local raw-registration wrapper hard-fails"
+else
+  fail "mutation: a local raw-registration wrapper must hard-fail: $INDIRECT_OUT"
 fi
 
 run_argv() {

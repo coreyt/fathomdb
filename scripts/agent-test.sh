@@ -102,8 +102,9 @@ run_tier_suite() {
   fi
 }
 
-skip_tier_suite() {
-  local registration_tier="$1" label="$2" reason="$3"
+run_tier_maybe_suite() {
+  local registration_tier="$1" label="$2" skip_reason="$3"
+  shift 3
   case "$registration_tier" in
     fast|heavy) ;;
     *)
@@ -112,7 +113,14 @@ skip_tier_suite() {
       ;;
   esac
   if [ "$agent_test_tier" = "all" ] || [ "$agent_test_tier" = "$registration_tier" ]; then
-    skip_suite "$label" "$reason"
+    if [ -n "$skip_reason" ]; then
+      skip_suite "$label" "$skip_reason"
+    elif [ "$#" -gt 0 ]; then
+      run_suite "$label" "$@"
+    else
+      printf 'agent-test.sh: missing command for %s\n' "$label" >&2
+      exit 2
+    fi
   fi
 }
 
@@ -428,6 +436,8 @@ elif command -v python3 >/dev/null 2>&1; then
   python_bin="$(command -v python3)"
 fi
 
+python_suite_skip_reason=""
+python_suite_command=()
 if [ -n "$python_bin" ] && "$python_bin" -c 'import pytest' >/dev/null 2>&1 && [ -d src/python/tests ]; then
   # TC-27 (0.8.20 Slice 5 fix-6): the editable binding built by the documented
   # `pip install -e 'src/python[dev]'` has no `test-hooks` surface, so
@@ -441,14 +451,14 @@ if [ -n "$python_bin" ] && "$python_bin" -c 'import pytest' >/dev/null 2>&1 && [
   # rather than repointing a shared venv. conftest re-checks venv ownership
   # itself; this is the outer half of a belt-and-suspenders pair.
   if [ "$python_bin" = ".venv/bin/python" ]; then
-    run_tier_suite heavy test-python env FATHOMDB_TESTS_ALLOW_REBUILD=1 \
-      "$python_bin" -m pytest -q src/python/tests
+    python_suite_command=(env FATHOMDB_TESTS_ALLOW_REBUILD=1 "$python_bin" -m pytest -q src/python/tests)
   else
-    run_tier_suite heavy test-python "$python_bin" -m pytest -q src/python/tests
+    python_suite_command=("$python_bin" -m pytest -q src/python/tests)
   fi
 else
-  skip_tier_suite heavy test-python "pytest not installed or no tests dir"
+  python_suite_skip_reason="pytest not installed or no tests dir"
 fi
+run_tier_maybe_suite heavy test-python "$python_suite_skip_reason" "${python_suite_command[@]}"
 
 # ledgerwatch (dev/agent-tools): pure-stdlib pytest suite, no fathomdb binding
 # needed, so it runs under whichever interpreter was resolved above without the
@@ -456,22 +466,28 @@ fi
 # no harness ran it, so its --project arms (fold-to-latest-per-id, and the
 # "unfoldable (no id)" bucket that the deleted readme recipe crashed on) would
 # otherwise never have been exercised in CI.
+ledgerwatch_skip_reason=""
+ledgerwatch_command=()
 if [ -n "$python_bin" ] && "$python_bin" -c 'import pytest' >/dev/null 2>&1; then
-  run_tier_suite fast test-ledgerwatch "$python_bin" -m pytest -q dev/agent-tools/ledgerwatch
+  ledgerwatch_command=("$python_bin" -m pytest -q dev/agent-tools/ledgerwatch)
 else
-  skip_tier_suite fast test-ledgerwatch "pytest not installed"
+  ledgerwatch_skip_reason="pytest not installed"
 fi
+run_tier_maybe_suite fast test-ledgerwatch "$ledgerwatch_skip_reason" "${ledgerwatch_command[@]}"
 
 # TypeScript
+ts_suite_skip_reason=""
+ts_suite_command=()
 if [ -d src/ts/node_modules ]; then
   # The seven default-embedder TypeScript arms remain part of this ordinary
   # prework gate, but skip their live-model bodies here.  CI's
   # default-embedder-tests job owns the same suite after warming the BGE cache
   # and enables its release-surface arm there.
-  run_tier_suite heavy test-ts env FATHOMDB_SKIP_NETWORK_TESTS=1 bash -c 'cd src/ts && npm test --silent'
+  ts_suite_command=(env FATHOMDB_SKIP_NETWORK_TESTS=1 bash -c 'cd src/ts && npm test --silent')
 else
-  skip_tier_suite heavy test-ts "src/ts/node_modules not installed"
+  ts_suite_skip_reason="src/ts/node_modules not installed"
 fi
+run_tier_maybe_suite heavy test-ts "$ts_suite_skip_reason" "${ts_suite_command[@]}"
 
 # The release-surface test executes from tsc's `dist/tests` layout. Keep its
 # repository-root calculation pinned independently so its opt-in CI arm cannot
