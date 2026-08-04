@@ -104,6 +104,12 @@ run_fixture() {
   set -e
 }
 
+make_and_run_fixture() {
+  local fixture
+  fixture="$(make_fixture "$@")"
+  run_fixture "$fixture"
+}
+
 # Structural checks must still apply after an intentionally reviewed snapshot
 # refresh. This copies the checker and replaces only its source-owned anchor
 # with the fixture's digest; ordinary fixtures always use the real anchor.
@@ -136,6 +142,12 @@ PY
   set -e
 }
 
+make_and_run_fixture_with_reanchored_snapshot() {
+  local fixture
+  fixture="$(make_fixture "$@")"
+  run_fixture_with_reanchored_snapshot "$fixture"
+}
+
 expect_failure() {
   local expected="$1" description="$2"
   if [ "$RC" -ne 1 ] && [ "$RC" -ne 2 ]; then
@@ -149,13 +161,13 @@ expect_failure() {
 
 # R1 exact historical regression: 4.2.0 was the old js-yaml override and is
 # inside GHSA-52cp-r559-cp3m's >=4.0.0,<4.3.0 range.
-run_fixture "$(make_fixture vulnerable vulnerable)"
+make_and_run_fixture vulnerable vulnerable
 expect_failure 'R1 npm override js-yaml@4.2.0 is vulnerable to GHSA-52cp-r559-cp3m' \
   'R1 rejects the historical vulnerable js-yaml 4.2.0 override'
 
 # R2 deliberately fails closed: a lockfile produced while an override is live
 # cannot prove what npm would resolve without that override.
-run_fixture "$(make_fixture obsolete obsolete)"
+make_and_run_fixture obsolete obsolete
 if [ "$RC" -ne 2 ]; then
   fail "R2 must be unverified without reproducible evidence, got rc=$RC output=$OUT"
 fi
@@ -163,12 +175,12 @@ expect_failure 'UNVERIFIED pinned-override-rot: R2 cannot derive a no-override r
   'R2 fails closed when npm cannot reproduce a no-override resolution'
 
 # R3: an override cannot rely on an unstructured package.json comment.
-run_fixture "$(make_fixture missing-rationale missing-rationale)"
+make_and_run_fixture missing-rationale missing-rationale
 expect_failure 'R3 npm override js-yaml@4.3.0 has no recorded rationale' \
   'R3 rejects an override without a recorded rationale'
 
 # Advisory input unavailable/malformed is unverified, not clean.
-run_fixture "$(make_fixture malformed-advisories malformed-advisories)"
+make_and_run_fixture malformed-advisories malformed-advisories
 if [ "$RC" -ne 2 ]; then
   fail "malformed advisory input must exit 2 (unverified), got rc=$RC output=$OUT"
 fi
@@ -191,7 +203,7 @@ expect_failure 'UNVERIFIED pinned-override-rot: cannot read pinned-override meta
 # SemVer prereleases cannot be compared by the intentionally small stable-only
 # range grammar. They must refuse a verdict, rather than flattening rc.1 to
 # 2.0.0 and potentially reporting an R1 false green.
-run_fixture "$(make_fixture prerelease prerelease)"
+make_and_run_fixture prerelease prerelease
 if [ "$RC" -ne 2 ]; then
   fail "prerelease override must be unverified, got rc=$RC output=$OUT"
 fi
@@ -200,7 +212,7 @@ expect_failure 'UNVERIFIED pinned-override-rot: prerelease version' \
 
 # The old R2 decision trusted a JSON field that anyone could edit. A falsified
 # self-attestation cannot convert this gate into a clean (or obsolete) result.
-run_fixture "$(make_fixture falsified-r2 falsified-r2)"
+make_and_run_fixture falsified-r2 falsified-r2
 if [ "$RC" -ne 2 ]; then
   fail "self-attested R2 evidence must be unverified, got rc=$RC output=$OUT"
 fi
@@ -210,7 +222,7 @@ expect_failure 'UNVERIFIED pinned-override-rot: R2 cannot derive a no-override r
 # Advisory content is a separate checked-in snapshot. Its digest is pinned by
 # governed metadata, so a valid-but-edited JSON source cannot silently erase an
 # advisory.
-run_fixture "$(make_fixture snapshot-digest snapshot-digest)"
+make_and_run_fixture snapshot-digest snapshot-digest
 if [ "$RC" -ne 2 ]; then
   fail "advisory digest mismatch must be unverified, got rc=$RC output=$OUT"
 fi
@@ -219,7 +231,7 @@ expect_failure 'UNVERIFIED pinned-override-rot: advisory snapshot sha256' \
 
 # Updating the digest cannot make an intentionally empty but valid JSON
 # snapshot trustworthy: completeness is checked separately from integrity.
-run_fixture_with_reanchored_snapshot "$(make_fixture empty-valid-advisory-snapshot empty-valid-advisory-snapshot)"
+make_and_run_fixture_with_reanchored_snapshot empty-valid-advisory-snapshot empty-valid-advisory-snapshot
 if [ "$RC" -ne 2 ]; then
   fail "empty advisory snapshot must be unverified, got rc=$RC output=$OUT"
 fi
@@ -228,7 +240,7 @@ expect_failure 'UNVERIFIED pinned-override-rot: advisory snapshot advisories mus
 
 # Every governed override must name the advisories considered for that package.
 # An empty or omitted mapping is not evidence that there are no advisories.
-run_fixture "$(make_fixture missing-advisory-mapping missing-advisory-mapping)"
+make_and_run_fixture missing-advisory-mapping missing-advisory-mapping
 if [ "$RC" -ne 2 ]; then
   fail "missing per-pin advisory mapping must be unverified, got rc=$RC output=$OUT"
 fi
@@ -238,28 +250,28 @@ expect_failure 'UNVERIFIED pinned-override-rot: npm override js-yaml.advisory_id
 # The digest binds a checked-in snapshot, but it must not let a rehashed
 # arbitrary source, identifier, or URL impersonate the GitHub Advisory DB.
 # Each arm deliberately recomputes the digest after mutating that field.
-run_fixture "$(make_fixture forged-metadata-source forged-metadata-source)"
+make_and_run_fixture forged-metadata-source forged-metadata-source
 if [ "$RC" -ne 2 ]; then
   fail "forged metadata advisory source must be unverified, got rc=$RC output=$OUT"
 fi
 expect_failure 'UNVERIFIED pinned-override-rot: advisory_snapshot.source' \
   'metadata source must be the canonical GitHub Advisory Database'
 
-run_fixture_with_reanchored_snapshot "$(make_fixture forged-source forged-source)"
+make_and_run_fixture_with_reanchored_snapshot forged-source forged-source
 if [ "$RC" -ne 2 ]; then
   fail "forged advisory source must be unverified, got rc=$RC output=$OUT"
 fi
 expect_failure 'UNVERIFIED pinned-override-rot: advisory snapshot source.name' \
   'snapshot source must be the canonical GitHub Advisory Database'
 
-run_fixture_with_reanchored_snapshot "$(make_fixture malformed-advisory-id malformed-advisory-id)"
+make_and_run_fixture_with_reanchored_snapshot malformed-advisory-id malformed-advisory-id
 if [ "$RC" -ne 2 ]; then
   fail "malformed GitHub advisory id must be unverified, got rc=$RC output=$OUT"
 fi
 expect_failure 'UNVERIFIED pinned-override-rot: advisory snapshot advisories[0].id' \
   'snapshot advisory id must use the canonical GHSA form'
 
-run_fixture_with_reanchored_snapshot "$(make_fixture mismatched-advisory-url mismatched-advisory-url)"
+make_and_run_fixture_with_reanchored_snapshot mismatched-advisory-url mismatched-advisory-url
 if [ "$RC" -ne 2 ]; then
   fail "mismatched GitHub advisory URL must be unverified, got rc=$RC output=$OUT"
 fi
@@ -269,7 +281,7 @@ expect_failure 'UNVERIFIED pinned-override-rot: advisory snapshot advisories[0].
 # A checksum recorded only in mutable metadata cannot authenticate a forged
 # but canonical-looking GitHub source. Recomputing that metadata checksum must
 # still fail against the checker-source anchor.
-run_fixture "$(make_fixture canonical-looking-forgery canonical-looking-forgery)"
+make_and_run_fixture canonical-looking-forgery canonical-looking-forgery
 if [ "$RC" -ne 2 ]; then
   fail "canonical-looking forged advisory snapshot must be unverified, got rc=$RC output=$OUT"
 fi
