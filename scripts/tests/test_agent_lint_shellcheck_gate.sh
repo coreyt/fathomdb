@@ -149,6 +149,27 @@ run_lint_shell() {
   set -e
 }
 
+# The entrypoint runs locally as well as in CI. The history comparison is only
+# mandatory for a protected-branch/PR verdict, so exercise the protected-main
+# path explicitly rather than making an ordinary local edit impossible to lint.
+run_lint_shell_on_main() {
+  set +e
+  OUT="$(cd "$FIX/repo" && HOME="$FIX/home" PATH="$FIX/bin:/usr/bin:/bin" \
+    GITHUB_REF='refs/heads/main' GITHUB_EVENT_NAME='push' \
+    bash scripts/agent-lint-shell.sh 2>&1)"
+  RC=$?
+  set -e
+}
+
+run_lint_shell_on_pr() {
+  set +e
+  OUT="$(cd "$FIX/repo" && HOME="$FIX/home" PATH="$FIX/bin:/usr/bin:/bin" \
+    GITHUB_REF='refs/pull/1/merge' GITHUB_EVENT_NAME='pull_request' GITHUB_BASE_REF='main' \
+    bash scripts/agent-lint-shell.sh 2>&1)"
+  RC=$?
+  set -e
+}
+
 # --- arm A: agent-lint.sh REJECTS the Slice 25 defect class -----------------
 write_defect
 commit_fixture
@@ -192,6 +213,74 @@ run_lint_shell
 printf -- '---- arm C output ----\n%s\nexit=%d\n' "$OUT" "$RC"
 [ "$RC" -eq 0 ] || fail_arm "arm C: the shell lint failed on a clean tree — the red arms above prove nothing if this is red"
 printf 'PASS  arm C: a clean tree passes both legs (the red arms are non-vacuous)\n'
+
+# --- arm C1/C2: a ratchet is mechanically SHRINK-ONLY in CI ---------------
+# A currently-dirty file is the attack that the older "remove entries once
+# clean" check missed: adding it to the list makes the actual finding disappear
+# before it can ever become stale. On main/PR history must reject the addition
+# itself, for BOTH independently-owned ratchets.
+cat >"$FIX/repo/scripts/sc2312-dirty.sh" <<'DIRTY_SC2312'
+#!/usr/bin/env bash
+printf 'unmerged: %s\n' "$(git ls-files --unmerged)"
+DIRTY_SC2312
+printf 'scripts/sc2312-dirty.sh\n' >"$FIX/repo/scripts/shellcheck-sc2312-ratchet.txt"
+commit_fixture
+run_lint_shell_on_main
+printf -- '---- arm C1 output ----\n%s\nexit=%d\n' "$OUT" "$RC"
+[ "$RC" -ne 0 ] || fail_arm "arm C1: main accepted a newly-added SC2312 exemption for a still-dirty file"
+grep -Fq 'adds exemption(s)' <<<"$OUT" \
+  || fail_arm "arm C1: the added SC2312 exemption was not attributed to the shrink-only history guard"
+grep -Fq 'scripts/sc2312-dirty.sh' <<<"$OUT" \
+  || fail_arm "arm C1: the added SC2312 exemption was not named"
+printf 'PASS  arm C1: main rejects a newly-added SC2312 exemption even while it is still dirty\n'
+
+: >"$FIX/repo/scripts/shellcheck-sc2312-ratchet.txt"
+rm -f "$FIX/repo/scripts/sc2312-dirty.sh"
+cat >"$FIX/repo/scripts/early-dirty.sh" <<'DIRTY_EARLY'
+#!/usr/bin/env bash
+producer | grep --quiet needle
+DIRTY_EARLY
+printf 'scripts/early-dirty.sh\n' >"$FIX/repo/scripts/shell-early-consumer-ratchet.txt"
+commit_fixture
+run_lint_shell_on_main
+printf -- '---- arm C2 output ----\n%s\nexit=%d\n' "$OUT" "$RC"
+[ "$RC" -ne 0 ] || fail_arm "arm C2: main accepted a newly-added early-consumer exemption for a still-dirty file"
+grep -Fq 'adds exemption(s)' <<<"$OUT" \
+  || fail_arm "arm C2: the added early-consumer exemption was not attributed to the shrink-only history guard"
+grep -Fq 'scripts/early-dirty.sh' <<<"$OUT" \
+  || fail_arm "arm C2: the added early-consumer exemption was not named"
+printf 'PASS  arm C2: main rejects a newly-added early-consumer exemption even while it is still dirty\n'
+
+# Restore the clean ratchets so the pre-existing rot arms below continue to
+# prove their own independent invariants.
+: >"$FIX/repo/scripts/shellcheck-sc2312-ratchet.txt"
+: >"$FIX/repo/scripts/shell-early-consumer-ratchet.txt"
+rm -f "$FIX/repo/scripts/sc2312-dirty.sh" "$FIX/repo/scripts/early-dirty.sh"
+commit_fixture
+
+# The PR path must use origin/$GITHUB_BASE_REF rather than HEAD^, otherwise a
+# merge commit (or a branch with several commits) could grow the list one
+# commit at a time. Model the full-checkout ref that the workflow provides.
+BASE="$(cd "$FIX/repo" && git rev-parse HEAD)"
+(cd "$FIX/repo" && git update-ref refs/remotes/origin/main "$BASE")
+cat >"$FIX/repo/scripts/pr-dirty.sh" <<'DIRTY_PR'
+#!/usr/bin/env bash
+producer |& head -n1
+DIRTY_PR
+printf 'scripts/pr-dirty.sh\n' >"$FIX/repo/scripts/shell-early-consumer-ratchet.txt"
+commit_fixture
+run_lint_shell_on_pr
+printf -- '---- arm C3 output ----\n%s\nexit=%d\n' "$OUT" "$RC"
+[ "$RC" -ne 0 ] || fail_arm "arm C3: PR accepted an exemption newly added after origin/main"
+grep -Fq 'adds exemption(s)' <<<"$OUT" \
+  || fail_arm "arm C3: the PR exemption was not attributed to the shrink-only history guard"
+grep -Fq 'scripts/pr-dirty.sh' <<<"$OUT" \
+  || fail_arm "arm C3: the PR-added exemption was not named"
+printf 'PASS  arm C3: PR compares to origin/main and rejects a newly-added exemption\n'
+
+: >"$FIX/repo/scripts/shell-early-consumer-ratchet.txt"
+rm -f "$FIX/repo/scripts/pr-dirty.sh"
+commit_fixture
 
 # --- arm D: the ratchet may only SHRINK ------------------------------------
 # scripts/clean.sh is SC2312-clean. Listing it must FAIL the gate, so a stale

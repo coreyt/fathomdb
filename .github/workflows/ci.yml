@@ -58,6 +58,19 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        # The shrink-only ratchets compare a PR to origin/$GITHUB_BASE_REF.
+        # A shallow checkout cannot prove that base, so it must fail rather
+        # than silently permit a new exemption.
+        with:
+          fetch-depth: 0
+      - name: Cache the checksum/version-keyed ShellCheck archive
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/fathomdb/shellcheck
+          # hashFiles covers the shared version pin AND every recorded platform
+          # checksum. A hit still undergoes SHA-256 verification in the
+          # installer; the cache saves time, never changes what is trusted.
+          key: shellcheck-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/lib/shellcheck-version.sh', 'scripts/install-shellcheck.sh') }}
       # The ubuntu-latest image ships its OWN shellcheck, at whatever version
       # GitHub picked; it will not match the pin and would hard-fail the repo's
       # version preflight. Handled by installing the pinned binary into

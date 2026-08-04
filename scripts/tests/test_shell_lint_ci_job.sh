@@ -324,6 +324,29 @@ else
   fail "arm J: the installer must source lib/shellcheck-version.sh and verify via require_shellcheck_bin"
 fi
 
+# The cache has to be keyed by the installer AND shared pin, otherwise a pin or
+# checksum update could reuse an archive selected under an older trust record.
+# The installer re-verifies the SHA on every hit; this arm proves CI actually
+# persists that verified archive between otherwise-ephemeral runners.
+if grep -qF 'actions/cache@' <<<"$JOB_CODE" \
+  && grep -qF '/.cache/fathomdb/shellcheck' <<<"$JOB_CODE" \
+  && grep -qF "hashFiles('scripts/lib/shellcheck-version.sh', 'scripts/install-shellcheck.sh')" <<<"$JOB_CODE"; then
+  pass "arm J: shell-lint caches the version/checksum-keyed archive"
+else
+  fail "arm J: shell-lint must cache the ShellCheck archive with a key over the pin and installer checksums"
+fi
+
+# A cache miss must fail promptly instead of spending minutes retrying a linter
+# download before the actual gate starts. The installer test covers hit/miss/
+# corrupt behaviour; this arm pins the production bounded-transfer controls.
+if grep -qF -- '--connect-timeout 10' "$INSTALLER" \
+  && grep -qF -- '--max-time 60' "$INSTALLER" \
+  && ! grep -qF -- '--retry' "$INSTALLER"; then
+  pass "arm J: ShellCheck download has bounded connect/transfer time and no retry loop"
+else
+  fail "arm J: ShellCheck installer must use bounded curl timeouts without a retry loop"
+fi
+
 # ---------------------------------------------------------------------------
 # Arm K — the workflow-level concurrency group (R2.4).
 # ---------------------------------------------------------------------------

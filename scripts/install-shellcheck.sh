@@ -86,18 +86,35 @@ if [ "$shellcheck_found_version" != "$SHELLCHECK_VERSION" ]; then
   esac
 
   shellcheck_url="https://github.com/koalaman/shellcheck/releases/download/v$SHELLCHECK_VERSION/shellcheck-v$SHELLCHECK_VERSION.$shellcheck_slug.tar.xz"
+  # The archive cache is keyed by BOTH the version and its published SHA-256.
+  # Verify it again on every use: a cache accelerates a download but is never a
+  # trust boundary. SHELLCHECK_CACHE_DIR is an explicit test/local override;
+  # GitHub Actions caches the default path in ci.yml.
+  shellcheck_cache_root="${SHELLCHECK_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/fathomdb/shellcheck}"
+  shellcheck_cache_dir="$shellcheck_cache_root/v$SHELLCHECK_VERSION/$shellcheck_slug-$shellcheck_sha256"
+  shellcheck_archive="$shellcheck_cache_dir/shellcheck.tar.xz"
   shellcheck_tmp="$(mktemp -d)"
-  if ! curl -fsSL --retry 3 -o "$shellcheck_tmp/shellcheck.tar.xz" "$shellcheck_url"; then
+  if [ -f "$shellcheck_archive" ]; then
+    printf 'Using verified shellcheck archive cache: %s\n' "$shellcheck_archive"
+  else
+    mkdir -p "$shellcheck_cache_dir"
+    printf 'Downloading shellcheck v%s (connect timeout 10s, transfer deadline 60s) ...\n' "$SHELLCHECK_VERSION"
+    # A linter bootstrap must fail promptly and visibly when the release host is
+    # unavailable. No retry loop: retries conceal the first failure and consume
+    # the fast gate's minute-scale budget.
+    if ! curl -fsSL --connect-timeout 10 --max-time 60 -o "$shellcheck_tmp/shellcheck.tar.xz" "$shellcheck_url"; then
+      rm -rf "$shellcheck_tmp"
+      echo "shellcheck $SHELLCHECK_VERSION download failed: $shellcheck_url" >&2
+      exit 1
+    fi
+    mv "$shellcheck_tmp/shellcheck.tar.xz" "$shellcheck_archive"
+  fi
+  if ! printf '%s  %s\n' "$shellcheck_sha256" "$shellcheck_archive" | sha256sum -c - >/dev/null 2>&1; then
     rm -rf "$shellcheck_tmp"
-    echo "shellcheck $SHELLCHECK_VERSION download failed: $shellcheck_url" >&2
+    echo "shellcheck $SHELLCHECK_VERSION archive failed its SHA-256 check ($shellcheck_archive)" >&2
     exit 1
   fi
-  if ! printf '%s  %s\n' "$shellcheck_sha256" "$shellcheck_tmp/shellcheck.tar.xz" | sha256sum -c - >/dev/null 2>&1; then
-    rm -rf "$shellcheck_tmp"
-    echo "shellcheck $SHELLCHECK_VERSION download failed its SHA-256 check ($shellcheck_url)" >&2
-    exit 1
-  fi
-  tar -xJf "$shellcheck_tmp/shellcheck.tar.xz" -C "$shellcheck_tmp"
+  tar -xJf "$shellcheck_archive" -C "$shellcheck_tmp"
   mkdir -p "$HOME/.local/bin"
   install -m 0755 "$shellcheck_tmp/shellcheck-v$SHELLCHECK_VERSION/shellcheck" "$HOME/.local/bin/shellcheck"
   rm -rf "$shellcheck_tmp"

@@ -18,8 +18,10 @@
 #     permanent hole.
 #   * A listed path that is not a tracked *.sh file also FAILS the gate (a
 #     rename must not silently carry its exemption with it).
-#   * Adding a line is a reviewed, deliberate act. The gate's failure text tells
-#     you to fix the site, not to extend this list.
+#   * Protected CI compares this list to the PR base (or main's parent) and
+#     rejects every added entry, even if it is still dirty. The only explicit
+#     bootstrap is the first commit that introduces this file, which has no
+#     predecessor to compare; current-finding and non-vacuity checks still run.
 #
 # At Slice 30 landing: 35 files listed, 105 tracked *.sh files covered, 344
 # SC2312 findings outstanding. Closing them is follow-up FUP-SHELLCHECK-2.

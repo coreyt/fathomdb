@@ -92,7 +92,10 @@ rc=0
 #
 # The invariant, in one sentence: a ratchet lists files that are NOT YET
 # covered, everything else IS covered (so new files are covered by default and
-# nothing has to be remembered), and the list may only SHRINK.
+# nothing has to be remembered), and the list may only SHRINK. Becoming clean
+# is only half of that invariant: protected CI also compares the current list
+# with its trustworthy base revision, so a still-dirty file cannot be added as
+# a fresh exemption.
 # ---------------------------------------------------------------------------
 
 # read_ratchet <path> -> populates the global array `ratchet`
@@ -123,6 +126,90 @@ is_exempt() {
   return 1
 }
 
+# ratchet_history_base -> writes the commit that a protected CI run must compare
+# against. A PR needs its base ref and main needs its parent; an unavailable
+# base is a hard failure, never an opportunity to grow an exemption list. Local
+# runs deliberately do not impose this history policy so that developers can
+# lint an uncommitted worktree. A one-commit main repository is the explicit
+# bootstrap case; its ratchets still pass all non-vacuity and current-finding
+# checks below, but there is no predecessor from which an addition could be
+# distinguished.
+ratchet_history_base() {
+  local base_ref parent
+  case "${GITHUB_EVENT_NAME:-}/${GITHUB_REF:-}" in
+    pull_request/*)
+      if [ -z "${GITHUB_BASE_REF:-}" ]; then
+        printf 'FAIL lint-shell: pull-request ratchet enforcement needs GITHUB_BASE_REF.\n' >&2
+        return 1
+      fi
+      base_ref="origin/${GITHUB_BASE_REF}"
+      if ! git rev-parse --verify --quiet "${base_ref}^{commit}" >/dev/null; then
+        printf 'FAIL lint-shell: cannot resolve %s for ratchet enforcement; require a full checkout.\n' "$base_ref" >&2
+        return 1
+      fi
+      if ! git merge-base HEAD "$base_ref"; then
+        printf 'FAIL lint-shell: cannot find a merge base with %s for ratchet enforcement.\n' "$base_ref" >&2
+        return 1
+      fi
+      ;;
+    */refs/heads/main)
+      if parent="$(git rev-parse --verify --quiet HEAD^)"; then
+        printf '%s\n' "$parent"
+      else
+        return 2
+      fi
+      ;;
+    *) return 2 ;;
+  esac
+}
+
+# reject_ratchet_growth <path> — ratchet additions are forbidden on PR/main.
+# A baseline without the file is allowed exactly once for its bootstrap commit;
+# the already-enforced covered-file and stale-entry checks make that bootstrap
+# non-vacuous. Every later base has the file and every new non-comment entry is
+# named as a failure.
+reject_ratchet_growth() {
+  local path="$1" base base_file entry known added=0 history_rc
+  base="$(ratchet_history_base)"
+  history_rc=$?
+  if [ "$history_rc" -eq 2 ]; then
+    if [ "${GITHUB_REF:-}" = 'refs/heads/main' ]; then
+      printf 'note lint-shell: %s is in explicit first-commit bootstrap mode; no predecessor exists for shrink-only comparison.\n' "$path" >&2
+    fi
+    return 0
+  fi
+  [ "$history_rc" -eq 0 ] || return 1
+
+  if ! git cat-file -e "$base:$path" 2>/dev/null; then
+    printf 'note lint-shell: %s has no ratchet baseline at %s; treating this commit as its explicit bootstrap.\n' \
+      "$path" "$base" >&2
+    return 0
+  fi
+
+  base_file="$(mktemp)"
+  if ! git show "$base:$path" >"$base_file"; then
+    rm -f "$base_file"
+    printf 'FAIL lint-shell: could not read %s from ratchet base %s.\n' "$path" "$base" >&2
+    return 1
+  fi
+
+  for entry in "${ratchet[@]+"${ratchet[@]}"}"; do
+    known=0
+    while IFS= read -r base_entry; do
+      case "$base_entry" in '' | \#*) continue ;; esac
+      [ "$entry" = "$base_entry" ] || continue
+      known=1
+      break
+    done <"$base_file"
+    [ "$known" -eq 1 ] && continue
+    printf 'FAIL lint-shell: %s adds exemption(s) on protected CI: %s. Ratchets may only shrink; fix the finding instead.\n' \
+      "$path" "$entry" >&2
+    added=1
+  done
+  rm -f "$base_file"
+  [ "$added" -eq 0 ]
+}
+
 # ---------------------------------------------------------------------------
 # leg 1 — shellcheck default ruleset over the whole tree.
 # ---------------------------------------------------------------------------
@@ -138,6 +225,7 @@ fi
 # ---------------------------------------------------------------------------
 read_ratchet "$SC2312_RATCHET" || exit 1
 sc2312_ratchet=("${ratchet[@]+"${ratchet[@]}"}")
+reject_ratchet_growth "$SC2312_RATCHET" || rc=1
 
 covered=()
 for file in "${shell_files[@]}"; do
@@ -179,6 +267,7 @@ done
 # ---------------------------------------------------------------------------
 read_ratchet "$EARLY_CONSUMER_RATCHET" || exit 1
 early_ratchet=("${ratchet[@]+"${ratchet[@]}"}")
+reject_ratchet_growth "$EARLY_CONSUMER_RATCHET" || rc=1
 
 early_covered=()
 for file in "${shell_files[@]}"; do

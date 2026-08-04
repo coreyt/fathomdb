@@ -36,10 +36,12 @@
 # no consumer ever closes the pipe early and there is nothing to race.
 
 # Lines of $1 that pipe into an early-exiting consumer (`head`, or a quiet
-# `grep` carrying no -m). `(^|[^|])\|` excludes `||`, which is an or-list and
-# not a pipeline; comment lines are excluded so explanatory comments may keep
-# naming the idiom they replaced. Empty output = clean.
+# `grep` carrying no -m). This deliberately recognizes both shell pipeline
+# operators (`|` and `|&`) and both quiet spellings (`-q` and `--quiet`), even
+# when long-form flags precede the pattern. `(^|[^|])\|&?` excludes `||`, which
+# is an or-list and not a pipeline; comment lines are excluded so explanatory
+# comments may keep naming the idiom they replaced. Empty output = clean.
 detect_early_consumer() {
-  grep -nE '(^|[^|])\|[[:space:]]*(head\b|grep([[:space:]]+-[a-zA-Z]+)*[[:space:]]+-[a-zA-Z]*q)' "$1" \
+  grep -nE '(^|[^|])\|&?[[:space:]]*(head([[:space:]]|$)|grep([[:space:]]+[^|[:space:]]+)*[[:space:]]+(-[[:alnum:]]*q[[:alnum:]]*|--quiet)([[:space:]]|$))' "$1" \
     | grep -vE '^[0-9]+:[[:space:]]*#' || true
 }

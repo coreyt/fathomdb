@@ -285,6 +285,7 @@ run_suite test-ci-run-hygiene-ci-env bash scripts/tests/test_ci_run_hygiene_ci_e
 # only shrink.
 run_suite test-agent-lint-shellcheck-version bash scripts/tests/test_agent_lint_shellcheck_version.sh
 run_suite test-agent-lint-shellcheck-gate bash scripts/tests/test_agent_lint_shellcheck_gate.sh
+run_suite test-install-shellcheck bash scripts/tests/test_install_shellcheck.sh
 
 # Shell lint in CI (0.8.21 Slice 35). Pins the `shell-lint` job's ALWAYS-ON shape
 # (no if:/needs:), its minimal setup, that it GATES rather than advises, and the

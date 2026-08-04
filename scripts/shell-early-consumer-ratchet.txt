@@ -34,8 +34,9 @@
 #     Slice 25 shape in a heredoc so the CI job's ACTUAL command can be shown to
 #     reject it (arm G), plus the words `cmd | head` in an assertion message.
 # All three must keep containing the idiom; none will ever leave this list.
-# ⚠ These three are the ONLY sanctioned reason to ADD a line here. Every other
-# addition is debt and needs the finding fixed instead.
+# ⚠ These three are historical fixtures. Protected CI now compares this list to
+# the PR base (or main's parent) and rejects every added entry; a future fixture
+# must avoid carrying a live bad pipeline rather than extending this ratchet.
 dev/release/tests/cargo_skew.sh
 dev/release/tests/pip_skew.sh
 dev/tools/mermaid/test-render-mermaid.sh

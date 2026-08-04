@@ -261,14 +261,18 @@ line_no="$(grep -nE "^x" "$f" | head -1 | cut -d: -f1)"
 warm="$(grep -nF 'x' <<<"$b" | head -n1 | cut -d: -f1 || true)"
 if curl -fsS "$url" 2>/dev/null | grep -qF "vers"; then
 SANDBOX_RESIDUE="$(find "$sandbox" -mindepth 1 | head -5)"
+if producer | grep --quiet needle; then
+if producer |& head -n1; then
 # if git ls-files --unmerged | grep -q . -- a comment must NOT be flagged
 ok="$(grep -m1 x "$f" | cut -d: -f1)" || true
 CTL
   hits="$(detect_early_consumer "$ctl")"
-  if [ "$(grep -c . <<<"${hits:-}")" -eq 5 ]; then
-    pass "arm 5 (positive control): the detector flags all 5 pre-fix idioms and neither the comment nor the grep -m1 form"
+  if [ "$(grep -c . <<<"${hits:-}")" -eq 7 ] \
+    && grep -qF 'grep --quiet needle' <<<"$hits" \
+    && grep -qF '|& head -n1' <<<"$hits"; then
+    pass "arm 5 (positive control): the detector flags 7 pre-fix idioms including --quiet and |&, and neither the comment nor the grep -m1 form"
   else
-    fail "arm 5 (positive control): detector must flag exactly the 5 bad lines, got:"$'\n'"$hits"
+    fail "arm 5 (positive control): detector must flag exactly the 7 bad lines, including --quiet and |&, got:"$'\n'"$hits"
   fi
   local files=(
     scripts/set-version.sh
