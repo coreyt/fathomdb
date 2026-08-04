@@ -1466,20 +1466,37 @@ fi
 #
 # A permanently-red gate is worse than no gate — it trains readers to discount
 # red, which is how a real failure survives. Absent history means UNVERIFIABLE.
-remote_fixture
-(cd "$FIX" && git push -q origin main)
-run_gate
-if [ "$RC" -ne 0 ]; then
-  # Baseline sanity: the unpushed-SHA arm must still be red before we shallow it,
-  # otherwise arm R5 below could pass for the wrong reason.
-  fail "arm R5 setup: expected a green gate on the pushed fixture, rc=$RC"
+# Reuse the remote arms R–R3 already built and pushed, rather than rebuilding the
+# fixture. A second `remote_fixture` call is avoidable state: in CI it aborted the
+# whole suite under `set -e` before arm R5 printed anything, and a fixture that
+# can kill the run is a worse hazard than the one being tested.
+if ! git -C "$TMPROOT/remote.git" rev-parse --verify --quiet main >/dev/null 2>&1; then
+  fail "arm R5 setup: the shared fixture remote has no main; arms R-R3 must run first"
 fi
 
 SHALLOW="$TMPROOT/shallow"
 rm -rf "$SHALLOW"
-git clone -q --depth=1 "file://$TMPROOT/remote.git" "$SHALLOW" 2>/dev/null
-cp "$GATE" "$SHALLOW/scripts/check-release-state-views.sh" 2>/dev/null
-chmod +x "$SHALLOW/scripts/check-release-state-views.sh" 2>/dev/null
+# `--depth` is ignored for a plain local path, so the remote MUST be a file://
+# URL. GitHub Actions runners set `protocol.file.allow=never` (the
+# CVE-2022-39253 mitigation), which rejects that with
+# `fatal: transport 'file' not allowed` — so the fixture opts back in for this
+# one clone. That is a fixture-local override against a bare repo this test just
+# created; it changes nothing about the repository's own protocol policy.
+#
+# Do NOT redirect this to /dev/null. The first version did, so when the clone
+# failed in CI `set -e` aborted the suite with NO arm R5 output at all and the
+# job reported a bare `exit 1` — the same silent-abort class this suite exists to
+# catch, reproduced inside the suite itself.
+set +e
+SHALLOW_CLONE_ERR="$(git -c protocol.file.allow=always clone -q --depth=1 \
+  "file://$TMPROOT/remote.git" "$SHALLOW" 2>&1)"
+SHALLOW_CLONE_RC=$?
+set -e
+if [ "$SHALLOW_CLONE_RC" -ne 0 ]; then
+  fail "arm R5 setup: could not build the shallow fixture (rc=$SHALLOW_CLONE_RC): $SHALLOW_CLONE_ERR"
+fi
+cp "$GATE" "$SHALLOW/scripts/check-release-state-views.sh"
+chmod +x "$SHALLOW/scripts/check-release-state-views.sh"
 if [ "$(git -C "$SHALLOW" rev-parse --is-shallow-repository 2>/dev/null)" = "true" ]; then
   pass "arm R5 setup: the fixture clone really is shallow"
 else
