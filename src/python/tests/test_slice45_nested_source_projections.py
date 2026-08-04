@@ -38,5 +38,7 @@ def test_nested_projection_type_collapsed_equality_and_projected_search(db_path:
             "1", "value", SearchFilter(attributes=(("value", "1"),))
         )
         assert {hit.id.value for hit in result.results} == {"text", "number"}
+        hybrid = engine.search("1", SearchFilter(attributes=(("value", "1"),)))
+        assert {hit.id.value for hit in hybrid.results} <= {"text", "number"}
     finally:
         engine.close()

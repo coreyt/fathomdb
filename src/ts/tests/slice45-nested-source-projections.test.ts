@@ -36,6 +36,8 @@ test("nested source type-collapsed equality and projected search use a real data
       attributes: [["value", "1"]],
     });
     assert.deepEqual(new Set(result.results.map((hit) => hit.id.value)), new Set(["text", "number"]));
+    const hybrid = await engine.search("1", { attributes: [["value", "1"]] });
+    assert.ok(hybrid.results.every((hit) => hit.id.value === "text" || hit.id.value === "number"));
   } finally {
     await engine.close();
   }

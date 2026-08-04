@@ -133,6 +133,17 @@ fn nested_scalars_use_canonical_text_and_missing_or_null_do_not_project() {
         ],
         "canonical text equality deliberately collapses string \"1\" and number 1"
     );
+    let mut hybrid_filter = SearchFilter::default();
+    hybrid_filter.attributes = vec![("value".to_string(), "1".to_string())];
+    let hybrid = engine.search_filtered("1", Some(hybrid_filter)).unwrap();
+    assert!(
+        hybrid
+            .results
+            .iter()
+            .all(|hit| hit.body.contains(r#"\"value\":\"1\""#)
+                || hit.body.contains(r#"\"value\":1"#)),
+        "normal hybrid search must retain public projected-attribute filters"
+    );
     opened.engine.close().unwrap();
     assert_eq!(eav_values(&path, "value"), vec!["1", "1", "2.5", "true"]);
 }
@@ -175,6 +186,31 @@ fn nested_composite_terminal_rejects_write_and_backfill_atomically() {
         Err(EngineError::WriteValidation)
     );
     assert!(backfill.engine.read_projections().unwrap().is_empty());
+
+    let searchable_backfill_path = db_path(&dir, "searchable_backfill_composite");
+    let searchable_backfill = Engine::open(searchable_backfill_path).unwrap();
+    searchable_backfill
+        .engine
+        .write(&[node(
+            "object",
+            "slice45:searchable-backfill",
+            r#"{"attributes":{"core:deadline":{"value":{"not":"scalar"}}}}"#,
+        )])
+        .unwrap();
+    let searchable_only = nested_spec(
+        "value",
+        &["attributes", "core:deadline", "value"],
+        &[ProjectionRole::Searchable],
+        true,
+    );
+    assert_eq!(
+        searchable_backfill
+            .engine
+            .configure_projections(&[searchable_only], &[]),
+        Err(EngineError::WriteValidation),
+        "a nested composite terminal is invalid regardless of whether the projection also wants EAV"
+    );
+    assert!(searchable_backfill.engine.read_projections().unwrap().is_empty());
 }
 
 #[test]
@@ -240,11 +276,17 @@ proptest! {
     fn literal_path_segments_round_trip_through_the_registry(
         first in "[a-z0-9:.\\[\\]]{1,12}",
         second in "[a-z0-9:.\\[\\]]{1,12}",
+        value in "[a-zA-Z0-9]{1,12}",
     ) {
         let dir = TempDir::new().unwrap();
-        let opened = Engine::open(db_path(&dir, "property")).unwrap();
+        let path = db_path(&dir, "property");
+        let opened = Engine::open(path.clone()).unwrap();
         let spec = nested_spec("field", &[&first, &second], &[ProjectionRole::Filterable], false);
         opened.engine.configure_projections(std::slice::from_ref(&spec), &[]).unwrap();
+        let body = format!(r#"{{\"{first}\":{{\"{second}\":\"{value}\"}}}}"#);
+        opened.engine.write(&[node("property", "slice45:property", &body)]).unwrap();
         prop_assert_eq!(opened.engine.read_projections().unwrap(), vec![spec]);
+        opened.engine.close().unwrap();
+        prop_assert_eq!(eav_values(&path, "field"), vec![value]);
     }
 }
