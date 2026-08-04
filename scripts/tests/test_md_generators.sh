@@ -64,7 +64,8 @@ lint_md() {
     FAILED=$((FAILED + 1))
     return
   fi
-  local dst="$WORK/$(basename "$src")"
+  local dst
+  dst="$WORK/$(basename "$src")"
   cp "$src" "$dst"
   if ( cd "$WORK" && "$BIN" --config "$CFG" "$(basename "$dst")" ) >"$WORK/out.txt" 2>&1; then
     printf 'PASS  %s\n' "$label"

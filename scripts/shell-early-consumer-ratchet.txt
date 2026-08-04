@@ -1,0 +1,78 @@
+# scripts/shell-early-consumer-ratchet.txt — files NOT YET covered by the
+# early-exiting-consumer detector (scripts/lib/shell-early-consumer.sh).
+#
+# THE CLASS: `producer | head` / `producer | grep -q` under `set -o pipefail`.
+# The consumer leaves at its first match with the producer still writing; the
+# producer takes SIGPIPE and pipefail poisons the rc. Inside an `if` condition
+# `set -e` is suspended, so the guard does not abort — it fails OPEN, and does
+# so precisely when it had something to report. Four hand-fixes, no gate. This
+# leg is the gate.
+#
+# ⚠ This ratchet is NOT redundant with scripts/shellcheck-sc2312-ratchet.txt.
+# Measured on the pinned shellcheck 0.11.0: NO shellcheck check flags this
+# shape. See scripts/lib/shell-early-consumer.sh for the measurement.
+#
+# RULES, enforced by scripts/agent-lint-shell.sh (identical to the SC2312
+# ratchet's): every tracked *.sh NOT listed here is enforced, new files are
+# covered by default, the list may only SHRINK (a listed file that has become
+# clean fails the gate until its line is deleted), and a listed path that is
+# not a tracked *.sh also fails.
+#
+# At Slice 30 landing: 37 files listed, 103 tracked *.sh files covered, 224
+# sites outstanding. The great majority are bounded in-process producers
+# (`printf '%s' "$out" | grep -q …`) where SIGPIPE is not reachable in practice;
+# they are LISTED rather than exempted-by-rule because "bounded" is a judgement
+# the detector cannot make, and a per-file list is reviewable while a regex
+# carve-out is not. Closing them is follow-up FUP-SHELLCHECK-3.
+#
+# THREE entries are DELIBERATE FIXTURES, not debt:
+#   scripts/tests/test_shell_pipefail_guards.sh — the detector's own POSITIVE
+#     CONTROL; it holds the five pre-fix idioms verbatim, on purpose.
+#   scripts/tests/test_agent_lint_shellcheck_gate.sh — holds the defect script
+#     the gate is asserted to REJECT, in a heredoc.
+#   scripts/tests/test_shell_lint_ci_job.sh — added 0.8.21 Slice 35. Holds the
+#     Slice 25 shape in a heredoc so the CI job's ACTUAL command can be shown to
+#     reject it (arm G), plus the words `cmd | head` in an assertion message.
+# All three must keep containing the idiom; none will ever leave this list.
+# ⚠ These three are historical fixtures. Protected CI now compares this list to
+# the PR base (or main's parent) and rejects every added entry; a future fixture
+# must avoid carrying a live bad pipeline rather than extending this ratchet.
+dev/release/tests/cargo_skew.sh
+dev/release/tests/pip_skew.sh
+dev/tools/mermaid/test-render-mermaid.sh
+scripts/lint-findings.sh
+scripts/perf-experiments/collect-host-spec.sh
+scripts/perf-experiments/ledger-check.sh
+scripts/preflight.sh
+scripts/release/assert-co-tagging.sh
+scripts/release/smoke/smoke-crates-cli.sh
+scripts/release/smoke/smoke-npm-package.sh
+scripts/release/smoke/smoke-pypi-wheel.sh
+scripts/repo-prune/bin/context-clarity.sh
+scripts/tests/test_aarch64_candle_feature_closure.sh
+scripts/tests/test_agent_lint_shellcheck_gate.sh
+scripts/tests/test_assert_co_tagging.sh
+scripts/tests/test_cargo_publish_if_new.sh
+scripts/tests/test_check_board_currency.sh
+scripts/tests/test_check_c1_conformance.sh
+scripts/tests/test_check_governed_surface_pin.sh
+scripts/tests/test_check_ledgers.sh
+scripts/tests/test_check_license_consistency.sh
+scripts/tests/test_check_release_state_views.sh
+scripts/tests/test_check_transcript_hygiene.sh
+scripts/tests/test_commission_manifest.sh
+scripts/tests/test_idempotent_republish.sh
+scripts/tests/test_preflight_landing.sh
+scripts/tests/test_publish_registry_safety.sh
+scripts/tests/test_pypi_publish_roundtrip.sh
+scripts/tests/test_release_workflow_scope.sh
+scripts/tests/test_removal_detect.sh
+scripts/tests/test_runtime_release_alignment.sh
+scripts/tests/test_seat_path_guard.sh
+scripts/tests/test_set_version.sh
+scripts/tests/test_shell_lint_ci_job.sh
+scripts/tests/test_shell_pipefail_guards.sh
+scripts/tests/test_smoke_scripts.sh
+scripts/tests/test_verify_embedder_api_no_drift.sh
+scripts/tests/test_verify_release_gates.sh
+scripts/tests/test_wait_for_crate_version.sh

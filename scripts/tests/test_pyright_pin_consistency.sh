@@ -47,7 +47,13 @@ lock_version() {
 require_one() {
   local label="$1"
   local value="$2"
-  if [ "$(printf '%s\n' "$value" | sed '/^$/d' | wc -l)" -ne 1 ]; then
+  local line nonempty_lines=0
+  while IFS= read -r line || [ -n "$line" ]; do
+    if [ -n "$line" ]; then
+      nonempty_lines=$((nonempty_lines + 1))
+    fi
+  done <<<"$value"
+  if [ "$nonempty_lines" -ne 1 ]; then
     printf 'FAIL  expected exactly one %s, found %q\n' "$label" "$value" >&2
     return 1
   fi

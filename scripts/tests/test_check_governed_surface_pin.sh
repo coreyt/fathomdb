@@ -348,7 +348,8 @@ done
 # nonsense message ("counts.allowlist says 30 but its list holds 30"). All three
 # are a malformed pin, and all three must now say so.
 type_count_pin() {
-  local label="$1" literal="$2" out="$TMPROOT/pin-type-$1.json"
+  local label="$1" literal="$2"
+  local out="$TMPROOT/pin-type-$label.json"
   python3 - "$REAL_PIN" "$out" "$literal" <<'PY'
 import json, sys
 pin = json.load(open(sys.argv[1]))

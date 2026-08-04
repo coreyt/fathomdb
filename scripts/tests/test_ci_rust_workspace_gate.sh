@@ -8,7 +8,7 @@ WORKFLOW="$REPO_ROOT/.github/workflows/ci.yml"
 CHECK_SCRIPT="$REPO_ROOT/scripts/check.sh"
 AGENT_TEST="$REPO_ROOT/scripts/agent-test.sh"
 NODE_BIN="${NODE_BIN:-node}"
-YAML_MODULE="$REPO_ROOT/node_modules/js-yaml"
+YAML_MODULE="${YAML_MODULE:-$REPO_ROOT/node_modules/js-yaml}"
 
 FAILED=0
 pass() { printf 'PASS  %s\n' "$1"; }
@@ -132,11 +132,11 @@ if grep -qE '^[[:space:]]*AGENT_LONG=1[[:space:]]+bash[[:space:]]+scripts/test-r
 else
   fail "check.sh must route its long Rust workspace test through --serial without direct Cargo"
 fi
-if grep -qE '^run_suite test-rust bash scripts/test-rust-workspace\.sh --serial$' "$AGENT_TEST" \
+if grep -qE '^run_tier_suite heavy test-rust bash scripts/test-rust-workspace\.sh --serial$' "$AGENT_TEST" \
   && ! grep -q 'cargo test --workspace' "$AGENT_TEST"; then
-  pass "agent-test has no direct workspace Cargo invocation"
+  pass "agent-test heavy tier has no direct workspace Cargo invocation"
 else
-  fail "agent-test must delegate every workspace Rust test to the canonical runner"
+  fail "agent-test must register workspace Rust tests in the heavy tier through the canonical runner"
 fi
 
 MUTATED_WORKFLOW="$TMPROOT/verify-direct-cargo.yml"

@@ -17,7 +17,8 @@ chmod +x "$fake_actionlint"
 # shellcheck source=../lib/actionlint-version.sh
 . "$REPO_ROOT/scripts/lib/actionlint-version.sh"
 
-if [ "$(read_actionlint_version "$fake_actionlint")" != "1.7.12" ]; then
+reported_version="$(read_actionlint_version "$fake_actionlint")"
+if [ "$reported_version" != "1.7.12" ]; then
   printf 'FAIL  Go-installed actionlint v1.7.12 must normalize to exact pin 1.7.12\n' >&2
   exit 1
 fi
@@ -48,6 +49,18 @@ mkdir -p "$lint_fix/scripts/lib" "$lint_fix/bin" "$lint_fix/go-bin" "$lint_fix/g
 cp "$REPO_ROOT/scripts/agent-lint.sh" "$lint_fix/scripts/agent-lint.sh"
 cp "$REPO_ROOT/scripts/lib/agent-output.sh" "$lint_fix/scripts/lib/agent-output.sh"
 cp "$REPO_ROOT/scripts/lib/actionlint-version.sh" "$lint_fix/scripts/lib/actionlint-version.sh"
+# 0.8.21 Slice 30: agent-lint.sh sources the shellcheck pin library and runs the
+# lint-shell leg BEFORE cargo, so the fixture carries that leg's inputs too —
+# a real (pinned, bootstrap-installed) shellcheck, the two empty ratchets, and a
+# committed tree for `git ls-files`. Stubbing shellcheck out would defeat the
+# sentinel below: `fake cargo reached` must still be the FIRST failure.
+cp "$REPO_ROOT/scripts/lib/shellcheck-version.sh" "$lint_fix/scripts/lib/shellcheck-version.sh"
+cp "$REPO_ROOT/scripts/lib/shell-early-consumer.sh" "$lint_fix/scripts/lib/shell-early-consumer.sh"
+cp "$REPO_ROOT/scripts/agent-lint-shell.sh" "$lint_fix/scripts/agent-lint-shell.sh"
+cp "$REPO_ROOT/.shellcheckrc" "$lint_fix/.shellcheckrc"
+: >"$lint_fix/scripts/shellcheck-sc2312-ratchet.txt"
+: >"$lint_fix/scripts/shell-early-consumer-ratchet.txt"
+chmod +x "$lint_fix/scripts/agent-lint-shell.sh"
 printf '#!/usr/bin/env bash\nprintf "ruff 0.15.17\\n"\n' >"$lint_fix/bin/ruff"
 printf '#!/usr/bin/env bash\nprintf "fake cargo reached\\n" >&2\nexit 7\n' >"$lint_fix/bin/cargo"
 printf '#!/usr/bin/env bash\nif [ "$1" = env ] && [ "$2" = GOPATH ]; then\n  printf "%%s\\n" "${FAKE_GOPATH:?}"\n  exit 0\nfi\nexit 2\n' >"$lint_fix/go-bin/go"
@@ -57,10 +70,20 @@ chmod +x "$lint_fix/scripts/agent-lint.sh" "$lint_fix/bin/ruff" "$lint_fix/bin/c
 (
   cd "$lint_fix"
   git init -q
-)
+  git config user.email test@example.com
+  git config user.name test
+  git add -A
+  git commit -q -m fixture
+) >/dev/null
+# Model a protected PR checkout. The shell ratchet is intentionally strict in
+# CI, so this fixture must supply the same origin/main baseline that the real
+# workflow's full checkout provides before asserting that actionlint resolves.
+lint_base="$(cd "$lint_fix" && git rev-parse HEAD)"
+(cd "$lint_fix" && git update-ref refs/remotes/origin/main "$lint_base")
 set +e
 lint_output="$(cd "$lint_fix" && PATH="$lint_fix/go-bin:$lint_fix/bin:/usr/bin:/bin" \
-  FAKE_GOPATH="$lint_fix/go-path" bash scripts/agent-lint.sh 2>&1)"
+  FAKE_GOPATH="$lint_fix/go-path" GITHUB_EVENT_NAME=pull_request \
+  GITHUB_REF=refs/pull/1/merge GITHUB_BASE_REF=main bash scripts/agent-lint.sh 2>&1)"
 lint_status=$?
 set -e
 if [ "$lint_status" -eq 0 ] || ! grep -Fq 'fake cargo reached' <<<"$lint_output" \

@@ -242,14 +242,12 @@ SHIM
 # `grep -m1` is the sanctioned shape (the 308f7922 fix): grep stops ITSELF, so
 # no consumer ever closes the pipe early and there is nothing to race.
 
-# Lines of $1 that pipe into an early-exiting consumer (`head`, or a quiet
-# `grep` carrying no -m). `(^|[^|])\|` excludes `||`, which is an or-list and
-# not a pipeline; comment lines are excluded so the explanatory comments added
-# by this slice may keep naming the idiom they replaced. Empty output = clean.
-detect_early_consumer() {
-  grep -nE '(^|[^|])\|[[:space:]]*(head\b|grep([[:space:]]+-[a-zA-Z]+)*[[:space:]]+-[a-zA-Z]*q)' "$1" \
-    | grep -vE '^[0-9]+:[[:space:]]*#' || true
-}
+# 0.8.21 Slice 30 moved detect_early_consumer into scripts/lib/ so this arm and
+# the ENFORCED lint leg (scripts/agent-lint-shell.sh) share one definition and
+# cannot drift apart. The positive control below stays here: the lint leg gets
+# its non-vacuity from this suite, not from itself.
+# shellcheck source=../lib/shell-early-consumer.sh
+. "$REPO_ROOT/scripts/lib/shell-early-consumer.sh"
 
 arm5() {
   local f hits total=0
@@ -263,14 +261,18 @@ line_no="$(grep -nE "^x" "$f" | head -1 | cut -d: -f1)"
 warm="$(grep -nF 'x' <<<"$b" | head -n1 | cut -d: -f1 || true)"
 if curl -fsS "$url" 2>/dev/null | grep -qF "vers"; then
 SANDBOX_RESIDUE="$(find "$sandbox" -mindepth 1 | head -5)"
+if producer | grep --quiet needle; then
+if producer |& head -n1; then
 # if git ls-files --unmerged | grep -q . -- a comment must NOT be flagged
 ok="$(grep -m1 x "$f" | cut -d: -f1)" || true
 CTL
   hits="$(detect_early_consumer "$ctl")"
-  if [ "$(grep -c . <<<"${hits:-}")" -eq 5 ]; then
-    pass "arm 5 (positive control): the detector flags all 5 pre-fix idioms and neither the comment nor the grep -m1 form"
+  if [ "$(grep -c . <<<"${hits:-}")" -eq 7 ] \
+    && grep -qF 'grep --quiet needle' <<<"$hits" \
+    && grep -qF '|& head -n1' <<<"$hits"; then
+    pass "arm 5 (positive control): the detector flags 7 pre-fix idioms including --quiet and |&, and neither the comment nor the grep -m1 form"
   else
-    fail "arm 5 (positive control): detector must flag exactly the 5 bad lines, got:"$'\n'"$hits"
+    fail "arm 5 (positive control): detector must flag exactly the 7 bad lines, including --quiet and |&, got:"$'\n'"$hits"
   fi
   local files=(
     scripts/set-version.sh

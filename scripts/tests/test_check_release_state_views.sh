@@ -1444,7 +1444,8 @@ fi
   git checkout -q -b feature/in-flight
   echo "branch change" >branch-only.txt
   git add branch-only.txt && git commit -qm 'branch: not pushed'
-  python3 - "$(git rev-parse --short HEAD)" <<'PY'
+  branch_head="$(git rev-parse --short HEAD)"
+  python3 - "$branch_head" <<'PY'
 import json, sys
 p = "dev/plans/release-state-9.9.9.json"
 st = json.load(open(p))
@@ -1551,8 +1552,15 @@ else
     fail "arm R5 setup: could not install the gate in the shallow fixture (rc=$SHALLOW_GATE_COPY_RC): $SHALLOW_GATE_COPY_ERR"
   fi
 fi
-if [ -d "$SHALLOW/.git" ] \
-   && [ "$(git -C "$SHALLOW" rev-parse --is-shallow-repository 2>/dev/null)" = "true" ]; then
+SHALLOW_IS_SHALLOW=""
+SHALLOW_IS_SHALLOW_RC=1
+if [ -d "$SHALLOW/.git" ]; then
+  set +e
+  SHALLOW_IS_SHALLOW="$(git -C "$SHALLOW" rev-parse --is-shallow-repository 2>/dev/null)"
+  SHALLOW_IS_SHALLOW_RC=$?
+  set -e
+fi
+if [ "$SHALLOW_IS_SHALLOW_RC" -eq 0 ] && [ "$SHALLOW_IS_SHALLOW" = "true" ]; then
   pass "arm R5 setup: the fixture clone really is shallow"
 else
   fail "arm R5 setup: clone is not shallow, the arm would prove nothing"

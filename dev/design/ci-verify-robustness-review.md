@@ -516,8 +516,14 @@ There is also no `bash -n`, no `shfmt`, and no `checkbashisms`. `actionlint`
 does embed shellcheck for workflow `run:` blocks — but it never sees
 `scripts/**`, which is where every incident in this class has occurred.
 
-So SC2312 (`check-extra-masked-returns`, the check that flags exactly this
-bug), SC2086, and SC2181 are all off **by absence**, not by decision.
+So SC2312 (`check-extra-masked-returns`), SC2086, and SC2181 are all off **by
+absence**, not by decision.
+
+> **CORRECTION (Slice 30).** The parenthetical here originally read "the check
+> that flags exactly this bug". **It does not** — measured and refuted while
+> implementing R1.1; see the CORRECTION under R1.1 and the struck bullet in the
+> §4.1 comparison. SC2312 is still worth enabling, and Slice 30 enables it, but
+> it is not the leg that catches this bug class.
 
 #### 3.1.1 This is the third occurrence of the same bug class
 
@@ -735,11 +741,27 @@ matters.** Be blunt about this, because it disciplines the §4.1 recommendations
 - A container matching `ubuntu-latest`: **probably not**, for the same reason.
   A different CPU count would shift the odds, not close them.
 - Running the suite in a loop: would find it eventually, at unbounded cost.
-- **`shellcheck --enable=check-extra-masked-returns`: would have caught it
-  deterministically, in under a second, before the code was ever committed.**
+- ~~**`shellcheck --enable=check-extra-masked-returns`: would have caught it
+  deterministically, in under a second, before the code was ever committed.**~~
+  **❌ FALSE — measured and refuted in Slice 30. See the CORRECTION under R1.1.**
+  Fed the verbatim pre-fix line, shellcheck 0.11.0 reports **nothing** under
+  SC2312 or any of its eleven optional checks — in an assignment the
+  substitution's status *is* the assignment's status, so by SC2312's own rule
+  nothing is masked, even though `pipefail` has already poisoned it with the
+  producer's SIGPIPE. Independently re-verified by the Steward: with
+  `--enable=all --severity=style` the only output is SC2250, a cosmetic
+  brace-style suggestion.
+  **What does catch it** is the repo's own early-exiting-consumer detector
+  (`scripts/lib/shell-early-consumer.sh`), which Slice 30 shipped as a third
+  enforced leg precisely because of this refutation. Verified against both the
+  real pre-fix line and the P0 `if … | grep -q .` shape.
 
-That asymmetry is the central conclusion of this review. For *this* bug class,
-environment fidelity is nearly worthless and static analysis is nearly free.
+**The asymmetry survives; the mechanism does not.** For *this* bug class
+environment fidelity is still nearly worthless and static analysis is still
+nearly free — but the static analysis that works is a **purpose-built detector**,
+not a stock shellcheck flag. Shipping shellcheck alone would have been a vacuous
+green about the very failure this review was commissioned for: a gate that
+claims the bug class and does not detect it.
 Environment fidelity (§4.1) is still worth some investment — it addresses a
 different class (toolchain drift, unlocked installs) — but it must not be sold
 as the answer to what happened on 2026-08-04.
@@ -797,6 +819,56 @@ grounds.
   auto-suppress under `pipefail` ([#2368](https://github.com/koalaman/shellcheck/issues/2368)).
   Expect to write per-line justified `disable` comments; that is fine — a
   per-line disable with a reason is a decision, a global one is not.
+
+##### CORRECTION (2026-08-04, recorded while implementing R1.1 in 0.8.21 Slice 30)
+
+**The claim above the recommendation table — that
+`shellcheck --enable=check-extra-masked-returns` "would have caught [the
+2026-08-04 bug] deterministically" — is FALSE, and was measured false on the
+version this repo now pins (shellcheck 0.11.0).**
+
+Fed the verbatim pre-fix line from `308f7922`:
+
+```bash
+FIRST_SUITE_LINE="$(grep -nE '^[[:space:]]*run_suite[[:space:]]' "$AGENT_TEST" | head -n1 | cut -d: -f1)"
+```
+
+shellcheck 0.11.0 reports **nothing** — not under SC2312, and not under any of
+its eleven optional checks (`add-default-case`, `avoid-negated-conditions`,
+`avoid-nullary-conditions`, `check-extra-masked-returns`,
+`check-set-e-suppressed`, `check-unassigned-uppercase`, `deprecate-which`,
+`quote-safe-variables`, `require-double-brackets`, `require-variable-braces`,
+`useless-use-of-cat`). The same holds for the P0 shape
+`if git ls-files --unmerged | grep -q .; then`. The reason is structural, not a
+bug: SC2312 fires where a command substitution's exit status is discarded by the
+command it is an *argument to*. In an assignment the substitution's status *is*
+the assignment's status, so by SC2312's own rule nothing is masked — even though
+`pipefail` has already poisoned that status with the producer's SIGPIPE.
+
+Adopting shellcheck is still right, and SC2312 covers a large and overlapping
+family of genuine masked returns. But shellcheck **alone** would not have
+stopped occurrences one through four, and a slice that shipped only shellcheck
+while believing otherwise would have been a vacuous green about its own purpose.
+Slice 30 therefore ships the SC2312 leg **and** a second enforced leg — the
+early-exiting-consumer detector in `scripts/lib/shell-early-consumer.sh`,
+promoted from the positive-controlled arm 5 of
+`scripts/tests/test_shell_pipefail_guards.sh` — which does cover the shape.
+
+**Ratchet form adopted.** Per-FILE, not per-directory (strictly tighter):
+`scripts/shellcheck-sc2312-ratchet.txt` and
+`scripts/shell-early-consumer-ratchet.txt`. Every tracked `*.sh` not listed is
+enforced, new files are covered by default, and both lists may only shrink — a
+listed file that has become clean fails the gate until its line is deleted.
+
+**Named follow-ups from Slice 30** (deferred deliberately, not dropped):
+
+- **FUP-SHELLCHECK-1** — clear SC2016 (91 sites) and SC2015 (40 sites) and
+  remove them from `DEFERRED_CHECKS` in `scripts/agent-lint-shell.sh`.
+- **FUP-SHELLCHECK-2** — empty `scripts/shellcheck-sc2312-ratchet.txt`
+  (35 files / 344 findings at Slice 30 landing).
+- **FUP-SHELLCHECK-3** — empty `scripts/shell-early-consumer-ratchet.txt`
+  (37 files / 224 sites at Slice 30 landing, two of which are deliberate
+  fixtures that will never leave the list).
 
 #### R1.2 — Fix the 15 audited sites — **P0** (small, mechanical)
 

@@ -11,7 +11,10 @@
 # Exit: 0 all fixes neutral (or nothing to do); 1 a fix changed meaning (reverted) — resolve
 #       the construct by hand per the ledger, then re-run.
 set -euo pipefail
-cd "$(git rev-parse --show-toplevel)"
+# `git rev-parse` failing here used to degrade to `cd ""` — a bash no-op that
+# leaves the script running in an arbitrary cwd. Bind and check it instead.
+_repo_toplevel="$(git rev-parse --show-toplevel)" || exit 1
+cd "$_repo_toplevel" || exit 1
 
 GUARD="dev/tools/md_neutrality_guard.py"
 LEDGER="dev/tools/md-fix-corruption-ledger.md"
