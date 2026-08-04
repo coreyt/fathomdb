@@ -1,0 +1,25 @@
+{
+  "task": "Slice 40 CI-only fixture contract repairs",
+  "status": "completed",
+  "commit": "3f7b8b56655f806f1188426b045c0be555925ffe",
+  "changed_files": [
+    "scripts/tests/test_steward_orient.sh",
+    "scripts/tests/test_md_generators.sh"
+  ],
+  "production_behavior_changed": false,
+  "tdd": {
+    "red": "With HOME=/tmp, the prior arm 7 asserted raw /tmp paths even though steward-orient correctly rendered ~/ paths.",
+    "green": "The repaired arm derives the production HOME-to-tilde display expectation while retaining raw sibling-orphan fixture proof."
+  },
+  "validation": [
+    "bash -n scripts/tests/test_steward_orient.sh scripts/tests/test_md_generators.sh",
+    "HOME=/tmp TMPDIR=/tmp bash <clean-clone>/scripts/tests/test_steward_orient.sh: passed all arms",
+    "bash <clean-clone>/scripts/tests/test_md_generators.sh: passed",
+    "git diff --check HEAD^ HEAD: passed"
+  ],
+  "notes": [
+    "context-clarity receives the synthetic CLAUDE_MEMORY_DIR before invocation and asserts fixture-derived memory metrics.",
+    "Both generator failures retain captured stderr diagnostics.",
+    "shellcheck was unavailable in this environment."
+  ]
+}

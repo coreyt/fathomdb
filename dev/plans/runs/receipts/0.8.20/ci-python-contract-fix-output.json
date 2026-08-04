@@ -1,0 +1,34 @@
+{
+  "head_sha": "5130d01f74aa602e4f102833ab5aacaab8e77752",
+  "branch": "slice-40-ci-python-fix",
+  "scope": "Expose the checkout-local .venv/bin to agent-test shell suites before their first registration.",
+  "tdd": {
+    "red_before_implementation": {
+      "command": "bash scripts/tests/test_agent_test_collect_all.sh",
+      "result": "failed as intended: arm F could not source scripts/lib/agent-python-env.sh and agent-test had no early selector"
+    }
+  },
+  "tests": [
+    {
+      "command": "bash scripts/tests/test_agent_test_collect_all.sh",
+      "result": "pass; disposable registered shell suite resolved .venv/bin/python3, no-venv fallback preserved, and selector precedes first registration"
+    },
+    {
+      "command": "bash scripts/tests/test_seat_path_guard.sh",
+      "result": "pass; PyYAML static consumer"
+    },
+    {
+      "command": "bash scripts/tests/test_release_workflow_scope.sh",
+      "result": "pass; PyYAML static consumer"
+    },
+    {
+      "command": "bash -n scripts/agent-test.sh scripts/lib/agent-python-env.sh scripts/tests/test_agent_test_collect_all.sh && git diff --check",
+      "result": "pass"
+    }
+  ],
+  "limitations": [
+    "Full scripts/agent-test.sh was not run in this worktree because it has no checkout-owned .venv; creating or rebinding one here is outside the safe worktree contract.",
+    "No packages were installed globally, no virtualenv was rebound, and no GitHub workflow was started."
+  ],
+  "push": "not pushed"
+}

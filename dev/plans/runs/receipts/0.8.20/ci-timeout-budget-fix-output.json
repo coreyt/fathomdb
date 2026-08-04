@@ -1,0 +1,32 @@
+{
+  "status": "complete",
+  "task": "Slice 40 CI verify timeout-budget repair",
+  "branch": "slice-40-ci-timeout-fix",
+  "commit": "d24430a22eb53ce0ccdff2f81df416c53b58b2b2",
+  "scope": {
+    "verify_timeout_minutes_before": 30,
+    "verify_timeout_minutes_after": 45,
+    "other_job_timeouts_changed": false,
+    "workflow_or_dependency_changes_outside_ci_verify": false
+  },
+  "tdd": {
+    "red": {
+      "command": "bash scripts/tests/test_verify_ci_timeout_budget.sh",
+      "result": "failed as expected while verify timeout-minutes was 30"
+    },
+    "green": {
+      "command": "bash scripts/tests/test_verify_ci_timeout_budget.sh",
+      "result": "passed after setting the verify timeout to 45"
+    }
+  },
+  "validation": [
+    "git diff --check",
+    "bash -n scripts/agent-test.sh scripts/tests/test_verify_ci_timeout_budget.sh",
+    "bash scripts/tests/test_verify_ci_timeout_budget.sh",
+    "bash scripts/tests/test_linux_first_platform_scope.sh",
+    "actionlint .github/workflows/ci.yml",
+    "bash scripts/tests/test_actionlint_fixture.sh",
+    "git show --check HEAD"
+  ],
+  "handoff": "Committed only the CI timeout change, normal-harness registration, and focused structural regression test. No push, rebase, dispatch, tag, or publish was performed."
+}
