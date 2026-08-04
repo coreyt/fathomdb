@@ -31,13 +31,20 @@ test("nested source type-collapsed equality and projected search use a real data
         sourceId: "ts-slice45:number",
         body: JSON.stringify({ attributes: { "core:value": { value: 1 } } }),
       },
+      {
+        kind: "doc",
+        logicalId: "different",
+        sourceId: "ts-slice45:different",
+        body: JSON.stringify({ note: "1", attributes: { "core:value": { value: "2" } } }),
+      },
     ]);
     const result = await engine.searchProjectedText("1", "value", {
       attributes: [["value", "1"]],
     });
     assert.deepEqual(new Set(result.results.map((hit) => hit.id.value)), new Set(["text", "number"]));
+    assert.ok((await engine.search("1")).results.some((hit) => hit.id.value === "different"));
     const hybrid = await engine.search("1", { attributes: [["value", "1"]] });
-    assert.ok(hybrid.results.every((hit) => hit.id.value === "text" || hit.id.value === "number"));
+    assert.ok(hybrid.results.every((hit) => hit.id.value !== "different"));
   } finally {
     await engine.close();
   }

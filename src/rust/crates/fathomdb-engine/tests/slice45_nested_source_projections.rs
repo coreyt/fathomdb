@@ -114,6 +114,11 @@ fn nested_scalars_use_canonical_text_and_missing_or_null_do_not_project() {
         .write(&[
             node("text", "slice45:text", r#"{"attributes":{"literal:key":{"value":"1"}}}"#),
             node("int", "slice45:int", r#"{"attributes":{"literal:key":{"value":1}}}"#),
+            node(
+                "different",
+                "slice45:different",
+                r#"{"note":"1","attributes":{"literal:key":{"value":"2"}}}"#,
+            ),
             node("real", "slice45:real", r#"{"attributes":{"literal:key":{"value":2.5}}}"#),
             node("bool", "slice45:bool", r#"{"attributes":{"literal:key":{"value":true}}}"#),
             node("null", "slice45:null", r#"{"attributes":{"literal:key":{"value":null}}}"#),
@@ -133,6 +138,11 @@ fn nested_scalars_use_canonical_text_and_missing_or_null_do_not_project() {
         ],
         "canonical text equality deliberately collapses string \"1\" and number 1"
     );
+    let unfiltered_hybrid = engine.search_filtered("1", None).unwrap();
+    assert!(
+        unfiltered_hybrid.results.iter().any(|hit| hit.body.contains(r#""value":"2""#)),
+        "the different projected value is a body-search candidate without an attribute filter"
+    );
     let mut hybrid_filter = SearchFilter::default();
     hybrid_filter.attributes = vec![("value".to_string(), "1".to_string())];
     let hybrid = engine.search_filtered("1", Some(hybrid_filter)).unwrap();
@@ -143,8 +153,12 @@ fn nested_scalars_use_canonical_text_and_missing_or_null_do_not_project() {
             .all(|hit| hit.body.contains(r#""value":"1""#) || hit.body.contains(r#""value":1"#)),
         "normal hybrid search must retain public projected-attribute filters"
     );
+    assert!(
+        hybrid.results.iter().all(|hit| !hit.body.contains(r#""value":"2""#)),
+        "the different projected value must be excluded by the hybrid attribute filter"
+    );
     opened.engine.close().unwrap();
-    assert_eq!(eav_values(&path, "value"), vec!["1", "1", "2.5", "true"]);
+    assert_eq!(eav_values(&path, "value"), vec!["1", "1", "2", "2.5", "true"]);
 }
 
 #[test]

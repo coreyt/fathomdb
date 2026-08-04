@@ -32,13 +32,22 @@ def test_nested_projection_type_collapsed_equality_and_projected_search(db_path:
                     "source_id": "py-slice45:number",
                     "body": json.dumps({"attributes": {"core:value": {"value": 1}}}),
                 },
+                {
+                    "kind": "doc",
+                    "logical_id": "different",
+                    "source_id": "py-slice45:different",
+                    "body": json.dumps(
+                        {"note": "1", "attributes": {"core:value": {"value": "2"}}}
+                    ),
+                },
             ]
         )
         result = engine.search_projected_text(
             "1", "value", SearchFilter(attributes=(("value", "1"),))
         )
         assert {hit.id.value for hit in result.results} == {"text", "number"}
+        assert "different" in {hit.id.value for hit in engine.search("1").results}
         hybrid = engine.search("1", SearchFilter(attributes=(("value", "1"),)))
-        assert {hit.id.value for hit in hybrid.results} <= {"text", "number"}
+        assert "different" not in {hit.id.value for hit in hybrid.results}
     finally:
         engine.close()
