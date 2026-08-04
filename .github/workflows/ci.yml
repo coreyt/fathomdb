@@ -552,8 +552,8 @@ jobs:
   # `markdownlint` job's `docs_only` gate excludes by construction. A currency
   # gate that cannot run on the push that makes the fact wrong is decorative.
   #
-  # Default (depth-1) checkout is sufficient: the predicate reads working-tree
-  # files only and walks no history.
+  # Full history is required: generated views claim slices are LANDED on
+  # `origin/main`, and the gate verifies each claim by Git ancestry.
   release-state-views:
     runs-on: ubuntu-latest
     timeout-minutes: 5

@@ -1339,6 +1339,11 @@ if printf '%s' "$CI_JOB_BLOCK" | grep -qE '^\s*(if|needs):'; then
 else
   pass "the release-state-views job is always-on (no if:, no needs:, not docs_only-gated)"
 fi
+if printf '%s\n' "$CI_JOB_BLOCK" | grep -qE '^[[:space:]]+fetch-depth:[[:space:]]*0([[:space:]]|$)'; then
+  pass "the release-state-views job checks out full history for origin/main ancestry"
+else
+  fail "the release-state-views job must set checkout fetch-depth: 0; block: $CI_JOB_BLOCK"
+fi
 
 # --- Arm R (remote-landing guard) ------------------------------------------
 # THE DEFECT THIS PINS. Both `render_master_ladder_progress` and
@@ -1475,6 +1480,7 @@ if ! git -C "$TMPROOT/remote.git" rev-parse --verify --quiet main >/dev/null 2>&
 fi
 
 SHALLOW="$TMPROOT/shallow"
+SHALLOW_PROBE="$TMPROOT/shallow-default-branch"
 rm -rf "$SHALLOW"
 # `--depth` is ignored for a plain local path, so the remote MUST be a file://
 # URL. GitHub Actions runners set `protocol.file.allow=never` (the
@@ -1487,17 +1493,53 @@ rm -rf "$SHALLOW"
 # failed in CI `set -e` aborted the suite with NO arm R5 output at all and the
 # job reported a bare `exit 1` — the same silent-abort class this suite exists to
 # catch, reproduced inside the suite itself.
+#
+# The bare remote deliberately advertises an unborn default branch. This is the
+# exact pre-fix failure: a branchless clone can exit 0 but has no working tree,
+# hence no `scripts/` directory for the copied gate. Keep a probe for that
+# failure so the fixture is deterministic, then explicitly request `main` for
+# the clone the arm runs against.
 set +e
-SHALLOW_CLONE_ERR="$(git -c protocol.file.allow=always clone -q --depth=1 \
+SHALLOW_DEFAULT_HEAD_ERR="$(git -C "$TMPROOT/remote.git" symbolic-ref HEAD refs/heads/unborn-default 2>&1)"
+SHALLOW_DEFAULT_HEAD_RC=$?
+set -e
+if [ "$SHALLOW_DEFAULT_HEAD_RC" -ne 0 ]; then
+  fail "arm R5 setup: could not advertise an unborn default branch (rc=$SHALLOW_DEFAULT_HEAD_RC): $SHALLOW_DEFAULT_HEAD_ERR"
+fi
+rm -rf "$SHALLOW_PROBE"
+set +e
+SHALLOW_PROBE_ERR="$(git -c protocol.file.allow=always clone -q --depth=1 \
+  "file://$TMPROOT/remote.git" "$SHALLOW_PROBE" 2>&1)"
+SHALLOW_PROBE_RC=$?
+set -e
+if [ "$SHALLOW_PROBE_RC" -eq 0 ] \
+   && [ ! -f "$SHALLOW_PROBE/scripts/check-release-state-views.sh" ]; then
+  pass "arm R5 setup: a branchless shallow clone reproduces the missing scripts/ failure"
+else
+  fail "arm R5 setup: expected the branchless shallow-clone probe to lack scripts/ (rc=$SHALLOW_PROBE_RC): $SHALLOW_PROBE_ERR"
+fi
+
+set +e
+SHALLOW_CLONE_ERR="$(git -c protocol.file.allow=always clone -q --depth=1 --branch main \
   "file://$TMPROOT/remote.git" "$SHALLOW" 2>&1)"
 SHALLOW_CLONE_RC=$?
 set -e
 if [ "$SHALLOW_CLONE_RC" -ne 0 ]; then
   fail "arm R5 setup: could not build the shallow fixture (rc=$SHALLOW_CLONE_RC): $SHALLOW_CLONE_ERR"
+elif [ ! -f "$SHALLOW/scripts/check-release-state-views.sh" ]; then
+  fail "arm R5 setup: shallow main checkout lacks scripts/check-release-state-views.sh: $SHALLOW_CLONE_ERR"
+else
+  set +e
+  SHALLOW_GATE_COPY_ERR="$({ cp "$GATE" "$SHALLOW/scripts/check-release-state-views.sh" \
+    && chmod +x "$SHALLOW/scripts/check-release-state-views.sh"; } 2>&1)"
+  SHALLOW_GATE_COPY_RC=$?
+  set -e
+  if [ "$SHALLOW_GATE_COPY_RC" -ne 0 ]; then
+    fail "arm R5 setup: could not install the gate in the shallow fixture (rc=$SHALLOW_GATE_COPY_RC): $SHALLOW_GATE_COPY_ERR"
+  fi
 fi
-cp "$GATE" "$SHALLOW/scripts/check-release-state-views.sh"
-chmod +x "$SHALLOW/scripts/check-release-state-views.sh"
-if [ "$(git -C "$SHALLOW" rev-parse --is-shallow-repository 2>/dev/null)" = "true" ]; then
+if [ -d "$SHALLOW/.git" ] \
+   && [ "$(git -C "$SHALLOW" rev-parse --is-shallow-repository 2>/dev/null)" = "true" ]; then
   pass "arm R5 setup: the fixture clone really is shallow"
 else
   fail "arm R5 setup: clone is not shallow, the arm would prove nothing"
@@ -1505,25 +1547,29 @@ fi
 
 # Make a landed SHA unresolvable in the shallow clone the same way CI does: the
 # state file names commits the depth=1 clone never fetched.
-set +e
-SHALLOW_OUT="$(cd "$SHALLOW" && ./scripts/check-release-state-views.sh 2>&1)"
-SHALLOW_RC=$?
-set -e
+if [ -x "$SHALLOW/scripts/check-release-state-views.sh" ]; then
+  set +e
+  SHALLOW_OUT="$(cd "$SHALLOW" && ./scripts/check-release-state-views.sh 2>&1)"
+  SHALLOW_RC=$?
+  set -e
 
-if [ "$SHALLOW_RC" -eq 0 ]; then
-  pass "arm R5: a shallow clone does not hard-fail the landing claim"
-else
-  fail "arm R5 (shallow must not hard-fail): rc=$SHALLOW_RC out=$SHALLOW_OUT"
-fi
+  if [ "$SHALLOW_RC" -eq 0 ]; then
+    pass "arm R5: a shallow clone does not hard-fail the landing claim"
+  else
+    fail "arm R5 (shallow must not hard-fail): rc=$SHALLOW_RC out=$SHALLOW_OUT"
+  fi
 
-# Assert on the VERDICT LINE, not on one of its two possible reasons. In a
-# shallow clone the absent SHA reports as "not a commit in this repository"
-# rather than "not reachable from origin/main", so grepping the latter alone
-# passes whether or not the fix is present — a non-discriminating arm.
-if printf '%s' "$SHALLOW_OUT" | grep -qE 'claims [0-9]+ slice\(s\) LANDED'; then
-  fail "arm R5: shallow clone emitted a FALSE unpushed verdict: $SHALLOW_OUT"
+  # Assert on the VERDICT LINE, not on one of its two possible reasons. In a
+  # shallow clone the absent SHA reports as "not a commit in this repository"
+  # rather than "not reachable from origin/main", so grepping the latter alone
+  # passes whether or not the fix is present — a non-discriminating arm.
+  if printf '%s' "$SHALLOW_OUT" | grep -qE 'claims [0-9]+ slice\(s\) LANDED'; then
+    fail "arm R5: shallow clone emitted a FALSE unpushed verdict: $SHALLOW_OUT"
+  else
+    pass "arm R5: shallow clone emits no unpushed verdict at all"
+  fi
 else
-  pass "arm R5: shallow clone emits no unpushed verdict at all"
+  fail "arm R5: gate was not runnable after shallow-fixture setup; see prior R5 setup failures"
 fi
 
 if [ "$FAILED" -gt 0 ]; then
