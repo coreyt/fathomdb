@@ -6198,8 +6198,13 @@ impl Engine {
         // the round-trip would drop `SearchFilter.attributes`. Carry them across
         // explicitly: they already route pre-KNN through `vector_filter_clause`.
         let lowered = filter
-            .map(|sf| {
+            .map(|mut sf| {
                 let attributes = sf.attributes.clone();
+                // Attribute predicates are intentionally absent from the unified
+                // grammar, but this legacy/hybrid entry point owns their existing
+                // pre-KNN lowering. Remove them only for the metadata round-trip,
+                // then restore them on its `SearchFilter` output.
+                sf.attributes.clear();
                 Filter::try_from(&sf).and_then(|filter| {
                     filter.to_search_filter().map(|mut lo| {
                         lo.attributes = attributes;
@@ -17420,7 +17425,7 @@ fn validate_projection_source_backfill(
     name: &str,
     stored: &StoredProjection,
 ) -> Result<(), EngineError> {
-    if stored.source.is_none() || !stored.wants_eav() {
+    if stored.source.is_none() {
         return Ok(());
     }
     let mut stmt = conn
@@ -17979,6 +17984,25 @@ fn apply_projection_config(
         }
         if spec.fts.is_some() || spec.vector.is_some() {
             return Err(EngineError::WriteValidation);
+        }
+    }
+
+    // A destructive source change retains the normal drop-first error precedence.
+    // Check the pre-drop registry before inspecting a proposed source's backfill
+    // rows; otherwise a composite at that source could mask ProjectionDestructive.
+    let pre_drop = load_projection_registry(tx).map_err(|_| EngineError::Storage)?;
+    for spec in specs {
+        if drop.iter().any(|name| name == &spec.name) {
+            continue;
+        }
+        let desired = StoredProjection::from_spec(spec);
+        if let Some(existing) = pre_drop.get(&spec.name) {
+            if is_destructive_projection_change(existing, &desired) {
+                return Err(EngineError::ProjectionDestructive {
+                    name: spec.name.clone(),
+                    delta: describe_projection_delta(existing, &desired),
+                });
+            }
         }
     }
 

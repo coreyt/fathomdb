@@ -140,8 +140,7 @@ fn nested_scalars_use_canonical_text_and_missing_or_null_do_not_project() {
         hybrid
             .results
             .iter()
-            .all(|hit| hit.body.contains(r#"\"value\":\"1\""#)
-                || hit.body.contains(r#"\"value\":1"#)),
+            .all(|hit| hit.body.contains(r#""value":"1""#) || hit.body.contains(r#""value":1"#)),
         "normal hybrid search must retain public projected-attribute filters"
     );
     opened.engine.close().unwrap();
@@ -314,7 +313,7 @@ proptest! {
         let opened = Engine::open(path.clone()).unwrap();
         let spec = nested_spec("field", &[&first, &second], &[ProjectionRole::Filterable], false);
         opened.engine.configure_projections(std::slice::from_ref(&spec), &[]).unwrap();
-        let body = format!(r#"{{\"{first}\":{{\"{second}\":\"{value}\"}}}}"#);
+        let body = format!(r#"{{"{first}":{{"{second}":"{value}"}}}}"#);
         opened.engine.write(&[node("property", "slice45:property", &body)]).unwrap();
         prop_assert_eq!(opened.engine.read_projections().unwrap(), vec![spec]);
         opened.engine.close().unwrap();
