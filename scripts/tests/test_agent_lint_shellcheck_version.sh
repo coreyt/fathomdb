@@ -28,6 +28,9 @@ cp "$REPO_ROOT/scripts/agent-lint-shell.sh" "$FIX/scripts/agent-lint-shell.sh"
 cp "$REPO_ROOT/scripts/lib/agent-output.sh" "$FIX/scripts/lib/agent-output.sh"
 cp "$REPO_ROOT/scripts/lib/actionlint-version.sh" "$FIX/scripts/lib/actionlint-version.sh"
 cp "$REPO_ROOT/scripts/lib/shellcheck-version.sh" "$FIX/scripts/lib/shellcheck-version.sh"
+cp "$REPO_ROOT/scripts/lib/shell-early-consumer.sh" "$FIX/scripts/lib/shell-early-consumer.sh"
+: >"$FIX/scripts/shellcheck-sc2312-ratchet.txt"
+: >"$FIX/scripts/shell-early-consumer-ratchet.txt"
 printf '#!/usr/bin/env bash\nprintf "1.7.12\\n"\n' >"$FIX/bin/actionlint"
 printf '#!/usr/bin/env bash\nprintf "ruff 0.15.17\\n"\n' >"$FIX/bin/ruff"
 chmod +x "$FIX/scripts/agent-lint.sh" "$FIX/scripts/agent-lint-shell.sh" \
@@ -35,6 +38,11 @@ chmod +x "$FIX/scripts/agent-lint.sh" "$FIX/scripts/agent-lint-shell.sh" \
 (
   cd "$FIX"
   git init -q
+  git config user.email test@example.com
+  git config user.name test
+  git add -A
+  git commit -q -m fixture
+  git update-ref refs/remotes/origin/main HEAD
 )
 
 # A fake shellcheck reporting a version that is NOT the pin. Banner shape copied

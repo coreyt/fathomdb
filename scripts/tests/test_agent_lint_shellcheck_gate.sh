@@ -132,6 +132,12 @@ write_clean
 : >"$FIX/repo/scripts/shellcheck-sc2312-ratchet.txt"
 : >"$FIX/repo/scripts/shell-early-consumer-ratchet.txt"
 commit_fixture
+# The ordinary arms model a protected PR instead of inheriting whatever
+# GitHub environment happens to run this test. The real ratchet correctly
+# requires origin/main there, so establish that full-checkout baseline before
+# any fixture mutation.
+BASE="$(cd "$FIX/repo" && git rev-parse HEAD)"
+(cd "$FIX/repo" && git update-ref refs/remotes/origin/main "$BASE")
 
 run_agent_lint() {
   set +e
@@ -144,6 +150,7 @@ run_agent_lint() {
 run_lint_shell() {
   set +e
   OUT="$(cd "$FIX/repo" && HOME="$FIX/home" PATH="$FIX/bin:/usr/bin:/bin" \
+    GITHUB_REF='refs/pull/1/merge' GITHUB_EVENT_NAME='pull_request' GITHUB_BASE_REF='main' \
     bash scripts/agent-lint-shell.sh 2>&1)"
   RC=$?
   set -e

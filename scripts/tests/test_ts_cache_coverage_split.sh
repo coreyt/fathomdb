@@ -73,12 +73,15 @@ else
   fail "network-gated TypeScript files drifted: expected [${expected_gated_files[*]}], got [${actual_gated_files[*]}]"
 fi
 
-# The generic agent loop owns all TypeScript tests, but must make the seven
-# network-dependent arms skip rather than require a live model download.
-if grep -qxE "[[:space:]]*run_suite test-ts env FATHOMDB_SKIP_NETWORK_TESTS=1 bash -c 'cd src/ts && npm test --silent'" "$AGENT_TEST"; then
-  pass "generic agent-test routes TypeScript through the network skip gate"
+# The generic heavy tier owns all TypeScript tests, but must make the seven
+# network-dependent arms skip rather than require a live model download. Keep
+# the command in its array: run_tier_maybe_suite distinguishes an absent local
+# node_modules directory from a passing test suite.
+if grep -qxE "[[:space:]]*ts_suite_command=\(env FATHOMDB_SKIP_NETWORK_TESTS=1 bash -c 'cd src/ts && npm test --silent'\)" "$AGENT_TEST" \
+  && grep -qxE '[[:space:]]*run_tier_maybe_suite heavy test-ts "\$ts_suite_skip_reason" "\$\{ts_suite_command\[@\]\}"' "$AGENT_TEST"; then
+  pass "generic heavy test tier routes TypeScript through the network skip gate"
 else
-  fail "generic test-ts must set FATHOMDB_SKIP_NETWORK_TESTS=1 exactly once before npm test"
+  fail "generic heavy test-ts must set FATHOMDB_SKIP_NETWORK_TESTS=1 and register through run_tier_maybe_suite"
 fi
 if grep -q 'RELEASE_SURFACE_TESTS' "$AGENT_TEST"; then
   fail "generic agent-test must not enable the dedicated release-surface suite"

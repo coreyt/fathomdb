@@ -75,9 +75,15 @@ chmod +x "$lint_fix/scripts/agent-lint.sh" "$lint_fix/bin/ruff" "$lint_fix/bin/c
   git add -A
   git commit -q -m fixture
 ) >/dev/null
+# Model a protected PR checkout. The shell ratchet is intentionally strict in
+# CI, so this fixture must supply the same origin/main baseline that the real
+# workflow's full checkout provides before asserting that actionlint resolves.
+lint_base="$(cd "$lint_fix" && git rev-parse HEAD)"
+(cd "$lint_fix" && git update-ref refs/remotes/origin/main "$lint_base")
 set +e
 lint_output="$(cd "$lint_fix" && PATH="$lint_fix/go-bin:$lint_fix/bin:/usr/bin:/bin" \
-  FAKE_GOPATH="$lint_fix/go-path" bash scripts/agent-lint.sh 2>&1)"
+  FAKE_GOPATH="$lint_fix/go-path" GITHUB_EVENT_NAME=pull_request \
+  GITHUB_REF=refs/pull/1/merge GITHUB_BASE_REF=main bash scripts/agent-lint.sh 2>&1)"
 lint_status=$?
 set -e
 if [ "$lint_status" -eq 0 ] || ! grep -Fq 'fake cargo reached' <<<"$lint_output" \

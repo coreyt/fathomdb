@@ -253,7 +253,7 @@ for workflow in "$CI_YML" "$RELEASE_YML"; do
   setup_node_count="$(grep -c 'uses: actions/setup-node@' "$workflow" || true)"
   node_pin_count="$(grep -c 'node-version: "25.9.0"' "$workflow" || true)"
   case "$workflow" in
-    "$CI_YML") expected_setup_node_count=3 ;;
+    "$CI_YML") expected_setup_node_count=4 ;;
     "$RELEASE_YML") expected_setup_node_count=6 ;;
   esac
   setup_node_total=$((setup_node_total + setup_node_count))
@@ -267,8 +267,8 @@ for workflow in "$CI_YML" "$RELEASE_YML"; do
     NODE_PIN_FAILED=$((NODE_PIN_FAILED + 1))
   fi
 done
-if [ "$setup_node_total" -ne 9 ]; then
-  printf 'FAIL  ci.yml and release.yml must contain exactly nine setup-node steps total (got %s)\n' \
+if [ "$setup_node_total" -ne 10 ]; then
+  printf 'FAIL  ci.yml and release.yml must contain exactly ten setup-node steps total (got %s)\n' \
     "$setup_node_total" >&2
   NODE_PIN_FAILED=$((NODE_PIN_FAILED + 1))
 fi
