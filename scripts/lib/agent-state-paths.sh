@@ -568,6 +568,8 @@ AGENT_STATE_EXEC_STATUS_RE='^ (succeeded|exited [0-9]+) in .*:$'
 # pattern here with the grammar, so the checker prefilter and the shared walker
 # cannot disagree about which rendered status lines are records.
 AGENT_STATE_ANSI_SGR_RE=$'\033\\[[0-9;]*m'
+# shellcheck disable=SC2034  # consumed by scripts that source this library
+# (scripts/check-transcript-hygiene.sh), not within the library itself.
 AGENT_STATE_RENDERED_EXEC_STATUS_RE="^(${AGENT_STATE_ANSI_SGR_RE})* (succeeded|exited [0-9]+) in .*:(${AGENT_STATE_ANSI_SGR_RE})*$"
 
 # The commands whose non-flag arguments are directory targets.
@@ -866,12 +868,12 @@ SESSION TRANSCRIPT content slurped into this file by a tool running under
 PATHS
   fi
   if [ "$content_lines" -gt 0 ]; then
-    cat <<CONTENT
+    cat <<CONTENT_BLOCK
 WHAT THEY WERE (${content_lines} line(s) in ${blocks} block(s)): the OUTPUT of commands
 echoed in this transcript that READ a Claude Code state directory — i.e. the
 CONTENT of that state, not merely its path. The command echoes themselves are
 kept: they are the evidence of what happened, and they are path-only.
-CONTENT
+CONTENT_BLOCK
   fi
   if [ "$fnames" -gt 0 ]; then
     cat <<INVENTORY
@@ -899,13 +901,13 @@ OOR
   # The own-project provenance note explains a CONTENT removal. With nothing
   # removed on that cause it would be describing lines that are not there.
   if [ "$own" -eq 1 ] && [ "$content_lines" -gt 0 ]; then
-    cat <<OWN
+    cat <<OWN_BLOCK
 OWN PROJECT: this content came from THIS repository's own Claude Code state
 directory (${AGENT_STATE_OWN_PROJECT_DIR}) — this project's own memory store.
 Under the TC-86 threat model (steward seq-130) an own-project PATH is only a
 WARNING, but its CONTENT is still this project's private agent state and does not
 belong in a PUBLIC repository, so it is removed here.
-OWN
+OWN_BLOCK
   fi
   cat <<'TAIL'
 WHY REMOVED: github.com/coreyt/fathomdb is a PUBLIC repository. Committing

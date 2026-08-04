@@ -50,7 +50,9 @@ require_active_values() {
   local workflow="$1"
   local field="$2"
   local description="$3"
-  if [ -n "$(active_matrix_values "$workflow" "$field")" ]; then
+  local values
+  values="$(active_matrix_values "$workflow" "$field")"
+  if [ -n "$values" ]; then
     pass "$description"
   else
     fail "$description"
@@ -78,8 +80,9 @@ for workflow in "$CI" "$RELEASE"; do
     pass "$name has no unguarded matrix runs-on route"
   fi
 
+  runner_values="$(active_matrix_values "$workflow" runner)"
   if grep -qE '^[[:space:]]*runs-on:[[:space:]]*\$\{\{[[:space:]]*matrix\.runner[[:space:]]*\}\}' "$workflow" && \
-    [ -z "$(active_matrix_values "$workflow" runner)" ]; then
+    [ -z "$runner_values" ]; then
     fail "$name routes runs-on through matrix.runner without active runner values"
   else
     pass "$name matrix.runner routes have active runner values"

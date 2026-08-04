@@ -244,7 +244,7 @@ steward_item_files() { # $1 = item number
   steward_item_tokens "$1" | while IFS= read -r tok; do steward_resolve "$tok"; done \
     | steward_live_filter "$1"
   if steward_item_body "$1" | grep -qiE 'last Steward report|your own last'; then
-    ls dev/plans/runs/STEWARD-SESSION-HANDOFF-*.md 2>/dev/null | sort | tail -1
+    find dev/plans/runs -maxdepth 1 -name 'STEWARD-SESSION-HANDOFF-*.md' 2>/dev/null | sort | tail -1
   fi
 }
 
@@ -344,12 +344,12 @@ cat >"$JSON" <<EOF
                               "ceiling_tokens": $STEWARD_CEILING, "over_ceiling": $STEW_OVER,
                               "source": "$STEWARD_HANDOFF §3 (derived, not hardcoded)",
     "items": [
-$(printf "$STEWARD_ROWS")
+$(printf '%b' "$STEWARD_ROWS")
     ] },
   "memory_surface": { "index_bytes": $MEM_IDX_B, "index_tokens_est": $MEM_IDX_T,
                       "index_entries": $MEM_IDX_ENTRIES, "memory_files": $MEM_FILES, "memory_all_bytes": $MEM_ALL_B },
   "search_signal_to_noise": [
-$(printf "$SN_ROWS")
+$(printf '%b' "$SN_ROWS")
   ]
 }
 EOF
@@ -377,7 +377,7 @@ EOF
   echo
   echo "| §3 item | Files | ~Tokens |"
   echo "|---|---|---|"
-  printf "$STEWARD_ROWS\n" | sed -n 's/.*"item": "\([^"]*\)", "files": \([0-9]*\), "bytes": [0-9]*, "tokens_est": \([0-9]*\).*/| \1 | \2 | \3 |/p'
+  printf '%b\n' "$STEWARD_ROWS" | sed -n 's/.*"item": "\([^"]*\)", "files": \([0-9]*\), "bytes": [0-9]*, "tokens_est": \([0-9]*\).*/| \1 | \2 | \3 |/p'
   echo
   echo "## Search signal-to-noise (live-path .md files matching; ledger = runs/+prompts/)"
   echo  # MD022/MD058: blank line between the heading and the table below

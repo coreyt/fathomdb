@@ -129,6 +129,9 @@ fi
 # a tracked file that is NOT staged, the index still carries HEAD's content, so
 # this correctly models "the .jsonl moved and the .seq did not".
 STAGE_DIR="$(mktemp -d)"
+# Invoked indirectly by the `trap cleanup EXIT` below; a trap handler is not a
+# call site as far as SC2329 is concerned.
+# shellcheck disable=SC2329
 cleanup() {
   case "$STAGE_DIR" in
     "${TMPDIR:-/tmp}"/*|/tmp/*) rm -rf "$STAGE_DIR" ;;

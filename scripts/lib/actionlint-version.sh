@@ -5,7 +5,11 @@
 
 read_actionlint_version() {
   local actionlint_bin="$1"
-  "$actionlint_bin" --version | sed -n '1{s/^v//;p;}'
+  local raw
+  # Bound first: `$bin --version | sed` would swallow a failing binary's exit
+  # status behind sed's success.
+  raw="$("$actionlint_bin" --version)"
+  printf '%s\n' "$raw" | sed -n '1{s/^v//;p;}'
 }
 
 # Resolve a Go-installed actionlint when its GOPATH/bin directory has not been

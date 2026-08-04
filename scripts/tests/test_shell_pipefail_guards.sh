@@ -242,14 +242,12 @@ SHIM
 # `grep -m1` is the sanctioned shape (the 308f7922 fix): grep stops ITSELF, so
 # no consumer ever closes the pipe early and there is nothing to race.
 
-# Lines of $1 that pipe into an early-exiting consumer (`head`, or a quiet
-# `grep` carrying no -m). `(^|[^|])\|` excludes `||`, which is an or-list and
-# not a pipeline; comment lines are excluded so the explanatory comments added
-# by this slice may keep naming the idiom they replaced. Empty output = clean.
-detect_early_consumer() {
-  grep -nE '(^|[^|])\|[[:space:]]*(head\b|grep([[:space:]]+-[a-zA-Z]+)*[[:space:]]+-[a-zA-Z]*q)' "$1" \
-    | grep -vE '^[0-9]+:[[:space:]]*#' || true
-}
+# 0.8.21 Slice 30 moved detect_early_consumer into scripts/lib/ so this arm and
+# the ENFORCED lint leg (scripts/agent-lint-shell.sh) share one definition and
+# cannot drift apart. The positive control below stays here: the lint leg gets
+# its non-vacuity from this suite, not from itself.
+# shellcheck source=../lib/shell-early-consumer.sh
+. "$REPO_ROOT/scripts/lib/shell-early-consumer.sh"
 
 arm5() {
   local f hits total=0

@@ -269,6 +269,13 @@ run_suite test-actionlint-go-install-version bash scripts/tests/test_actionlint_
 run_suite test-agent-lint-ruff-version bash scripts/tests/test_agent_lint_ruff_version.sh
 run_suite test-agent-lint-actionlint-version bash scripts/tests/test_agent_lint_actionlint_version.sh
 
+# Shell lint (0.8.21 Slice 30). The version guard mirrors the ruff/actionlint
+# ones; the gate suite is the red-first proof that agent-lint.sh rejects the
+# masked-return and early-exiting-consumer shapes and that both ratchets can
+# only shrink.
+run_suite test-agent-lint-shellcheck-version bash scripts/tests/test_agent_lint_shellcheck_version.sh
+run_suite test-agent-lint-shellcheck-gate bash scripts/tests/test_agent_lint_shellcheck_gate.sh
+
 # TC-37 recurrence guard: agent-lint-md.sh must HARD-fail (not skip_notice/exit 0)
 # when markdownlint-cli2 is genuinely unresolvable. Builds its own throwaway
 # fixture repo under mktemp -d; never touches this checkout's node_modules.

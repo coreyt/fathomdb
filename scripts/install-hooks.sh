@@ -20,7 +20,10 @@
 # core.hooksPath does NOT make every push slow. See scripts/hooks/pre-push.
 set -euo pipefail
 
-cd "$(git rev-parse --show-toplevel)"
+# `git rev-parse` failing here used to degrade to `cd ""` — a bash no-op that
+# leaves the script running in an arbitrary cwd. Bind and check it instead.
+_repo_toplevel="$(git rev-parse --show-toplevel)" || exit 1
+cd "$_repo_toplevel" || exit 1
 
 DESIRED="scripts/hooks"
 
