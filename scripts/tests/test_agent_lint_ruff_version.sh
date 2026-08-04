@@ -16,6 +16,8 @@ trap 'rm -rf "$FIX"' EXIT
   cp "$REPO_ROOT/scripts/agent-lint.sh" scripts/agent-lint.sh
   cp "$REPO_ROOT/scripts/lib/agent-output.sh" scripts/lib/agent-output.sh
   cp "$REPO_ROOT/scripts/lib/actionlint-version.sh" scripts/lib/actionlint-version.sh
+  # 0.8.21 Slice 30: agent-lint.sh also sources the shellcheck pin library.
+  cp "$REPO_ROOT/scripts/lib/shellcheck-version.sh" scripts/lib/shellcheck-version.sh
   printf '#!/usr/bin/env bash\nprintf "ruff 0.16.1\\n"\n' >.venv/bin/ruff
   chmod +x scripts/agent-lint.sh .venv/bin/ruff
   touch README.md
