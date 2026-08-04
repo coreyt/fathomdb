@@ -1,0 +1,22 @@
+# scripts/set-version.sh  (456 LOC, class=shell, soft=200, hard=500)
+
+L    15-30     (   16) | usage() {
+L    31-48     (   18) | die_usage() {
+L    49-58     (   10) | awk_inplace() {
+L    59-81     (   23) | set_workspace_version() {
+L    82-105    (   24) | set_workspace_dep_axis_w_versions() {
+L   106-124    (   19) | set_workspace_dep_embedder_api_version() {
+L   125-143    (   19) | set_pyproject_version() {
+L   144-163    (   20) | set_npm_version() {
+L   164-186    (   23) | set_npm_platform_pkg_versions() {
+L   187-204    (   18) | set_embedder_api_version() {
+L   205-216    (   12) | read_workspace_version() {
+L   217-228    (   12) | read_pyproject_version() {
+L   229-233    (    5) | read_npm_version() {
+L   234-239    (    6) | read_npm_version_file() {
+L   240-252    (   13) | read_embedder_api_version_line() {
+L   253-266    (   14) | embedder_api_version_value() {
+L   267-276    (   10) | _toml_version_line() {
+L   277-283    (    7) | _json_version_line() {
+L   284-289    (    6) | _drift() {
+L   290-456    (  167) | check_files() {

@@ -1,0 +1,18 @@
+# src/python/eval/autoe_pilot_run.py  (870 LOC, class=py-eval, soft=800, hard=1200)
+
+L   138-150    (   13) | class PilotJudge(Protocol):
+L   151-163    (   13) | def family_of(model_id: str) -> str:
+L   164-301    (  138) | class LLMJudge:
+L   302-307    (    6) | def _estimate_tokens(text: str) -> int:
+L   308-314    (    7) | def _fully_absent(judgment: Judgment, metrics: tuple[str, ...]) -> bool:
+L   315-320    (    6) | def _dump_judgments(out: Mapping[JudgmentKey, Judgment]) -> dict[str, dict[str, 
+L   321-334    (   14) | def _load_judgments(blob: Mapping[str, Any]) -> dict[JudgmentKey, Judgment]:
+L   335-348    (   14) | def _resolve_checkpoint_source(
+L   349-418    (   70) | def _judge_resiliently(
+L   419-445    (   27) | def _sample_questions(questions: Sequence[AutoQQuestion], *, limit: int) -> list
+L   446-456    (   11) | def _make_ledger(max_usd: Optional[float], opening_spent: float = 0.0) -> Budget
+L   457-469    (   13) | def _is_priced(model: str) -> bool:
+L   470-529    (   60) | class _MeteringAnswerer(BaseAnswerer):
+L   530-788    (  259) | def run_pilot(
+L   789-795    (    7) | def _parse_pair(value: str) -> tuple[str, str]:
+L   796-870    (   75) | def main(argv: Optional[list[str]] = None) -> int:

@@ -1,0 +1,59 @@
+# dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md  (1020 LOC, class=plan-status-doc, soft=800, hard=1600)
+
+L     5-42     (   38) | # FathomDB 0.8.6 → 0.8.24 — master release plan (sequencing & dependencies)
+L    43-44     (    2) | ## 1. The tracked work
+L    45-72     (   28) | ### 1a. The 17 non-measure items (source-of-record)
+L    73-90     (   18) | ### 1b. The planner-router track (scheduled on the odd line)
+L    91-126    (   36) | ## 2. Dependency graph + hard-dependency analysis
+L   127-148    (   22) | ### 2a. The binding edges — physically-hard vs rework-forcing
+L   149-168    (   20) | ### 2b. Can the even line be batched ahead of the odd line? — No
+L   169-198    (   30) | ## 3. Out-of-band proposal (odd micro numbers)
+L   199-242    (   44) | ## 4. Release allocation
+L   243-262    (   20) | ## 5. Planner-router track integration (the by-when)
+L   263-269    (    7) | ### 5a. The two interlocks that fix the timing
+L   270-286    (   17) | ### 5b. OOB items and the one dependency that gives each a deadline
+L   287-297    (   11) | ### 5c. By-when (bottom line)
+L   298-315    (   18) | ### 5d. Contingency decision points
+L   316-317    (    2) | ## 6. Integration findings (objective, carried into this plan)
+L   318-370    (   53) | ### 6a. Findings index (all 35, in file order)
+L   371-381    (   11) | ### F-1 — The EXP-S long-pole risk is understated by the raw planner-router sche
+L   382-389    (    8) | ### F-2 — The EXP-OBS scope watch-item is already satisfied (confirm, don't re-l
+L   390-399    (   10) | ### F-3 — The odd line grew; these net-new slots are now ratified by this plan
+L   400-412    (   13) | ### F-4 — 0.8.8 carries a pulled-forward pyo3 security exception (bounded; no I-
+L   413-428    (   16) | ### F-5 — Free-threaded-Python (EXP-FT) is folded into the 0.8.x line at 0.8.19 
+L   429-445    (   17) | ### F-6 — EXP-OBS keystone has LANDED and the field set is HITL-ratified (verifi
+L   446-463    (   18) | ### F-7 — The repo-wide markdown lint/format gate is unsatisfiable; cleanup DONE
+L   464-470    (    7) | ### F-8 — Two deferred contracts carried out of 0.8.8's telemetry/real-gold pipe
+L   471-474    (    4) | ### F-9 — pyo3 macOS/Windows `cargo test` link failure: pre-existing CI rot, fix
+L   475-478    (    4) | ### F-10 — Remaining-release re-sizing + odd-line renumber (HITL 2026-06-28)
+L   479-482    (    4) | ### F-11 — The upstream planner-router experiment ladder never ran; the "`$0` fl
+L   483-495    (   13) | ### F-11a — (SUPERSEDED, historical — superseded by F-11) The upstream planner-r
+L   496-499    (    4) | ### F-12 — Dependency hygiene becomes an owned, recurring program under a new Li
+L   500-508    (    9) | ### F-13 — Master reconciliation pass: two-tier numbering re-reconciled, the OPP
+L   509-512    (    4) | ### F-14 — The OPP-1 / OPP-3 / OPP-6 + Cause-A work is pulled into one label-onl
+L   513-516    (    4) | ### F-15 — OPP-6 EXP-COV-1 downstream verdict = `CEILING-ABSORBED` ⇒ #6 (ELPS co
+L   517-520    (    4) | ### F-16 — ANN / HNSW is a 2.x item, explicitly NOT 0.8.x (HITL 2026-07-02; reco
+L   521-524    (    4) | ### F-17 — The DB scale-bound is a 0.9.x arc (0.9.0 *soft* → 0.9.3 *stated*), NO
+L   525-528    (    4) | ### F-18 — Memex ranked-needs weighting: OPP-12 (≥0.9.x) is the single major Fat
+L   529-532    (    4) | ### F-19 — HITL RESEQUENCE (2026-07-07): OPP-12 is PULLED INTO THE 0.8.x LINE an
+L   533-536    (    4) | ### F-20 — HITL CONFIRMED the F-19 allocation + pulled the F-17 scale-bound into
+L   537-540    (    4) | ### F-21 — HITL BUILD-AUTHORIZED OPP-12 (0.8.19 Phase-1 + 0.8.20 Phase-2); build
+L   541-544    (    4) | ### F-22 — Open-TC scheduling ratified (HITL 2026-07-09)
+L   545-548    (    4) | ### F-23 — OPP-12 Phase-1 Slice-0 rulings: anonymous-surrogate minting DEFERRED 
+L   549-568    (   20) | ### F-24 — 0.8.19 (OPP-12 record-lifecycle Phase-1) COMPLETE (2026-07-10, label-
+L   569-627    (   59) | ### F-25 — TC-11 DISCHARGED: the doc-seeded `h:` end-state is pin A (terminal-fo
+L   628-647    (   20) | ### F-26 — 0.8.20 Slice-0 (X0 design gate) SIGNED + LANDED; the rubric guardrail
+L   648-669    (   22) | ### F-27 — THE ERASURE AUDIT TRAIL IS DESTRUCTIBLE; HITL RULED IT MUST BE DURABL
+L   670-694    (   25) | ### F-28 — R-20-EU7 is CLOSED BY HITL DECISION, NOT BY MEASUREMENT: ZERO eu7 run
+L   695-709    (   15) | ### F-29 — AC ids mint from AC-079; AC-077/078 are LIVE RESERVATIONS and "max AC
+L   710-732    (   23) | ### F-30 — THE PUBLISH DRY-RUN GUARD HAS BEEN DEAD SINCE 0.8.14, and 0.8.20 is t
+L   733-747    (   15) | ### F-31 — Slice 5's `SourceId` newtype WILL BREAK the eu7 harness and every oth
+L   748-782    (   35) | ### F-32 — 0.8.20 ladder reconciliation: Slices 5/10/15 LANDED (SCHEMA 24), the 
+L   783-812    (   30) | ### F-33 — DOC-HYGIENE-1 LANDED (2026-07-25): the cross-cutting docs/tooling eff
+L   813-850    (   38) | ### F-34 — RUN AUTHORIZATION (HITL 2026-07-25): the 0.8.20 tail runs to completi
+L   851-852    (    2) | ## 7. Answers to the three evaluation questions
+L   853-865    (   13) | ### Q1 — Can #3 and #4 be done out-of-band / in parallel?
+L   866-890    (   25) | ### Q2 — #5 vector-equivalence: parallel, deprecate, defer to 2.0.0, or essentia
+L   891-920    (   30) | ### Q3 — How to handle #11–#14 (CI/CD) without starving the experiments?
+L   921-952    (   32) | ## 8. How each release runs — the orchestrator contract (`/goal complete 0.8.z`)
+L   953-1020   (   68) | ## 9. Sequencing rationale (one line per release)

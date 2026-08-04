@@ -1,0 +1,50 @@
+# dev/archive/hitl-queue.md  (1151 LOC, class=plan-status-doc, soft=1100, hard=1800)
+
+L    34-35     (    2) | # HITL Resolution Queue — Phase 3d (errors / recovery / engine)
+L    36-39     (    4) | ## Purpose
+L    40-58     (   19) | ## Resolution rules
+L    59-60     (    2) | ## Sequence
+L    61-62     (    2) | ### Tier 1 — Foundation (resolves canonical taxonomy + cadence + step order)
+L    63-118    (   56) | #### `E2` — `EngineOpenError` variant set
+L   119-178    (   60) | #### `R1` — Always-on corruption detection set
+L   179-226    (   48) | #### `R3` — `fathomdb recover` + `fathomdb doctor` verb set
+L   227-285    (   59) | #### `ENG1` — `Engine.open` step ordering
+L   286-323    (   38) | #### `X1` — Single canonical `(stage, kind, locator, code, doc_anchor)` table
+L   324-325    (    2) | ### Tier 2 — Cross-cutting policy
+L   326-372    (   47) | #### `X4` — Foreign-error sanitization recipe ownership + content
+L   373-423    (   51) | #### `X6` — Round-trip validation contract for `recovery_hint`
+L   424-425    (    2) | ### Tier 3 — Remaining errors.md HITL
+L   426-486    (   61) | #### `E3` — `CorruptionKind` / `OpenStage` / `CorruptionLocator` enum membership
+L   487-502    (   16) | #### `E5` — Migration error home
+L   503-530    (   28) | #### `E6` — Embedder warmup failure home
+L   531-566    (   36) | #### `E7` — `DatabaseLocked` variant shape
+L   567-572    (    6) | #### `E8` — Foreign-error sanitization concrete recipe placement
+L   573-574    (    2) | ### Tier 4 — Remaining recovery.md HITL
+L   575-647    (   73) | #### `R2` — Cheap-only vs opt-in tier knob spelling
+L   648-678    (   31) | #### `R4` — `--accept-data-loss` scope
+L   679-711    (   33) | #### `R5` — `safe_export` manifest format
+L   712-717    (    6) | #### `R6` — Detection-step ↔ `CorruptionLocator` 1:1 alignment
+L   718-723    (    6) | #### `R7` — Detection-step ↔ `recovery_hint.code` ↔ recovery action
+L   724-758    (   35) | #### `R8` — Lock semantics during recovery
+L   759-833    (   75) | #### `R9` — `check-integrity` aggregator output schema
+L   834-835    (    2) | ### Tier 5 — Remaining engine.md HITL
+L   836-849    (   14) | #### `ENG2` — Reader-pool default sizing + knob name
+L   850-937    (   88) | #### `ENG3` — Writer thread lifetime + Engine.close shutdown order
+L   938-951    (   14) | #### `ENG4` — PRAGMA application order
+L   952-965    (   14) | #### `ENG5` — Migration progress event payload owner
+L   966-1029   (   64) | #### `ENG6` — `Engine.open` structured result shape
+L  1030-1050   (   21) | #### `ENG7` — `embedder_pool_size` default vs reader pool default
+L  1051-1056   (    6) | #### `ENG8` — Per-call embedder timeout default citation
+L  1057-1060   (    4) | ## Test planning — ENG1 + R1 + ENG3 + ENG6 + E6 (Tier 1 adoption, 2026-04-30)
+L  1061-1067   (    7) | ### Step-ordering invariants (ENG1)
+L  1068-1074   (    7) | ### Failure-path teardown (ENG3 + ADR-corruption § 5)
+L  1075-1083   (    9) | ### Race conditions (multi-process + multi-thread)
+L  1084-1090   (    7) | ### OpenReport correctness (ENG6)
+L  1091-1095   (    5) | ### REQ-042 per-step migration events
+L  1096-1101   (    6) | ### Cross-binding error surface (E2 + E6)
+L  1102-1107   (    6) | ### Documentation invariants (X1 cite-by-code)
+L  1108-1116   (    9) | ### Sources
+L  1117-1127   (   11) | ## Resolution sign-off
+L  1128-1133   (    6) | ## Out of scope here
+L  1134-1145   (   12) | ## Approach
+L  1146-1151   (    6) | ### Draft Sequencing

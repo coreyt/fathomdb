@@ -1,0 +1,52 @@
+# src/python/eval/s15a_embedder_probe.py  (1562 LOC, class=py-eval, soft=800, hard=1200)
+
+L    75-104    (   30) | def _resolve_data_root() -> Path:
+L   105-183    (   79) | class ModelCfg:
+L   184-204    (   21) | def pooling_prefix_table() -> dict[str, dict[str, Any]]:
+L   205-212    (    8) | def l2_normalize(mat: np.ndarray) -> np.ndarray:
+L   213-230    (   18) | def cosine_topk(query_vecs: np.ndarray, doc_vecs: np.ndarray, k: int) -> np.ndar
+L   231-244    (   14) | def strict_recall_hit(retrieved_ids: Sequence[str], required_ids: Sequence[str])
+L   245-268    (   24) | def graded_rank_of(retrieved_ids: Sequence[str], required_ids: Sequence[str]) ->
+L   269-273    (    5) | def tokenize(text: str) -> list[str]:
+L   274-343    (   70) | class BM25Okapi:
+L   344-402    (   59) | def projected_eu7_recalls(
+L   403-436    (   34) | def projected_eu7(
+L   437-477    (   41) | def paired_bootstrap_ci(
+L   478-499    (   22) | def build_probe_dicts(
+L   500-508    (    9) | def candidate_passes(
+L   509-516    (    8) | def binding_margin(cand_metrics: Mapping[str, Any]) -> float:
+L   517-570    (   54) | def choose_embedder(per_candidate: Mapping[str, Mapping[str, Any]]) -> dict[str,
+L   571-587    (   17) | def _hf_cache_dir() -> Path:
+L   588-610    (   23) | def resolve_revision(hf_id: str) -> str | None:
+L   611-624    (   14) | def build_model_revisions(model_names: Sequence[str]) -> dict[str, str]:
+L   625-645    (   21) | def pinned_cfg(cfg: ModelCfg) -> ModelCfg:
+L   646-672    (   27) | def _load_model_uncached(model_cfg: ModelCfg) -> tuple[Any, Any]:
+L   673-686    (   14) | def _load_model(model_cfg: ModelCfg) -> tuple[Any, Any]:
+L   687-746    (   60) | def embed_texts(
+L   747-756    (   10) | class Corpus:
+L   757-765    (    9) | def _sha256_lines(path: Path) -> str:
+L   766-769    (    4) | def load_snapshot() -> dict[str, Any]:
+L   770-832    (   63) | def load_corpus(
+L   833-845    (   13) | class GoldQuery:
+L   846-865    (   20) | def load_gold(gold_path: Path) -> tuple[str, str, list[GoldQuery]]:
+L   866-876    (   11) | def default_gold_path(data_root: Path | None = None) -> Path:
+L   877-888    (   12) | class HardSubset:
+L   889-929    (   41) | def compute_hard_subset(
+L   930-938    (    9) | def _atomic_save_npy(path: Path, arr: np.ndarray) -> None:
+L   939-946    (    8) | def _atomic_write_json(path: Path, obj: Mapping[str, Any]) -> None:
+L   947-971    (   25) | def _input_id_hash(corpus: Corpus, queries: Sequence[GoldQuery]) -> str:
+L   972-994    (   23) | def _cache_meta(
+L   995-1039   (   45) | def embed_model(
+L  1040-1071   (   32) | def measure_latency(
+L  1072-1091   (   20) | def eu8_hits(
+L  1092-1117   (   26) | def hard_hits(
+L  1118-1121   (    4) | def _mean(xs: Sequence[float]) -> float:
+L  1122-1126   (    5) | def _median_finite(xs: Sequence[float]) -> float | None:
+L  1127-1139   (   13) | def _format_measure_error(exc: BaseException, *, max_len: int = 300) -> str:
+L  1140-1395   (  256) | def run_probe(
+L  1396-1413   (   18) | def _record_runtime() -> dict[str, str]:
+L  1414-1495   (   82) | def write_outputs(result: dict[str, Any], *, out_json: Path, out_md: Path) -> No
+L  1496-1499   (    4) | def _default_cache_dir() -> Path:
+L  1500-1525   (   26) | def _build_argparser() -> argparse.ArgumentParser:
+L  1526-1533   (    8) | def _select_models(args: argparse.Namespace) -> list[str]:
+L  1534-1562   (   29) | def main(argv: Sequence[str] | None = None) -> int:

@@ -1,0 +1,56 @@
+# src/rust/crates/fathomdb-cli/tests/operator_cli.rs  (737 LOC, class=rust-test, soft=600, hard=1200)
+
+L    53-56     (    4) | fn fathomdb() -> Command {
+L    57-57     (    1) | #[test]
+L    58-72     (   15) | fn t_040a_every_doctor_verb_help_exits_zero() {
+L    73-73     (    1) | #[test]
+L    74-84     (   11) | fn t_040b_every_doctor_verb_help_has_usage_section() {
+L    85-85     (    1) | #[test]
+L    86-95     (   10) | fn t_035d_recover_help_exits_zero() {
+L    96-96     (    1) | #[test]
+L    97-109    (   13) | fn t_058_recover_help_enumerates_canonical_flag_set() {
+L   110-110    (    1) | #[test]
+L   111-125    (   15) | fn t_cli_doctor_rejects_accept_data_loss_binary() {
+L   126-135    (   10) | fn seeded_db() -> (TempDir, std::path::PathBuf) {
+L   136-163    (   28) | fn doctor_invocation(verb: &str, db_path: &str, out_path: &str) -> Vec<String> {
+L   164-164    (    1) | #[test]
+L   165-193    (   29) | fn t_035d_recover_refuses_without_accept_data_loss() {
+L   194-194    (    1) | #[test]
+L   195-208    (   14) | fn t_035d_runtime_doctor_rejects_accept_data_loss() {
+L   209-209    (    1) | #[test]
+L   210-236    (   27) | fn t_036_every_doctor_verb_accepts_json_flag_on_binary() {
+L   237-237    (    1) | #[test]
+L   238-265    (   28) | fn t_037_doctor_verbs_emit_single_json_object() {
+L   266-266    (    1) | #[test]
+L   267-295    (   29) | fn t_pr2b_recompute_mean_happy_path_json_contract() {
+L   296-296    (    1) | #[test]
+L   297-325    (   29) | fn t_pr2b_recompute_mean_lock_held_exits_71() {
+L   326-326    (    1) | #[test]
+L   327-355    (   29) | fn t_038_pretty_is_human_only_not_machine_schema() {
+L   356-356    (    1) | #[test]
+L   357-386    (   30) | fn t_045_lock_held_outcome_maps_to_exit_71() {
+L   387-387    (    1) | #[test]
+L   388-402    (   15) | fn t_recover_excise_requires_accept_data_loss_runtime() {
+L   403-403    (    1) | #[test]
+L   404-426    (   23) | fn t_recover_excise_source_with_accept_data_loss_succeeds() {
+L   427-427    (    1) | #[test]
+L   428-452    (   25) | fn t_safe_export_engine_error_exits_export_failure_66() {
+L   453-453    (    1) | #[test]
+L   454-489    (   36) | fn t_040a_verify_embedder_cli_emits_match_status_on_matching_input() {
+L   490-490    (    1) | #[test]
+L   491-508    (   18) | fn t_040a_dump_schema_cli_emits_locked_top_level_keys() {
+L   509-509    (    1) | #[test]
+L   510-529    (   20) | fn t_040a_dump_row_counts_cli_emits_counts_array() {
+L   530-530    (    1) | #[test]
+L   531-547    (   17) | fn t_040a_dump_profile_cli_emits_embedder_identity_and_vectorized_kinds() {
+L   548-548    (    1) | #[test]
+L   549-566    (   18) | fn t_clap_parse_error_on_unknown_root_is_nonzero() {
+L   567-595    (   29) | fn seeded_op_store_db(collection: &str, count: usize) -> (TempDir, std::path::Pa
+L   596-596    (    1) | #[test]
+L   597-634    (   38) | fn t_s34_dump_mutations_json_emits_rows_ordered_by_id() {
+L   635-635    (    1) | #[test]
+L   636-690    (   55) | fn t_s34_dump_mutations_limit_and_after_id_paginate_without_overlap() {
+L   691-691    (    1) | #[test]
+L   692-713    (   22) | fn t_s34_dump_mutations_unknown_collection_is_empty_page_exit_zero() {
+L   714-714    (    1) | #[test]
+L   715-737    (   23) | fn t_s34_dump_mutations_lock_held_exits_71() {

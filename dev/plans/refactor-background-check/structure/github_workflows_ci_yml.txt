@@ -1,0 +1,26 @@
+# .github/workflows/ci.yml  (580 LOC, class=ci-workflow, soft=300, hard=600)
+
+L     1-2      (    2) | name: CI
+L     3-3      (    1) | on:
+L     4-6      (    3) |   push:
+L     7-11     (    5) |   pull_request:
+L    12-12     (    1) | permissions:
+L    13-14     (    2) |   contents: read
+L    15-23     (    9) | jobs:
+L    24-43     (   20) |   changes:
+L    44-92     (   49) |   verify:
+L    93-127    (   35) |   security:
+L   128-191    (   64) |   default-embedder-tests:
+L   192-218    (   27) |   rust-windows:
+L   219-260    (   42) |   rust-macos:
+L   261-376    (  116) |   wheel-size-gate:
+L   377-413    (   37) |   markdownlint:
+L   414-435    (   22) |   board-currency:
+L   436-456    (   21) |   ledger-integrity:
+L   457-478    (   22) |   plan-anchors:
+L   479-497    (   19) |   governed-surface-pin:
+L   498-515    (   18) |   release-state-views:
+L   516-534    (   19) |   commission-manifest:
+L   535-556    (   22) |   design-status:
+L   557-570    (   14) |   steward-orient:
+L   571-580    (   10) |   docs:

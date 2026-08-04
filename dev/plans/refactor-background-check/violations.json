@@ -1,0 +1,2943 @@
+{
+  "scanned": 1369,
+  "excluded": [
+    {
+      "path": ".prettierrc.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "CHANGELOG.md",
+      "reason": "Keep a Changelog 2.0.0 states a single long file is fine and old entries must not be deleted"
+    },
+    {
+      "path": "Cargo.lock",
+      "reason": "generated lockfile"
+    },
+    {
+      "path": "dev/acceptance.md",
+      "reason": "governance-locked specification: recorded as locked with no per-feature ACs. A file that cannot be edited by policy cannot be a length violation; splitting it is a governance decision, not a hygiene finding",
+      "loc": "1305",
+      "file_class": "doc-other",
+      "would_have_been": "hard"
+    },
+    {
+      "path": "dev/archive/0.8.1-roadmap-direction-20260612.md",
+      "reason": "archived/frozen: Nygard's ADR practice is to KEEP superseded records and mark them, not edit them"
+    },
+    {
+      "path": "dev/archive/README.md",
+      "reason": "archived/frozen: Nygard's ADR practice is to KEEP superseded records and mark them, not edit them"
+    },
+    {
+      "path": "dev/archive/hitl-queue.md",
+      "reason": "archived/frozen: Nygard's ADR practice is to KEEP superseded records and mark them, not edit them",
+      "loc": "1151",
+      "file_class": "plan-status-doc",
+      "would_have_been": "soft"
+    },
+    {
+      "path": "dev/archive/interface-inventory/option1-architecture-first/README.md",
+      "reason": "archived/frozen: Nygard's ADR practice is to KEEP superseded records and mark them, not edit them"
+    },
+    {
+      "path": "dev/archive/interface-inventory/option1-architecture-first/components.md",
+      "reason": "archived/frozen: Nygard's ADR practice is to KEEP superseded records and mark them, not edit them"
+    },
+    {
+      "path": "dev/archive/interface-inventory/option1-architecture-first/findings.md",
+      "reason": "archived/frozen: Nygard's ADR practice is to KEEP superseded records and mark them, not edit them"
+    },
+    {
+      "path": "dev/archive/interface-inventory/option1-architecture-first/interfaces.md",
+      "reason": "archived/frozen: Nygard's ADR practice is to KEEP superseded records and mark them, not edit them"
+    },
+    {
+      "path": "dev/archive/interface-inventory/option1-architecture-first/matrix.md",
+      "reason": "archived/frozen: Nygard's ADR practice is to KEEP superseded records and mark them, not edit them"
+    },
+    {
+      "path": "dev/archive/interface-inventory/option1-architecture-first/summary.md",
+      "reason": "archived/frozen: Nygard's ADR practice is to KEEP superseded records and mark them, not edit them"
+    },
+    {
+      "path": "dev/archive/interface-inventory/option2-public-surface-first/README.md",
+      "reason": "archived/frozen: Nygard's ADR practice is to KEEP superseded records and mark them, not edit them"
+    },
+    {
+      "path": "dev/archive/interface-inventory/option2-public-surface-first/components.md",
+      "reason": "archived/frozen: Nygard's ADR practice is to KEEP superseded records and mark them, not edit them"
+    },
+    {
+      "path": "dev/archive/interface-inventory/option2-public-surface-first/findings.md",
+      "reason": "archived/frozen: Nygard's ADR practice is to KEEP superseded records and mark them, not edit them"
+    },
+    {
+      "path": "dev/archive/interface-inventory/option2-public-surface-first/interfaces.md",
+      "reason": "archived/frozen: Nygard's ADR practice is to KEEP superseded records and mark them, not edit them"
+    },
+    {
+      "path": "dev/archive/interface-inventory/option2-public-surface-first/matrix.md",
+      "reason": "archived/frozen: Nygard's ADR practice is to KEEP superseded records and mark them, not edit them"
+    },
+    {
+      "path": "dev/archive/interface-inventory/option2-public-surface-first/public-surfaces.md",
+      "reason": "archived/frozen: Nygard's ADR practice is to KEEP superseded records and mark them, not edit them"
+    },
+    {
+      "path": "dev/archive/interface-inventory/option2-public-surface-first/summary.md",
+      "reason": "archived/frozen: Nygard's ADR practice is to KEEP superseded records and mark them, not edit them"
+    },
+    {
+      "path": "dev/archive/interface-inventory/option3-contract-first/README.md",
+      "reason": "archived/frozen: Nygard's ADR practice is to KEEP superseded records and mark them, not edit them"
+    },
+    {
+      "path": "dev/archive/interface-inventory/option3-contract-first/components.md",
+      "reason": "archived/frozen: Nygard's ADR practice is to KEEP superseded records and mark them, not edit them"
+    },
+    {
+      "path": "dev/archive/interface-inventory/option3-contract-first/contract-classes.md",
+      "reason": "archived/frozen: Nygard's ADR practice is to KEEP superseded records and mark them, not edit them"
+    },
+    {
+      "path": "dev/archive/interface-inventory/option3-contract-first/findings.md",
+      "reason": "archived/frozen: Nygard's ADR practice is to KEEP superseded records and mark them, not edit them"
+    },
+    {
+      "path": "dev/archive/interface-inventory/option3-contract-first/interfaces.md",
+      "reason": "archived/frozen: Nygard's ADR practice is to KEEP superseded records and mark them, not edit them"
+    },
+    {
+      "path": "dev/archive/interface-inventory/option3-contract-first/matrix.md",
+      "reason": "archived/frozen: Nygard's ADR practice is to KEEP superseded records and mark them, not edit them"
+    },
+    {
+      "path": "dev/archive/interface-inventory/option3-contract-first/summary.md",
+      "reason": "archived/frozen: Nygard's ADR practice is to KEEP superseded records and mark them, not edit them"
+    },
+    {
+      "path": "dev/archive/interface-inventory/prompts/interface-inventory-option1.md",
+      "reason": "archived/frozen: Nygard's ADR practice is to KEEP superseded records and mark them, not edit them"
+    },
+    {
+      "path": "dev/archive/interface-inventory/prompts/interface-inventory-option2.md",
+      "reason": "archived/frozen: Nygard's ADR practice is to KEEP superseded records and mark them, not edit them"
+    },
+    {
+      "path": "dev/archive/interface-inventory/prompts/interface-inventory-option3.md",
+      "reason": "archived/frozen: Nygard's ADR practice is to KEEP superseded records and mark them, not edit them"
+    },
+    {
+      "path": "dev/archive/notes/context-research/set1/README.md",
+      "reason": "archived/frozen: Nygard's ADR practice is to KEEP superseded records and mark them, not edit them"
+    },
+    {
+      "path": "dev/archive/notes/context-research/set1/context-research-comments.md",
+      "reason": "archived/frozen: Nygard's ADR practice is to KEEP superseded records and mark them, not edit them"
+    },
+    {
+      "path": "dev/archive/notes/context-research/set1/context-research-dev-env.md",
+      "reason": "archived/frozen: Nygard's ADR practice is to KEEP superseded records and mark them, not edit them"
+    },
+    {
+      "path": "dev/archive/notes/context-research/set1/context-research-other.md",
+      "reason": "archived/frozen: Nygard's ADR practice is to KEEP superseded records and mark them, not edit them"
+    },
+    {
+      "path": "dev/archive/notes/context-research/set1/context-research-source-code.md",
+      "reason": "archived/frozen: Nygard's ADR practice is to KEEP superseded records and mark them, not edit them"
+    },
+    {
+      "path": "dev/archive/notes/context-research/set1/context-research-summary.md",
+      "reason": "archived/frozen: Nygard's ADR practice is to KEEP superseded records and mark them, not edit them"
+    },
+    {
+      "path": "dev/archive/notes/context-research/set1/context-research-tech-docs.md",
+      "reason": "archived/frozen: Nygard's ADR practice is to KEEP superseded records and mark them, not edit them"
+    },
+    {
+      "path": "dev/archive/notes/context-research/set1/context-research-tests.md",
+      "reason": "archived/frozen: Nygard's ADR practice is to KEEP superseded records and mark them, not edit them"
+    },
+    {
+      "path": "dev/archive/notes/context-research/set2/context-research-agent-scaffolding.md",
+      "reason": "archived/frozen: Nygard's ADR practice is to KEEP superseded records and mark them, not edit them"
+    },
+    {
+      "path": "dev/archive/notes/context-research/set2/context-research-comments.md",
+      "reason": "archived/frozen: Nygard's ADR practice is to KEEP superseded records and mark them, not edit them"
+    },
+    {
+      "path": "dev/archive/notes/context-research/set2/context-research-dev-env.md",
+      "reason": "archived/frozen: Nygard's ADR practice is to KEEP superseded records and mark them, not edit them"
+    },
+    {
+      "path": "dev/archive/notes/context-research/set2/context-research-source-code.md",
+      "reason": "archived/frozen: Nygard's ADR practice is to KEEP superseded records and mark them, not edit them"
+    },
+    {
+      "path": "dev/archive/notes/context-research/set2/context-research-summary.md",
+      "reason": "archived/frozen: Nygard's ADR practice is to KEEP superseded records and mark them, not edit them"
+    },
+    {
+      "path": "dev/archive/notes/context-research/set2/context-research-tech-docs.md",
+      "reason": "archived/frozen: Nygard's ADR practice is to KEEP superseded records and mark them, not edit them"
+    },
+    {
+      "path": "dev/archive/notes/context-research/set2/context-research-tests.md",
+      "reason": "archived/frozen: Nygard's ADR practice is to KEEP superseded records and mark them, not edit them"
+    },
+    {
+      "path": "dev/archive/notes/context-research/set3/context-research-dev-env.md",
+      "reason": "archived/frozen: Nygard's ADR practice is to KEEP superseded records and mark them, not edit them"
+    },
+    {
+      "path": "dev/archive/notes/context-research/set3/context-research-other.md",
+      "reason": "archived/frozen: Nygard's ADR practice is to KEEP superseded records and mark them, not edit them"
+    },
+    {
+      "path": "dev/archive/notes/context-research/set3/context-research-source-code.md",
+      "reason": "archived/frozen: Nygard's ADR practice is to KEEP superseded records and mark them, not edit them"
+    },
+    {
+      "path": "dev/archive/notes/context-research/set3/context-research-summary.md",
+      "reason": "archived/frozen: Nygard's ADR practice is to KEEP superseded records and mark them, not edit them"
+    },
+    {
+      "path": "dev/archive/notes/context-research/set3/context-research-tech-docs.md",
+      "reason": "archived/frozen: Nygard's ADR practice is to KEEP superseded records and mark them, not edit them"
+    },
+    {
+      "path": "dev/archive/notes/context-research/set3/context-research-tests.md",
+      "reason": "archived/frozen: Nygard's ADR practice is to KEEP superseded records and mark them, not edit them"
+    },
+    {
+      "path": "dev/archive/psd/0.6.0-system-psd.md",
+      "reason": "archived/frozen: Nygard's ADR practice is to KEEP superseded records and mark them, not edit them"
+    },
+    {
+      "path": "dev/archive/psd/planner-router-psd-draft.md",
+      "reason": "archived/frozen: Nygard's ADR practice is to KEEP superseded records and mark them, not edit them"
+    },
+    {
+      "path": "dev/archive/reports/development-state-0.6.0-to-0.7.2.md",
+      "reason": "archived/frozen: Nygard's ADR practice is to KEEP superseded records and mark them, not edit them"
+    },
+    {
+      "path": "dev/design/record-lifecycle-protocol/OPP-12-sub-ledger.jsonl",
+      "reason": "jsonl ledger/fixture: one record per line, length is the point"
+    },
+    {
+      "path": "dev/design/record-lifecycle-protocol/OPP-12-sub-ledger.jsonl.seq",
+      "reason": "counter sidecar"
+    },
+    {
+      "path": "dev/experiments/code-markers-eval/out/commit_refs.jsonl",
+      "reason": "jsonl ledger/fixture: one record per line, length is the point"
+    },
+    {
+      "path": "dev/experiments/code-markers-eval/out/drift.jsonl",
+      "reason": "jsonl ledger/fixture: one record per line, length is the point"
+    },
+    {
+      "path": "dev/experiments/code-markers-eval/out/drift_summary.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/experiments/code-markers-eval/out/incode_markers.jsonl",
+      "reason": "jsonl ledger/fixture: one record per line, length is the point"
+    },
+    {
+      "path": "dev/experiments/code-markers-eval/out/incode_summary.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/experiments/code-markers-eval/out/natural_refs.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/experiments/code-markers-eval/out/wikilinks.jsonl",
+      "reason": "jsonl ledger/fixture: one record per line, length is the point"
+    },
+    {
+      "path": "dev/perf-history/AC-012-603a4bc0-1000000.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/perf-history/AC-013-c893d8b0-10000.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/perf-history/AC-013-c893d8b0-7667.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/perf-history/AC-013b-035cfa30-10000.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/perf-history/AC-013b-38d5f4f0-10000.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/perf-history/AC-013b-38f5e3a0-10000.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/perf-history/AC-013b-4a95cfd0-10000.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/perf-history/AC-013b-c893d8b0-7667.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/perf-history/AC-019-c893d8b0-7667.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/refactor-background-check/thresholds.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/release-state-0.8.20.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/0.7.1-EU-7-measurements.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/0.7.1-EU-8-measurements.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/0.8.1-R6-bsweep-n40.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/0.8.1-R6-recall-n40.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/0.8.1-g0-capability-map-20260614T175634Z.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/0.8.1-p0a-base-e2e-n160-gemini31pro.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/0.8.1-p0a-fused-e2e-n160-gemini31pro.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/0.8.1-p0a-fused-recall-n160.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/0.8.1-slice-25-r2-run.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/0.8.1-slice-30-opt3-closure.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/0.8.12-fixcompile-review-20260702T214924Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/0.8.12-sliceA-review-20260702T204034Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/0.8.12-sliceB-review-20260702T210411Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/0.8.14-slice-10-fix1-review-20260704T011100Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/0.8.14-slice-10-review-20260704T005156Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/0.8.14-slice-20-eu7-gpu-run-20260705T205222Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/0.8.14-slice-20-review-20260704T122017Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/0.8.14-slice-25-fix1-review-20260704T040057Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/0.8.14-slice-25-review-20260704T034037Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/0.8.14-slice-40-review-20260706T020546Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/0.8.14-slice-40-review-20260706T020704Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/0.8.14-slice-5-review-20260704T001710Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/0.8.16-slice-10-15-codex-review-20260708T212901Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/0.8.16-slice-10-15-codex-review-rerun-20260708T214035Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/0.8.16-slice-10-codex-review-20260708T193927Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/0.8.16-slice-10-codex-review-rerun-20260708T194943Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/0.8.16-slice-10-codex-review-rerun2-20260708T195741Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/0.8.16-slice-10-codex-review-rerun3-20260708T200602Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/0.8.16-slice-10-codex-review-rerun4-20260708T201022Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/0.8.16-slice-10-codex-review-rerun5-20260708T202022Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/0.8.16-slice-40-codex-review-20260708T221843Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/0.8.16-slice-5-codex-review-20260708T122040Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/0.8.16-slice-5-codex-review-rerun-20260708T124500Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/0.8.16-slice-5-codex-review-rerun2-20260708T130139Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/0.8.2-m1-baseline-cheapval.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/0.8.2-m1-baseline-pilot.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/0.8.2-m1-corpus-manifest.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/0.8.2-m1-graph-coverage-n300.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/0.8.2-m1-verdict-cheapval-rerun.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/0.8.2-m1-verdict-cheapval.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/0.8.2-m1-verdict-gpt54-cheap.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/0.8.2-m1-verdict-gpt54.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/0.8.2-m1-verdict-n300.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/0.8.20-keystone-closeout-output.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/0.8.20-slice-10-closure-output.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/0.8.20-slice-10a-fix-1-output.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/0.8.20-slice-10a-output.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/0.8.20-slice-10b-fix-2-output.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/0.8.20-slice-10b-fix-3-output.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/0.8.20-slice-10b-fix-4-output.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/0.8.20-slice-10b-fix-5-output.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/0.8.20-slice-10b-output.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/0.8.20-slice-15b-fix-1-output.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/0.8.20-slice-15b-fix-2-output.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/0.8.20-slice-15b-fix-3-output.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/0.8.20-slice-15b-output.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/0.8.20-slice-15c-output.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/0.8.20-slice-15d-output.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/0.8.20-slice-15e-output.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/0.8.20-slice-5-docs-output.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/0.8.20-slice-5-fix-1-output.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/0.8.20-slice-5-fix-2-output.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/0.8.20-slice-5-fix-3-output.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/0.8.20-slice-5-fix-4-output.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/0.8.20-slice-5-fix-5-output.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/0.8.20-slice-5-fix-6-output.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/0.8.20-slice-5-fix-7-output.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/0.8.20-slice-5a-output.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/0.8.20-slice-5b-output.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/0.8.20-slice-5c-output.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/0.8.20-slice-5d-output.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/0.8.3-ce-rerank-smoke.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/0.8.3-d0a-corpus-manifest.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/0.8.3-d0a-memory-gold.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/0.8.3-d0b-cheapval.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/0.8.3-d0b-parity-n606.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/0.8.3-d0b-pilot.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/0.8.3-d0b-powered-recall.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/0.8.3-eu7-bisect.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/0.8.3-gap-decomposition-cheapval.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/0.8.3-gap-decomposition-n606.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/0.8.3-locomo-corpus-manifest.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/0.8.3-paired-power-proxy.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/0.8.3-rerank-accuracy-n606.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/0.8.3-rerank-accuracy-reblend-a1-n606.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/0.8.3-rerank-tune.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/0.8.3-resolution-verdict.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/0.8.3-s15a-embedder.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/0.8.3-s15a-smoke.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/0.8.3-s15b-smoke.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/0.8.4-gating-rerun-RESULT.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/0.8.4-scale-powered-run-RESULT.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/0.8.4-tier1-fair-rerun-RESULT.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/EXP-COV-1-extraction-manifest.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/GA-signoff-eu7-remeasure-20260608T172804Z.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/IR-C-bge-small-beir-anchor.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/IR-C-pooling-floor-gate.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/IR-C-recall-cdf.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/IR-C-recall-full.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/IR-C-recall-smoke.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/IR-C-ws1-fusion-experiment-full.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/IR-C-ws1-fusion-experiment-slice1200.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/IR-C-ws1-fusion-experiment.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/codex/0.8.20/keystone-terminal-20260722T221247Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/codex/0.8.20/keystone-terminal2-20260722T224346Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/codex/0.8.20/keystone-terminal3-20260722T233037Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/codex/0.8.20/keystone-terminal4-20260723T000440Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/codex/0.8.20/keystone-terminal5-20260723T004757Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/codex/0.8.20/keystone-terminal6-20260723T013559Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/codex/0.8.20/slice-0-20260719T033434Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/codex/0.8.20/slice-0-fix1-rereview-20260719T034052Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/codex/0.8.20/slice-10-20260720T155459Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/codex/0.8.20/slice-10b-20260720T175114Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/codex/0.8.20/slice-10b-rereview-20260720T180124Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/codex/0.8.20/slice-15-steward-positions-verify-20260721T041028Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/codex/0.8.20/slice-15b-20260720T195420Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/codex/0.8.20/slice-15b-fix-1-rereview-20260720T200434Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/codex/0.8.20/slice-15b-fix-2-rereview-20260720T205344Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/codex/0.8.20/slice-15b-fix-3-rereview-20260720T213603Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/codex/0.8.20/slice-15c-20260721T061113Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/codex/0.8.20/slice-15c-tc33-rereview-20260721T061439Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/codex/0.8.20/slice-15c-tc33-terminal-20260721T065750Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/codex/0.8.20/slice-15c-tc33-terminal2-20260721T071720Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/codex/0.8.20/slice-15c-tc33-terminal3-20260721T075024Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/codex/0.8.20/slice-15c-tc33-terminal4-20260721T082814Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/codex/0.8.20/slice-15c-tc33-terminal5-20260721T090057Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/codex/0.8.20/slice-15d-20260721T091324Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/codex/0.8.20/slice-15d-rereview-20260721T093752Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/codex/0.8.20/slice-15d-rereview2-20260721T101302Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/codex/0.8.20/slice-15d-rereview3-20260721T103400Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/codex/0.8.20/slice-15d-rereview4-20260721T110504Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/codex/0.8.20/slice-15d-rereview5-20260721T113643Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/codex/0.8.20/slice-15d-rereview6-20260721T120135Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/codex/0.8.20/slice-15e-20260722T000848Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/codex/0.8.20/slice-15e-rereview-20260722T003359Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/codex/0.8.20/slice-5-20260719T231341Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/codex/0.8.20/slice-5-fix-1-rereview-20260719T234803Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/codex/0.8.20/slice-5-fix-2-rereview-20260720T001616Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/codex/0.8.20/slice-5-fix-3-rereview-20260720T005056Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/codex/0.8.20/slice-5-fix-4-5-delta-20260720T022544Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/codex/0.8.20/slice-5-fix-6-rereview-20260720T024726Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/codex/0.8.20/slice-5-fix-7-rereview-20260720T032538Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/codex/DOC-HYGIENE-2/codex-FIX-20260725T220637Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/codex/DOC-HYGIENE-2/codex-FIX-rereview-20260725T221636Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/codex/DOC-HYGIENE-2/codex-T1b-20260725T193214Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/codex/DOC-HYGIENE-2/codex-T1b-rereview-20260725T194022Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/codex/DOC-HYGIENE-2/codex-T1c-20260725T194115Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/codex/DOC-HYGIENE-2/codex-T1d-20260725T200259Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/codex/DOC-HYGIENE-2/codex-T1e-20260725T195706Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/codex/DOC-HYGIENE-2/codex-T1e-rereview-20260725T201043Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/codex/DOC-HYGIENE-2/codex-T2a-20260725T202224Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/codex/DOC-HYGIENE-2/codex-T2b-20260725T205015Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/codex/DOC-HYGIENE-2/codex-T2c-20260725T193534Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/codex/DOC-HYGIENE-2/codex-T2c-rereview-20260725T194622Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/codex/DOC-HYGIENE-2/codex-T3a-20260725T205212Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/codex/DOC-HYGIENE-2/codex-T3a-rereview-20260725T211054Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/codex/DOC-HYGIENE-2/codex-T3b-20260725T211939Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/codex/DOC-HYGIENE-2/codex-T3b-rereview-20260725T212919Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/codex/DOC-HYGIENE-2/codex-T3b-rereview2-20260725T213449Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/codex/doc-hygiene-1/full-effort-20260724T161647Z.log",
+      "reason": "log artifact: append-only machine output"
+    },
+    {
+      "path": "dev/plans/runs/doc-hygiene-1-T1-fix-1-output.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/doc-hygiene-1-T1-output.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/doc-hygiene-1-T2-output.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/doc-hygiene-1-T3-fix-1-output.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/doc-hygiene-1-T3-output.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/doc-hygiene-1-T4-fix-1-output.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/doc-hygiene-1-T4-output.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/expb-joint-tune-output.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/plans/runs/gate2-oracle-output.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/prototypes/l2-router/registry.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/release/fixtures/cargo-publish-if-new/fathomdb-embedder-api.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/release/fixtures/cargo-publish-if-new/fathomdb-engine.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/release/fixtures/cargo-publish-if-new/fathomdb-schema.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/release/fixtures/cargo-skew/Cargo.toml",
+      "reason": "test fixture data"
+    },
+    {
+      "path": "dev/release/fixtures/cargo-skew/mock-skew-api/Cargo.toml",
+      "reason": "test fixture data"
+    },
+    {
+      "path": "dev/release/fixtures/cargo-skew/mock-skew-api/src/lib.rs",
+      "reason": "test fixture data"
+    },
+    {
+      "path": "dev/release/fixtures/cargo-skew/mock-skew-consumer-a/Cargo.toml",
+      "reason": "test fixture data"
+    },
+    {
+      "path": "dev/release/fixtures/cargo-skew/mock-skew-consumer-a/src/lib.rs",
+      "reason": "test fixture data"
+    },
+    {
+      "path": "dev/release/fixtures/cargo-skew/mock-skew-consumer-b/Cargo.toml",
+      "reason": "test fixture data"
+    },
+    {
+      "path": "dev/release/fixtures/cargo-skew/mock-skew-consumer-b/src/lib.rs",
+      "reason": "test fixture data"
+    },
+    {
+      "path": "dev/release/fixtures/cargo-skew/src/lib.rs",
+      "reason": "test fixture data"
+    },
+    {
+      "path": "dev/release/fixtures/co-tagging/fathomdb-embedder-api-ok.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/release/fixtures/co-tagging/fathomdb-embedder-missing.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/release/fixtures/co-tagging/fathomdb-embedder-ok.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/release/fixtures/co-tagging/fathomdb-ok.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/release/fixtures/pip-skew/api-v1/mock_skew_api/__init__.py",
+      "reason": "test fixture data"
+    },
+    {
+      "path": "dev/release/fixtures/pip-skew/api-v1/setup.py",
+      "reason": "test fixture data"
+    },
+    {
+      "path": "dev/release/fixtures/pip-skew/api-v2/mock_skew_api/__init__.py",
+      "reason": "test fixture data"
+    },
+    {
+      "path": "dev/release/fixtures/pip-skew/api-v2/setup.py",
+      "reason": "test fixture data"
+    },
+    {
+      "path": "dev/release/fixtures/pip-skew/constraints.txt",
+      "reason": "test fixture data"
+    },
+    {
+      "path": "dev/release/fixtures/pip-skew/probe-a/setup.py",
+      "reason": "test fixture data"
+    },
+    {
+      "path": "dev/release/fixtures/pip-skew/probe-b/setup.py",
+      "reason": "test fixture data"
+    },
+    {
+      "path": "dev/steward/steward-ledger.jsonl",
+      "reason": "jsonl ledger/fixture: one record per line, length is the point"
+    },
+    {
+      "path": "dev/steward/steward-ledger.jsonl.seq",
+      "reason": "counter sidecar"
+    },
+    {
+      "path": "dev/todos-and-considerations-ledger.jsonl",
+      "reason": "jsonl ledger/fixture: one record per line, length is the point"
+    },
+    {
+      "path": "dev/todos-and-considerations-ledger.jsonl.seq",
+      "reason": "counter sidecar"
+    },
+    {
+      "path": "dev/tools/mermaid/package-lock.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/tools/mermaid/package.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "dev/tools/mermaid/puppeteer.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "experiments/index.jsonl",
+      "reason": "jsonl ledger/fixture: one record per line, length is the point"
+    },
+    {
+      "path": "package-lock.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "package.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "scripts/governed-surface-pin.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "scripts/repo-prune/measurements/context-clarity/baseline.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "scripts/repo-prune/measurements/context-clarity/post.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "scripts/repo-prune/measurements/memory-clarity/baseline.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "scripts/repo-prune/measurements/memory-clarity/post.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "scripts/tests/fixtures/actionlint-bad.yml",
+      "reason": "test fixture data"
+    },
+    {
+      "path": "scripts/tests/fixtures/ast-shim/python/clean/ok.py",
+      "reason": "test fixture data"
+    },
+    {
+      "path": "scripts/tests/fixtures/ast-shim/python/dirty/legacy_client.py",
+      "reason": "test fixture data"
+    },
+    {
+      "path": "scripts/tests/fixtures/ast-shim/python/verb-reroute/api.py",
+      "reason": "test fixture data"
+    },
+    {
+      "path": "scripts/tests/fixtures/ast-shim/rust/block-comment-real/real.rs",
+      "reason": "test fixture data"
+    },
+    {
+      "path": "scripts/tests/fixtures/ast-shim/rust/clean/block_comment_safe.rs",
+      "reason": "test fixture data"
+    },
+    {
+      "path": "scripts/tests/fixtures/ast-shim/rust/clean/nested_block_comment_safe.rs",
+      "reason": "test fixture data"
+    },
+    {
+      "path": "scripts/tests/fixtures/ast-shim/rust/clean/ok.rs",
+      "reason": "test fixture data"
+    },
+    {
+      "path": "scripts/tests/fixtures/ast-shim/rust/crate-root/lib.rs",
+      "reason": "test fixture data"
+    },
+    {
+      "path": "scripts/tests/fixtures/ast-shim/rust/dirty/legacy_admin.rs",
+      "reason": "test fixture data"
+    },
+    {
+      "path": "scripts/tests/fixtures/ast-shim/rust/nested-block-real/nested_real.rs",
+      "reason": "test fixture data"
+    },
+    {
+      "path": "scripts/tests/fixtures/ast-shim/rust/verb-reroute/api.rs",
+      "reason": "test fixture data"
+    },
+    {
+      "path": "scripts/tests/fixtures/ast-shim/ts/clean/ok.ts",
+      "reason": "test fixture data"
+    },
+    {
+      "path": "scripts/tests/fixtures/ast-shim/ts/dirty/legacy_binding.ts",
+      "reason": "test fixture data"
+    },
+    {
+      "path": "scripts/tests/fixtures/ast-shim/ts/verb-reroute/api.ts",
+      "reason": "test fixture data"
+    },
+    {
+      "path": "scripts/tests/fixtures/removal-detect/clean/CHANGELOG.md",
+      "reason": "test fixture data"
+    },
+    {
+      "path": "scripts/tests/fixtures/removal-detect/clean/diff.patch",
+      "reason": "generated diff"
+    },
+    {
+      "path": "scripts/tests/fixtures/removal-detect/moved-in-file/CHANGELOG.md",
+      "reason": "test fixture data"
+    },
+    {
+      "path": "scripts/tests/fixtures/removal-detect/moved-in-file/diff.patch",
+      "reason": "generated diff"
+    },
+    {
+      "path": "scripts/tests/fixtures/removal-detect/tests-excluded/CHANGELOG.md",
+      "reason": "test fixture data"
+    },
+    {
+      "path": "scripts/tests/fixtures/removal-detect/tests-excluded/diff.patch",
+      "reason": "generated diff"
+    },
+    {
+      "path": "scripts/tests/fixtures/removal-detect/undocumented/CHANGELOG.md",
+      "reason": "test fixture data"
+    },
+    {
+      "path": "scripts/tests/fixtures/removal-detect/undocumented/diff.patch",
+      "reason": "generated diff"
+    },
+    {
+      "path": "src/conformance/embed-anchor-golden.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "src/conformance/governed-surface-allowlist.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "src/python/tests/functional_retrieve_fixture.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "src/python/tests/functional_search_fixture.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "src/python/uv.lock",
+      "reason": "generated lockfile"
+    },
+    {
+      "path": "src/rust/crates/fathomdb-cli/tests/fixtures/backfill-clean/AC-013-aaaaaaa0-7667.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "src/rust/crates/fathomdb-cli/tests/fixtures/backfill-clean/AC-013-c893d8b0-7667.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "src/rust/crates/fathomdb-cli/tests/fixtures/backfill-clean/AC-013b-38d5f4f0-10000.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "src/rust/crates/fathomdb-cli/tests/fixtures/backfill-clean/AC-013b-38f5e3a0-10000.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "src/rust/crates/fathomdb-cli/tests/fixtures/backfill-dirty/AC-013b-035cfa30-10000.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "src/rust/crates/fathomdb-cli/tests/fixtures/backfill-dirty/AC-013b-4a95cfd0-10000.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "src/rust/crates/fathomdb-cli/tests/fixtures/insufficient/AC-012-603a4bc0-1000000.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "src/rust/crates/fathomdb-cli/tests/fixtures/jitter/AC-013-bbb00001-10000.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "src/rust/crates/fathomdb-cli/tests/fixtures/jitter/AC-013-bbb00002-10000.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "src/rust/crates/fathomdb-cli/tests/fixtures/jitter/AC-013-bbb00003-10000.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "src/rust/crates/fathomdb-cli/tests/fixtures/jitter/AC-013-bbb00004-10000.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "src/rust/crates/fathomdb-cli/tests/fixtures/jitter/AC-013b-bbb10001-7667.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "src/rust/crates/fathomdb-cli/tests/fixtures/jitter/AC-013b-bbb10002-7667.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "src/rust/crates/fathomdb-cli/tests/fixtures/jitter/AC-013b-bbb10003-7667.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "src/rust/crates/fathomdb-cli/tests/fixtures/jitter/AC-013b-bbb10004-7667.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "src/rust/crates/fathomdb-cli/tests/fixtures/malformed-timestamp/AC-013-feedface-10000.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "src/rust/crates/fathomdb-cli/tests/fixtures/malformed/AC-013-deadbeef-10000.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "src/rust/crates/fathomdb-cli/tests/fixtures/regression/AC-013-aaa00001-10000.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "src/rust/crates/fathomdb-cli/tests/fixtures/regression/AC-013-aaa00002-10000.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "src/rust/crates/fathomdb-cli/tests/fixtures/regression/AC-013-aaa00003-10000.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "src/rust/crates/fathomdb-cli/tests/fixtures/regression/AC-013-aaa00004-10000.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "src/rust/crates/fathomdb-embedder/tests/fixtures/candle_onnx_equivalence_probes.txt",
+      "reason": "test fixture data"
+    },
+    {
+      "path": "src/rust/crates/fathomdb-embedder/tests/fixtures/cross_backend_pinned_mean.f32",
+      "reason": "test fixture data"
+    },
+    {
+      "path": "src/rust/crates/fathomdb-embedder/tests/fixtures/cross_backend_pinned_mean.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "src/rust/crates/fathomdb-engine/src/vector_equivalence_probes.txt",
+      "reason": "plain data/output, not authored source or prose"
+    },
+    {
+      "path": "src/rust/crates/fathomdb-engine/tests/fixtures/elps_conformance/golden.jsonl",
+      "reason": "jsonl ledger/fixture: one record per line, length is the point"
+    },
+    {
+      "path": "src/rust/crates/fathomdb-engine/tests/fixtures/elps_conformance/golden_inputs.jsonl",
+      "reason": "jsonl ledger/fixture: one record per line, length is the point"
+    },
+    {
+      "path": "src/rust/crates/fathomdb-engine/tests/fixtures/elps_conformance/stub_harness.py",
+      "reason": "test fixture data"
+    },
+    {
+      "path": "src/rust/crates/fathomdb-engine/tests/fixtures/ir_gold/synthetic_gold.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "src/rust/crates/fathomdb-engine/tests/fixtures/slice15_byo_llm/elps_stub_shim.py",
+      "reason": "test fixture data"
+    },
+    {
+      "path": "src/rust/crates/fathomdb-engine/tests/fixtures/slice15_byo_llm/fixture_result.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "src/rust/crates/fathomdb-engine/tests/fixtures/slice15_byo_llm/multidoc_echo_harness.py",
+      "reason": "test fixture data"
+    },
+    {
+      "path": "src/rust/crates/fathomdb-engine/tests/fixtures/slice15_byo_llm/provenance_omitting_harness.py",
+      "reason": "test fixture data"
+    },
+    {
+      "path": "src/rust/crates/fathomdb-engine/tests/fixtures/slice15_byo_llm/stub_harness.py",
+      "reason": "test fixture data"
+    },
+    {
+      "path": "src/rust/crates/fathomdb-engine/tests/fixtures/slice15_consolidate/stub_consolidate_harness.py",
+      "reason": "test fixture data"
+    },
+    {
+      "path": "src/rust/crates/fathomdb-engine/tests/fixtures/v05_shape.sql",
+      "reason": "test fixture data"
+    },
+    {
+      "path": "src/rust/crates/fathomdb-schema/tests/fixtures/migrations/accretion_violator.sql",
+      "reason": "test fixture data"
+    },
+    {
+      "path": "src/rust/crates/fathomdb/tests/ui/unprovenanced_public_write.stderr",
+      "reason": "captured output artifact"
+    },
+    {
+      "path": "src/ts/npm/linux-x64-gnu/package.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "src/ts/package-lock.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "src/ts/package.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "src/ts/tsconfig.build.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "src/ts/tsconfig.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "test/fixtures/README.md",
+      "reason": "test fixture data"
+    },
+    {
+      "path": "tests/corpus/chains/chain-article_note_email-0001.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-article_note_email-0008.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-article_note_email-0015.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-article_note_email-0022.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-article_note_email-0029.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-article_note_email-0036.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-article_note_email-0043.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-article_note_email-0050.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-article_note_email-0057.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-article_note_email-0064.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-article_note_email-0071.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-article_note_email-0078.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-article_note_email-0085.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-article_note_email-0092.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-article_note_email-0099.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-article_note_email-0106.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-article_note_email-0113.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-article_note_email-0120.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-article_note_email-0127.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-article_note_email-0134.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-article_note_email-0141.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-article_note_email-0148.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-article_note_email-0155.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-article_note_email-0162.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-article_note_email-0169.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-article_note_email-0176.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-article_note_email-0183.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-article_note_email-0190.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-article_note_email-0197.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-article_note_todo-0004.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-article_note_todo-0011.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-article_note_todo-0018.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-article_note_todo-0025.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-article_note_todo-0032.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-article_note_todo-0039.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-article_note_todo-0046.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-article_note_todo-0053.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-article_note_todo-0060.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-article_note_todo-0067.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-article_note_todo-0074.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-article_note_todo-0081.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-article_note_todo-0088.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-article_note_todo-0095.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-article_note_todo-0102.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-article_note_todo-0109.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-article_note_todo-0116.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-article_note_todo-0123.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-article_note_todo-0130.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-article_note_todo-0137.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-article_note_todo-0144.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-article_note_todo-0151.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-article_note_todo-0158.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-article_note_todo-0165.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-article_note_todo-0172.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-article_note_todo-0179.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-article_note_todo-0186.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-article_note_todo-0193.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-email_meeting_todo-0003.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-email_meeting_todo-0010.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-email_meeting_todo-0017.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-email_meeting_todo-0024.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-email_meeting_todo-0031.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-email_meeting_todo-0038.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-email_meeting_todo-0045.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-email_meeting_todo-0052.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-email_meeting_todo-0059.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-email_meeting_todo-0066.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-email_meeting_todo-0073.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-email_meeting_todo-0080.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-email_meeting_todo-0087.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-email_meeting_todo-0094.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-email_meeting_todo-0101.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-email_meeting_todo-0108.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-email_meeting_todo-0115.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-email_meeting_todo-0122.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-email_meeting_todo-0129.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-email_meeting_todo-0136.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-email_meeting_todo-0143.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-email_meeting_todo-0150.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-email_meeting_todo-0157.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-email_meeting_todo-0164.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-email_meeting_todo-0171.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-email_meeting_todo-0178.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-email_meeting_todo-0185.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-email_meeting_todo-0192.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-email_meeting_todo-0199.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-email_note_todo-0000.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-email_note_todo-0007.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-email_note_todo-0014.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-email_note_todo-0021.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-email_note_todo-0028.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-email_note_todo-0035.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-email_note_todo-0042.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-email_note_todo-0049.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-email_note_todo-0056.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-email_note_todo-0063.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-email_note_todo-0070.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-email_note_todo-0077.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-email_note_todo-0084.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-email_note_todo-0091.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-email_note_todo-0098.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-email_note_todo-0105.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-email_note_todo-0112.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-email_note_todo-0119.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-email_note_todo-0126.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-email_note_todo-0133.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-email_note_todo-0140.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-email_note_todo-0147.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-email_note_todo-0154.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-email_note_todo-0161.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-email_note_todo-0168.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-email_note_todo-0175.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-email_note_todo-0182.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-email_note_todo-0189.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-email_note_todo-0196.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-meeting_todo_note-0002.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-meeting_todo_note-0009.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-meeting_todo_note-0016.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-meeting_todo_note-0023.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-meeting_todo_note-0030.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-meeting_todo_note-0037.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-meeting_todo_note-0044.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-meeting_todo_note-0051.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-meeting_todo_note-0058.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-meeting_todo_note-0065.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-meeting_todo_note-0072.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-meeting_todo_note-0079.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-meeting_todo_note-0086.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-meeting_todo_note-0093.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-meeting_todo_note-0100.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-meeting_todo_note-0107.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-meeting_todo_note-0114.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-meeting_todo_note-0121.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-meeting_todo_note-0128.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-meeting_todo_note-0135.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-meeting_todo_note-0142.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-meeting_todo_note-0149.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-meeting_todo_note-0156.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-meeting_todo_note-0163.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-meeting_todo_note-0170.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-meeting_todo_note-0177.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-meeting_todo_note-0184.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-meeting_todo_note-0191.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-meeting_todo_note-0198.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-paper_note_todo-0006.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-paper_note_todo-0013.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-paper_note_todo-0020.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-paper_note_todo-0027.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-paper_note_todo-0034.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-paper_note_todo-0041.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-paper_note_todo-0048.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-paper_note_todo-0055.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-paper_note_todo-0062.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-paper_note_todo-0069.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-paper_note_todo-0076.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-paper_note_todo-0083.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-paper_note_todo-0090.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-paper_note_todo-0097.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-paper_note_todo-0104.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-paper_note_todo-0111.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-paper_note_todo-0118.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-paper_note_todo-0125.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-paper_note_todo-0132.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-paper_note_todo-0139.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-paper_note_todo-0146.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-paper_note_todo-0153.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-paper_note_todo-0160.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-paper_note_todo-0167.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-paper_note_todo-0174.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-paper_note_todo-0181.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-paper_note_todo-0188.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-paper_note_todo-0195.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-todo_note_email-0005.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-todo_note_email-0012.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-todo_note_email-0019.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-todo_note_email-0026.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-todo_note_email-0033.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-todo_note_email-0040.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-todo_note_email-0047.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-todo_note_email-0054.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-todo_note_email-0061.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-todo_note_email-0068.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-todo_note_email-0075.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-todo_note_email-0082.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-todo_note_email-0089.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-todo_note_email-0096.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-todo_note_email-0103.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-todo_note_email-0110.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-todo_note_email-0117.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-todo_note_email-0124.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-todo_note_email-0131.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-todo_note_email-0138.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-todo_note_email-0145.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-todo_note_email-0152.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-todo_note_email-0159.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-todo_note_email-0166.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-todo_note_email-0173.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-todo_note_email-0180.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-todo_note_email-0187.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/chains/chain-todo_note_email-0194.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/scripts/manifest.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tests/corpus/snapshot.json",
+      "reason": "data/config, not authored prose or logic"
+    },
+    {
+      "path": "tools/docs/requirements.txt",
+      "reason": "plain data/output, not authored source or prose"
+    }
+  ],
+  "unclassified": [
+    ".github/dependabot.yml",
+    ".gitignore",
+    ".markdownlint-cli2.jsonc",
+    ".markdownlint.jsonc",
+    ".prettierignore",
+    "Cargo.toml",
+    "LICENSE",
+    "deny.toml",
+    "dev/experiments/ruff.toml",
+    "dev/plans/runs/0.8.0-slice-plan.wf.js",
+    "dev/plans/runs/agent-memory-impl-strategy.wf.js",
+    "dev/plans/runs/v05-feature-triage.wf.js",
+    "dev/tools/mermaid/.gitignore",
+    "lychee.toml",
+    "mkdocs.yml",
+    "rust-toolchain.toml",
+    "rustfmt.toml",
+    "scripts/hooks/pre-commit",
+    "scripts/hooks/pre-push",
+    "scripts/repo-prune/backups/.gitignore",
+    "src/python/pyproject.toml",
+    "src/rust/crates/fathomdb-cli/Cargo.toml",
+    "src/rust/crates/fathomdb-embedder-api/Cargo.toml",
+    "src/rust/crates/fathomdb-embedder/Cargo.toml",
+    "src/rust/crates/fathomdb-engine/Cargo.toml",
+    "src/rust/crates/fathomdb-napi/Cargo.toml",
+    "src/rust/crates/fathomdb-py/Cargo.toml",
+    "src/rust/crates/fathomdb-query/Cargo.toml",
+    "src/rust/crates/fathomdb-schema/Cargo.toml",
+    "src/rust/crates/fathomdb-schema/migrations/001_bootstrap.sql",
+    "src/rust/crates/fathomdb-schema/migrations/002_canonical.sql",
+    "src/rust/crates/fathomdb-schema/migrations/003_embedder_profiles.sql",
+    "src/rust/crates/fathomdb-schema/migrations/004_op_store.sql",
+    "src/rust/crates/fathomdb-schema/migrations/005_search_index.sql",
+    "src/rust/crates/fathomdb-schema/migrations/006_vector_runtime.sql",
+    "src/rust/crates/fathomdb-schema/migrations/007_projection_terminal.sql",
+    "src/rust/crates/fathomdb-schema/migrations/008_source_id.sql",
+    "src/rust/crates/fathomdb-schema/migrations/009_vector_binary_quant.sql",
+    "src/rust/crates/fathomdb-schema/migrations/011_search_index_tokenizer.sql",
+    "src/rust/crates/fathomdb-schema/migrations/013_op_store_collection_index.sql",
+    "src/rust/crates/fathomdb/Cargo.toml",
+    "tests/corpus/scripts/configs/acquire-compmix.yaml",
+    "tests/corpus/scripts/configs/acquire-wec-eng.yaml",
+    "tools/docs/.gitignore"
+  ],
+  "thresholds": {
+    "_source": "Phase 1 research synthesis, adversarially verified (71 claims survived, 14 killed). See heuristics.md for rationale and citations per class.",
+    "rust-src": {
+      "soft_loc": 1000,
+      "hard_loc": 2000
+    },
+    "rust-test": {
+      "soft_loc": 800,
+      "hard_loc": 1200
+    },
+    "py-src": {
+      "soft_loc": 500,
+      "hard_loc": 800
+    },
+    "py-eval": {
+      "soft_loc": 800,
+      "hard_loc": 1200
+    },
+    "py-test": {
+      "soft_loc": 600,
+      "hard_loc": 1000
+    },
+    "ts-src": {
+      "soft_loc": 500,
+      "hard_loc": 1000
+    },
+    "ts-test": {
+      "soft_loc": 500,
+      "hard_loc": 750
+    },
+    "shell": {
+      "soft_loc": 200,
+      "hard_loc": 500
+    },
+    "shell-test": {
+      "soft_loc": 500,
+      "hard_loc": 800
+    },
+    "design-doc": {
+      "soft_loc": 700,
+      "hard_loc": 1100
+    },
+    "plan-status-doc": {
+      "soft_loc": 1100,
+      "hard_loc": 1800
+    },
+    "agent-file": {
+      "soft_loc": 200,
+      "hard_loc": 350
+    },
+    "doc-other": {
+      "soft_loc": 700,
+      "hard_loc": 1100,
+      "_repo_calibration": "analogy to design-doc; no literature backing"
+    },
+    "py-stub": {
+      "soft_loc": 500,
+      "hard_loc": 800,
+      "_repo_calibration": "analogy to py-src; no literature backing. Size is not the real concern for this class - it is a hand-maintained mirror of fathomdb-py/src/lib.rs, so it matters as a coupled surface."
+    },
+    "ci-workflow": {
+      "soft_loc": 300,
+      "hard_loc": 600,
+      "_repo_calibration": "no literature backing whatsoever. Google's 100-line shell trigger does not transfer to declarative CI YAML. Chosen to flag the three workflows that stand apart from the rest."
+    }
+  },
+  "violators": [
+    {
+      "path": "src/rust/crates/fathomdb-engine/src/lib.rs",
+      "file_class": "rust-src",
+      "loc": 17910,
+      "soft": 1000,
+      "hard": 2000,
+      "severity": 8.955,
+      "band": "hard"
+    },
+    {
+      "path": "scripts/commission-manifest.sh",
+      "file_class": "shell",
+      "loc": 806,
+      "soft": 200,
+      "hard": 500,
+      "severity": 1.612,
+      "band": "hard"
+    },
+    {
+      "path": "dev/notes/performance-whitepaper-notes.md",
+      "file_class": "design-doc",
+      "loc": 1665,
+      "soft": 700,
+      "hard": 1100,
+      "severity": 1.514,
+      "band": "hard"
+    },
+    {
+      "path": "src/rust/crates/fathomdb-py/src/lib.rs",
+      "file_class": "rust-src",
+      "loc": 2678,
+      "soft": 1000,
+      "hard": 2000,
+      "severity": 1.339,
+      "band": "hard"
+    },
+    {
+      "path": "src/rust/crates/fathomdb-engine/tests/perf_gates.rs",
+      "file_class": "rust-test",
+      "loc": 1581,
+      "soft": 800,
+      "hard": 1200,
+      "severity": 1.317,
+      "band": "hard"
+    },
+    {
+      "path": "src/python/eval/s15a_embedder_probe.py",
+      "file_class": "py-eval",
+      "loc": 1562,
+      "soft": 800,
+      "hard": 1200,
+      "severity": 1.302,
+      "band": "hard"
+    },
+    {
+      "path": "src/ts/src/index.ts",
+      "file_class": "ts-src",
+      "loc": 1300,
+      "soft": 500,
+      "hard": 1000,
+      "severity": 1.3,
+      "band": "hard"
+    },
+    {
+      "path": "src/rust/crates/fathomdb-napi/src/lib.rs",
+      "file_class": "rust-src",
+      "loc": 2561,
+      "soft": 1000,
+      "hard": 2000,
+      "severity": 1.28,
+      "band": "hard"
+    },
+    {
+      "path": "src/python/eval/r2_parity_eval.py",
+      "file_class": "py-eval",
+      "loc": 1494,
+      "soft": 800,
+      "hard": 1200,
+      "severity": 1.245,
+      "band": "hard"
+    },
+    {
+      "path": "dev/plans/runs/STATUS-0.8.0.md",
+      "file_class": "plan-status-doc",
+      "loc": 2087,
+      "soft": 1100,
+      "hard": 1800,
+      "severity": 1.159,
+      "band": "hard"
+    },
+    {
+      "path": "scripts/tests/test_commission_manifest.sh",
+      "file_class": "shell-test",
+      "loc": 882,
+      "soft": 500,
+      "hard": 800,
+      "severity": 1.103,
+      "band": "hard"
+    },
+    {
+      "path": "dev/agent-tools/ledgerwatch/ledgerwatch.py",
+      "file_class": "py-src",
+      "loc": 878,
+      "soft": 500,
+      "hard": 800,
+      "severity": 1.097,
+      "band": "hard"
+    },
+    {
+      "path": "src/rust/crates/fathomdb-engine/tests/slice15d_projection_registry.rs",
+      "file_class": "rust-test",
+      "loc": 1277,
+      "soft": 800,
+      "hard": 1200,
+      "severity": 1.064,
+      "band": "hard"
+    },
+    {
+      "path": "dev/agent-tools/ledgerwatch/test_ledgerwatch.py",
+      "file_class": "py-test",
+      "loc": 1061,
+      "soft": 600,
+      "hard": 1000,
+      "severity": 1.061,
+      "band": "hard"
+    },
+    {
+      "path": "src/ts/tests/slice10-read-view.test.ts",
+      "file_class": "ts-test",
+      "loc": 755,
+      "soft": 500,
+      "hard": 750,
+      "severity": 1.007,
+      "band": "hard"
+    },
+    {
+      "path": ".github/workflows/release.yml",
+      "file_class": "ci-workflow",
+      "loc": 602,
+      "soft": 300,
+      "hard": 600,
+      "severity": 1.003,
+      "band": "hard"
+    },
+    {
+      "path": "src/rust/crates/fathomdb-engine/tests/slice15_byo_llm_ingest.rs",
+      "file_class": "rust-test",
+      "loc": 1189,
+      "soft": 800,
+      "hard": 1200,
+      "severity": 0.991,
+      "band": "soft"
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "file_class": "ci-workflow",
+      "loc": 580,
+      "soft": 300,
+      "hard": 600,
+      "severity": 0.967,
+      "band": "soft"
+    },
+    {
+      "path": "src/python/tests/test_s15a_embedder_probe.py",
+      "file_class": "py-test",
+      "loc": 967,
+      "soft": 600,
+      "hard": 1000,
+      "severity": 0.967,
+      "band": "soft"
+    },
+    {
+      "path": "src/rust/crates/fathomdb-engine/tests/eu7_real_corpus_ac.rs",
+      "file_class": "rust-test",
+      "loc": 1138,
+      "soft": 800,
+      "hard": 1200,
+      "severity": 0.948,
+      "band": "soft"
+    },
+    {
+      "path": "scripts/check-release-state-views.sh",
+      "file_class": "shell",
+      "loc": 464,
+      "soft": 200,
+      "hard": 500,
+      "severity": 0.928,
+      "band": "soft"
+    },
+    {
+      "path": "dev/plans/0.8.0-implementation.md",
+      "file_class": "plan-status-doc",
+      "loc": 1650,
+      "soft": 1100,
+      "hard": 1800,
+      "severity": 0.917,
+      "band": "soft"
+    },
+    {
+      "path": "scripts/set-version.sh",
+      "file_class": "shell",
+      "loc": 456,
+      "soft": 200,
+      "hard": 500,
+      "severity": 0.912,
+      "band": "soft"
+    },
+    {
+      "path": "src/python/eval/gap_decomposition_run.py",
+      "file_class": "py-eval",
+      "loc": 1093,
+      "soft": 800,
+      "hard": 1200,
+      "severity": 0.911,
+      "band": "soft"
+    },
+    {
+      "path": "scripts/tests/test_check_release_state_views.sh",
+      "file_class": "shell-test",
+      "loc": 716,
+      "soft": 500,
+      "hard": 800,
+      "severity": 0.895,
+      "band": "soft"
+    },
+    {
+      "path": "src/rust/crates/fathomdb-engine/tests/slice15e_prekn_filterable.rs",
+      "file_class": "rust-test",
+      "loc": 1052,
+      "soft": 800,
+      "hard": 1200,
+      "severity": 0.877,
+      "band": "soft"
+    },
+    {
+      "path": "src/python/fathomdb/engine.py",
+      "file_class": "py-src",
+      "loc": 692,
+      "soft": 500,
+      "hard": 800,
+      "severity": 0.865,
+      "band": "soft"
+    },
+    {
+      "path": "tests/corpus/scripts/generate_chain_corpus.py",
+      "file_class": "py-src",
+      "loc": 678,
+      "soft": 500,
+      "hard": 800,
+      "severity": 0.848,
+      "band": "soft"
+    },
+    {
+      "path": "src/rust/crates/fathomdb-engine/tests/vector_equivalence_probe.rs",
+      "file_class": "rust-test",
+      "loc": 1014,
+      "soft": 800,
+      "hard": 1200,
+      "severity": 0.845,
+      "band": "soft"
+    },
+    {
+      "path": "scripts/steward-orient.sh",
+      "file_class": "shell",
+      "loc": 422,
+      "soft": 200,
+      "hard": 500,
+      "severity": 0.844,
+      "band": "soft"
+    },
+    {
+      "path": "src/ts/tests/slice15d-projection-registry.test.ts",
+      "file_class": "ts-test",
+      "loc": 630,
+      "soft": 500,
+      "hard": 750,
+      "severity": 0.84,
+      "band": "soft"
+    },
+    {
+      "path": "src/python/tests/test_gap_decomposition_run.py",
+      "file_class": "py-test",
+      "loc": 834,
+      "soft": 600,
+      "hard": 1000,
+      "severity": 0.834,
+      "band": "soft"
+    },
+    {
+      "path": "dev/plans/runs/0.8.4-gating-rerun.py",
+      "file_class": "py-src",
+      "loc": 645,
+      "soft": 500,
+      "hard": 800,
+      "severity": 0.806,
+      "band": "soft"
+    },
+    {
+      "path": "scripts/tests/test_steward_orient.sh",
+      "file_class": "shell-test",
+      "loc": 645,
+      "soft": 500,
+      "hard": 800,
+      "severity": 0.806,
+      "band": "soft"
+    },
+    {
+      "path": "scripts/check-governed-surface-pin.sh",
+      "file_class": "shell",
+      "loc": 397,
+      "soft": 200,
+      "hard": 500,
+      "severity": 0.794,
+      "band": "soft"
+    },
+    {
+      "path": "src/python/eval/m1_baseline.py",
+      "file_class": "py-eval",
+      "loc": 948,
+      "soft": 800,
+      "hard": 1200,
+      "severity": 0.79,
+      "band": "soft"
+    },
+    {
+      "path": "dev/design/embedder.md",
+      "file_class": "design-doc",
+      "loc": 854,
+      "soft": 700,
+      "hard": 1100,
+      "severity": 0.776,
+      "band": "soft"
+    },
+    {
+      "path": "src/python/eval/fracc_voi_run.py",
+      "file_class": "py-eval",
+      "loc": 918,
+      "soft": 800,
+      "hard": 1200,
+      "severity": 0.765,
+      "band": "soft"
+    },
+    {
+      "path": "src/rust/crates/fathomdb-engine/tests/ir_c_gold_diagnostics.rs",
+      "file_class": "rust-test",
+      "loc": 901,
+      "soft": 800,
+      "hard": 1200,
+      "severity": 0.751,
+      "band": "soft"
+    },
+    {
+      "path": "src/python/eval/p0a_base_retrieval.py",
+      "file_class": "py-eval",
+      "loc": 873,
+      "soft": 800,
+      "hard": 1200,
+      "severity": 0.728,
+      "band": "soft"
+    },
+    {
+      "path": "src/python/eval/autoe_pilot_run.py",
+      "file_class": "py-eval",
+      "loc": 870,
+      "soft": 800,
+      "hard": 1200,
+      "severity": 0.725,
+      "band": "soft"
+    },
+    {
+      "path": "src/rust/crates/fathomdb-engine/tests/support/corpus_harness.rs",
+      "file_class": "rust-test",
+      "loc": 861,
+      "soft": 800,
+      "hard": 1200,
+      "severity": 0.718,
+      "band": "soft"
+    },
+    {
+      "path": "src/python/fathomdb/types.py",
+      "file_class": "py-src",
+      "loc": 571,
+      "soft": 500,
+      "hard": 800,
+      "severity": 0.714,
+      "band": "soft"
+    },
+    {
+      "path": "scripts/tests/test_check_governed_surface_pin.sh",
+      "file_class": "shell-test",
+      "loc": 558,
+      "soft": 500,
+      "hard": 800,
+      "severity": 0.698,
+      "band": "soft"
+    },
+    {
+      "path": "dev/design/0.7.0-vector-quant-pack1.md",
+      "file_class": "design-doc",
+      "loc": 760,
+      "soft": 700,
+      "hard": 1100,
+      "severity": 0.691,
+      "band": "soft"
+    },
+    {
+      "path": "dev/corpus-creation/architecture.md",
+      "file_class": "doc-other",
+      "loc": 758,
+      "soft": 700,
+      "hard": 1100,
+      "severity": 0.689,
+      "band": "soft"
+    },
+    {
+      "path": "src/python/tests/test_m1_verdict.py",
+      "file_class": "py-test",
+      "loc": 688,
+      "soft": 600,
+      "hard": 1000,
+      "severity": 0.688,
+      "band": "soft"
+    },
+    {
+      "path": "src/rust/crates/fathomdb-engine/tests/support/ir_eval.rs",
+      "file_class": "rust-test",
+      "loc": 826,
+      "soft": 800,
+      "hard": 1200,
+      "severity": 0.688,
+      "band": "soft"
+    },
+    {
+      "path": "src/rust/crates/fathomdb-embedder/tests/cross_backend_calibration.rs",
+      "file_class": "rust-test",
+      "loc": 824,
+      "soft": 800,
+      "hard": 1200,
+      "severity": 0.687,
+      "band": "soft"
+    },
+    {
+      "path": "dev/design/orchestration.md",
+      "file_class": "design-doc",
+      "loc": 746,
+      "soft": 700,
+      "hard": 1100,
+      "severity": 0.678,
+      "band": "soft"
+    },
+    {
+      "path": "src/python/tests/test_slice10_read_view.py",
+      "file_class": "py-test",
+      "loc": 675,
+      "soft": 600,
+      "hard": 1000,
+      "severity": 0.675,
+      "band": "soft"
+    },
+    {
+      "path": "src/python/fathomdb/_fathomdb.pyi",
+      "file_class": "py-stub",
+      "loc": 536,
+      "soft": 500,
+      "hard": 800,
+      "severity": 0.67,
+      "band": "soft"
+    },
+    {
+      "path": "dev/design/0.8.1-graph-experiment-plan.md",
+      "file_class": "design-doc",
+      "loc": 726,
+      "soft": 700,
+      "hard": 1100,
+      "severity": 0.66,
+      "band": "soft"
+    },
+    {
+      "path": "dev/design/gpu-device-allocation-policy.md",
+      "file_class": "design-doc",
+      "loc": 712,
+      "soft": 700,
+      "hard": 1100,
+      "severity": 0.647,
+      "band": "soft"
+    },
+    {
+      "path": "dev/plans/runs/STATUS-0.8.1.md",
+      "file_class": "plan-status-doc",
+      "loc": 1162,
+      "soft": 1100,
+      "hard": 1800,
+      "severity": 0.646,
+      "band": "soft"
+    },
+    {
+      "path": "experiments/_lib.py",
+      "file_class": "py-src",
+      "loc": 500,
+      "soft": 500,
+      "hard": 800,
+      "severity": 0.625,
+      "band": "soft"
+    },
+    {
+      "path": "dev/plans/0.6.0-implementation.md",
+      "file_class": "plan-status-doc",
+      "loc": 1120,
+      "soft": 1100,
+      "hard": 1800,
+      "severity": 0.622,
+      "band": "soft"
+    },
+    {
+      "path": "src/python/tests/test_r2_harness.py",
+      "file_class": "py-test",
+      "loc": 607,
+      "soft": 600,
+      "hard": 1000,
+      "severity": 0.607,
+      "band": "soft"
+    },
+    {
+      "path": ".github/workflows/perf-canonical.yml",
+      "file_class": "ci-workflow",
+      "loc": 340,
+      "soft": 300,
+      "hard": 600,
+      "severity": 0.567,
+      "band": "soft"
+    },
+    {
+      "path": "scripts/preflight.sh",
+      "file_class": "shell",
+      "loc": 283,
+      "soft": 200,
+      "hard": 500,
+      "severity": 0.566,
+      "band": "soft"
+    },
+    {
+      "path": "scripts/lint-plan-anchors.sh",
+      "file_class": "shell",
+      "loc": 278,
+      "soft": 200,
+      "hard": 500,
+      "severity": 0.556,
+      "band": "soft"
+    },
+    {
+      "path": "scripts/check-ledgers.sh",
+      "file_class": "shell",
+      "loc": 273,
+      "soft": 200,
+      "hard": 500,
+      "severity": 0.546,
+      "band": "soft"
+    },
+    {
+      "path": "src/rust/crates/fathomdb-cli/src/lib.rs",
+      "file_class": "rust-src",
+      "loc": 1050,
+      "soft": 1000,
+      "hard": 2000,
+      "severity": 0.525,
+      "band": "soft"
+    },
+    {
+      "path": "src/ts/src/binding.ts",
+      "file_class": "ts-src",
+      "loc": 518,
+      "soft": 500,
+      "hard": 1000,
+      "severity": 0.518,
+      "band": "soft"
+    },
+    {
+      "path": "scripts/release/cargo-publish-if-new.sh",
+      "file_class": "shell",
+      "loc": 241,
+      "soft": 200,
+      "hard": 500,
+      "severity": 0.482,
+      "band": "soft"
+    },
+    {
+      "path": "scripts/release/verify-embedder-api-no-drift.sh",
+      "file_class": "shell",
+      "loc": 207,
+      "soft": 200,
+      "hard": 500,
+      "severity": 0.414,
+      "band": "soft"
+    }
+  ]
+}

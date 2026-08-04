@@ -1,0 +1,5 @@
+# src/python/fathomdb/engine.py  (692 LOC, class=py-src, soft=500, hard=800)
+
+L    63-83     (   21) | def _validate_id_list(name: str, value: object) -> list[int]:
+L    84-108    (   25) | def _map_per_hit_explain(p: Any) -> PerHitExplain:
+L   109-692    (  584) | class Engine:

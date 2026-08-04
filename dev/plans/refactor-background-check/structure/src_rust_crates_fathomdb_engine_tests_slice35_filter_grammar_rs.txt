@@ -1,0 +1,42 @@
+# src/rust/crates/fathomdb-engine/tests/slice35_filter_grammar.rs  (608 LOC, class=rust-test, soft=600, hard=1200)
+
+L    20-25     (    6) | fn fresh_engine(dir: &TempDir) -> Engine {
+L    26-45     (   20) | fn write_node(engine: &Engine, logical_id: &str, kind: &str, body: &str) {
+L    46-46     (    1) | #[test]
+L    47-109    (   63) | fn predicate_enum_is_exactly_jsoneq_and_jsoncompare() {
+L   110-110    (    1) | #[test]
+L   111-137    (   27) | fn fused_and_unchecked_absent_from_surface() {
+L   138-138    (    1) | #[test]
+L   139-149    (   11) | fn allowlisted_path_accepted() {
+L   150-150    (    1) | #[test]
+L   151-174    (   24) | fn non_allowlisted_path_rejected() {
+L   175-175    (    1) | #[test]
+L   176-204    (   29) | fn action_kind_path_allowlisted() {
+L   205-205    (    1) | #[test]
+L   206-235    (   30) | fn injection_safe_value_is_bound_not_interpolated() {
+L   236-236    (    1) | #[test]
+L   237-259    (   23) | fn read_list_returns_active_nodes_by_kind() {
+L   260-260    (    1) | #[test]
+L   261-281    (   21) | fn read_list_filter_eq_matches() {
+L   282-282    (    1) | #[test]
+L   283-305    (   23) | fn read_list_filter_gt_matches() {
+L   306-306    (    1) | #[test]
+L   307-330    (   24) | fn read_list_and_composition() {
+L   331-331    (    1) | #[test]
+L   332-349    (   18) | fn read_list_empty_filter_returns_all() {
+L   350-350    (    1) | #[test]
+L   351-391    (   41) | fn searchfilter_struct_shape_unchanged() {
+L   392-392    (    1) | #[test]
+L   393-422    (   30) | fn scalar_value_and_comparison_op_are_shared_types() {
+L   423-423    (    1) | #[test]
+L   424-444    (   21) | fn direct_construction_bypass_caught_by_read_list() {
+L   445-445    (    1) | #[test]
+L   446-475    (   30) | fn read_list_predicate_skips_non_json_body() {
+L   476-476    (    1) | #[test]
+L   477-514    (   38) | fn read_list_includes_nodes_written_without_logical_id_type_check() {
+L   515-515    (    1) | #[test]
+L   516-540    (   25) | fn read_list_integer_predicate_does_not_match_boolean_field() {
+L   541-541    (    1) | #[test]
+L   542-572    (   31) | fn read_list_bool_predicate_does_not_match_integer_field() {
+L   573-573    (    1) | #[test]
+L   574-608    (   35) | fn read_list_text_compare_does_not_match_integer_field() {

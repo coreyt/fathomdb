@@ -1,0 +1,20 @@
+{
+  "commit": "716c322e0b2dcfd4d1e3744c09b35226ca19cf01",
+  "scope": [
+    ".github/workflows/ci.yml verify timeout: 45 -> 60",
+    "scripts/tests/test_verify_ci_timeout_budget.sh expectation: 45 -> 60"
+  ],
+  "tdd": {
+    "red": "bash scripts/tests/test_verify_ci_timeout_budget.sh failed while ci.yml remained at 45",
+    "green": "bash scripts/tests/test_verify_ci_timeout_budget.sh passed after ci.yml changed to 60"
+  },
+  "verification": [
+    "bash scripts/tests/test_verify_ci_timeout_budget.sh",
+    "bash scripts/tests/test_release_workflow_scope.sh",
+    "actionlint .github/workflows/ci.yml",
+    "git diff --check"
+  ],
+  "broad_gates_run": false,
+  "pushed": false,
+  "publish_or_tag": false
+}

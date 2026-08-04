@@ -1,0 +1,22 @@
+# dev/design/0.8.0-agent-memory-fit.md  (521 LOC, class=design-doc, soft=500, hard=1000)
+
+L     5-14     (   10) | # Research note: enabling FathomDB for agent-memory applications
+L    15-65     (   51) | ## 1. Central finding
+L    66-91     (   26) | ## 2. Ground truth: what the engine stores vs what it exposes
+L    92-93     (    2) | ## 3. The four application needs, mapped to FathomDB
+L    94-132    (   39) | ### 3a. Store incoming data
+L   133-161    (   29) | ### 3b. Retrieve data and knowledge
+L   162-202    (   41) | ### 3c. Work with "world-model" objects
+L   203-223    (   21) | ### 3d. Reasoning support (provide relevant data)
+L   224-248    (   25) | ## 4. Gap analysis → what to build
+L   249-296    (   48) | ## 5. Recommended path — and the philosophy tension it must respect
+L   297-311    (   15) | ## 6. Suggested phasing (aligned to existing roadmap)
+L   312-352    (   41) | ## 7. Open decisions for HITL (carry-overs, now with consumer context)
+L   353-361    (    9) | ## 8. External validation: shipping peers + the research literature
+L   362-378    (   17) | ### 8a. The decisive fact: the peers run on FathomDB's own substrate
+L   379-415    (   37) | ### 8b. What the literature says each pillar requires
+L   416-424    (    9) | ### 8c. New gaps this surfaced (beyond §4's G0–G8)
+L   425-441    (   17) | ### 8d. Capability ranking for this datastore (research-backed)
+L   442-455    (   14) | ### 8e. Net read for the strategy
+L   456-481    (   26) | ### 8f. Open questions the research could not close
+L   482-521    (   40) | ## 9. Consumer-impact of the v0.5.x feature delta (triage cross-ref)

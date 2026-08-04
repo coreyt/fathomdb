@@ -1,0 +1,14 @@
+# src/rust/crates/fathomdb-engine/tests/ir_c_fusion_experiment.rs  (674 LOC, class=rust-test, soft=600, hard=1200)
+
+L    40-41     (    2) | mod corpus_subset;
+L    42-43     (    2) | mod ir_eval;
+L    44-62     (   19) | mod ir_retrieval;
+L    63-66     (    4) | struct SerializedBge {
+L    67-72     (    6) | impl SerializedBge {
+L    73-81     (    9) | impl Embedder for SerializedBge {
+L    82-96     (   15) | fn env_usize(key: &str, default: usize) -> usize {
+L    97-143    (   47) | fn fuse_weighted(
+L   144-149    (    6) | struct QCache {
+L   150-157    (    8) | fn build_body_to_doc_id(docs: &[Doc]) -> HashMap<String, String> {
+L   158-158    (    1) | #[test]
+L   159-674    (  516) | fn ir_c_fusion_experiment() {

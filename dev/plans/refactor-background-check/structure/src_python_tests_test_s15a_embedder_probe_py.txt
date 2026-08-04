@@ -1,0 +1,33 @@
+# src/python/tests/test_s15a_embedder_probe.py  (967 LOC, class=py-test, soft=600, hard=1000)
+
+L    51-54     (    4) | def _base_metrics() -> dict[str, float]:
+L    55-65     (   11) | def _passing_cand() -> dict[str, object]:
+L    66-100    (   35) | def test_probe_wiring_truth_table() -> None:
+L   101-142    (   42) | def test_choose_embedder_feasibility_and_no_swap() -> None:
+L   143-171    (   29) | def test_projected_eu7_handcomputed() -> None:
+L   172-195    (   24) | def test_paired_bootstrap_ci() -> None:
+L   196-218    (   23) | def test_bm25_and_hard_subset_strict_all_of() -> None:
+L   219-249    (   31) | def test_pooling_prefix_config_table() -> None:
+L   250-292    (   43) | def test_in_process_model_cache_loads_once(monkeypatch: pytest.MonkeyPatch) -> N
+L   293-298    (    6) | def _base_in_hf_cache() -> bool:
+L   299-308    (   10) | def test_resolve_revision_from_local_cache() -> None:
+L   309-334    (   26) | def test_model_revisions_are_resolved_shas() -> None:
+L   335-387    (   53) | def test_projected_eu7_deterministic_hamming_fanout() -> None:
+L   388-408    (   21) | def _tiny_corpus_and_queries():  # type: ignore[no-untyped-def]
+L   409-416    (    8) | def _install_fresh_embedder(m: object, calls: list[str]):  # type: ignore[no-unt
+L   417-464    (   48) | def test_cache_sidecar_revision_mismatch_reembeds(
+L   465-504    (   40) | def test_cache_sidecar_match_reuses(
+L   505-529    (   25) | def test_embed_texts_steady_state_no_reload(monkeypatch: pytest.MonkeyPatch) -> 
+L   530-549    (   20) | def test_model_cache_byte_identical_vectors() -> None:
+L   550-568    (   19) | def test_embedding_determinism_cpu() -> None:
+L   569-602    (   34) | def test_pooling_known_vector_cls_ne_mean() -> None:
+L   603-671    (   69) | def test_integration_tests_are_opt_in_and_marker_registered() -> None:
+L   672-704    (   33) | def _tiny_run_probe_env(monkeypatch, tmp_path):  # type: ignore[no-untyped-def]
+L   705-711    (    7) | def _fresh_vectors(m, cfg, n_docs: int, n_q: int):  # type: ignore[no-untyped-de
+L   712-727    (   16) | def _run_probe(m, tmp_path):  # type: ignore[no-untyped-def]
+L   728-765    (   38) | def test_run_probe_tolerates_candidate_failure(
+L   766-793    (   28) | def test_run_probe_base_failure_is_fatal(
+L   794-845    (   52) | def test_load_model_is_offline_pinned(monkeypatch: pytest.MonkeyPatch) -> None:
+L   846-871    (   26) | def test_cache_meta_binds_input_identity() -> None:
+L   872-929    (   58) | def test_cache_sidecar_input_identity_mismatch_reembeds(
+L   930-967    (   38) | def test_run_probe_emits_projected_eu7_transparency_ci(

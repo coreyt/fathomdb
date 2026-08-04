@@ -1,0 +1,6 @@
+# scripts/release/verify-embedder-api-no-drift.sh  (207 LOC, class=shell, soft=200, hard=500)
+
+L    61-73     (   13) | die() {
+L    74-96     (   23) | read_crate_version() {
+L    97-123    (   27) | registry_has_version() {
+L   124-207    (   84) | normalize_src() {

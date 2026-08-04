@@ -1,0 +1,24 @@
+# src/python/eval/p0a_base_retrieval.py  (873 LOC, class=py-eval, soft=800, hard=1200)
+
+L    98-106    (    9) | class RetrievalRecord:
+L   107-129    (   23) | def hit_at_k(
+L   130-140    (   11) | def reciprocal_rank(gold: Sequence[str], retrieved_ids: Sequence[str]) -> Option
+L   141-156    (   16) | def ndcg_at_k(gold: Sequence[str], retrieved_ids: Sequence[str], k: int) -> Opti
+L   157-160    (    4) | def _mean(values: list[float]) -> Optional[float]:
+L   161-224    (   64) | def aggregate(
+L   225-238    (   14) | class SmokeQuestion:
+L   239-244    (    6) | class SmokeSet:
+L   245-280    (   36) | def _select_balanced_qids(
+L   281-340    (   60) | def load_lme_smoke(
+L   341-390    (   50) | def _drain_until_embedded(
+L   391-483    (   93) | def _build_fathomdb_variant(
+L   484-528    (   45) | def build_variants(
+L   529-575    (   47) | class AirlockAnswerer(BaseAnswerer):
+L   576-601    (   26) | def run_retrieval_loop(
+L   602-616    (   15) | class AnswerRecord:
+L   617-630    (   14) | def score_answer(rec: AnswerRecord, *, verdict: Optional[bool] = None) -> float:
+L   631-656    (   26) | def score_answers(
+L   657-727    (   71) | def run_e2e_loop(
+L   728-756    (   29) | def measure_haystack(smoke: SmokeSet) -> dict[str, Any]:
+L   757-828    (   72) | def run_smoke(
+L   829-873    (   45) | def main(argv: Optional[list[str]] = None) -> int:

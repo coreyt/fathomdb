@@ -1,0 +1,18 @@
+# tests/corpus/scripts/generate_chain_corpus.py  (678 LOC, class=py-src, soft=500, hard=800)
+
+L    99-120    (   22) | def load_anchors() -> dict[str, list[dict]]:
+L   121-125    (    5) | def chain_rng(chain_id: str) -> random.Random:
+L   126-129    (    4) | def pick(rng: random.Random, anchors: list[dict]) -> dict:
+L   130-135    (    6) | def chain_date(rng: random.Random, offset_days: int) -> str:
+L   136-175    (   40) | def synth_doc(
+L   176-185    (   10) | def anchor_topic(anchor: dict) -> str:
+L   186-193    (    8) | def anchor_person(anchor: dict) -> str | None:
+L   194-204    (   11) | def anchor_project(anchor: dict, fallback: str = "general") -> str:
+L   205-267    (   63) | def chain_email_note_todo(chain_id: str, rng: random.Random, anchors: dict) -> d
+L   268-331    (   64) | def chain_article_note_email(chain_id: str, rng: random.Random, anchors: dict) -
+L   332-391    (   60) | def chain_meeting_todo_note(chain_id: str, rng: random.Random, anchors: dict) ->
+L   392-432    (   41) | def chain_email_meeting_todo(chain_id: str, rng: random.Random, anchors: dict) -
+L   433-487    (   55) | def chain_article_note_todo(chain_id: str, rng: random.Random, anchors: dict) ->
+L   488-542    (   55) | def chain_todo_note_email(chain_id: str, rng: random.Random, anchors: dict) -> d
+L   543-617    (   75) | def chain_paper_note_todo(chain_id: str, rng: random.Random, anchors: dict) -> d
+L   618-678    (   61) | def main() -> int:

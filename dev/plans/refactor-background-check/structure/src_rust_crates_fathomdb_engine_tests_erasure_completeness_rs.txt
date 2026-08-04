@@ -1,0 +1,32 @@
+# src/rust/crates/fathomdb-engine/tests/erasure_completeness.rs  (743 LOC, class=rust-test, soft=600, hard=1200)
+
+L    24-28     (    5) | fn db_path(dir: &TempDir, name: &str) -> PathBuf {
+L    29-35     (    7) | fn wal_path(path: &Path) -> PathBuf {
+L    36-44     (    9) | fn file_contains_bytes(path: &Path, needle: &str) -> bool {
+L    45-60     (   16) | fn write_node(engine: &Engine, body: &str, source_id: &str, logical_id: Option<&
+L    61-71     (   11) | fn register_collection(engine: &Engine, name: &str, kind: &str) {
+L    72-93     (   22) | fn append_op_record(engine: &Engine, collection: &str, record_key: &str, body: &
+L    94-94     (    1) | #[test]
+L    95-139    (   45) | fn erasure_wal_bytes_absent() {
+L   140-140    (    1) | #[test]
+L   141-177    (   37) | fn erasure_busy_yields_incomplete_not_success() {
+L   178-221    (   44) | fn telemetry_fixture(name: &str) -> (TempDir, String) {
+L   222-222    (    1) | #[test]
+L   223-239    (   17) | fn purged_id_absent_from_sink() {
+L   240-240    (    1) | #[test]
+L   241-276    (   36) | fn unrelated_sink_records_survive() {
+L   277-277    (    1) | #[test]
+L   278-381    (  104) | fn telemetry_redaction_retry_completes_after_failure() {
+L   382-382    (    1) | #[test]
+L   383-439    (   57) | fn op_store_record_erasable_by_key() {
+L   440-440    (    1) | #[test]
+L   441-472    (   32) | fn erasure_audit_survives_retention_sweep() {
+L   473-483    (   11) | fn count_audit_rows(engine: &Engine) -> u64 {
+L   484-503    (   20) | fn raw_collection_row_count(path: &Path, collection: &str) -> u64 {
+L   504-579    (   76) | fn pending_redaction_fixture(
+L   580-580    (    1) | #[test]
+L   581-657    (   77) | fn erasure_bookkeeping_collections_are_not_excisable() {
+L   658-658    (    1) | #[test]
+L   659-717    (   59) | fn rotated_telemetry_sink_is_not_treated_as_redacted() {
+L   718-718    (    1) | #[test]
+L   719-743    (   25) | fn erasure_wal_retry_is_bounded() {

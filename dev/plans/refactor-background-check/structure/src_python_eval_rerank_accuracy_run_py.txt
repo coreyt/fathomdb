@@ -1,0 +1,7 @@
+# src/python/eval/rerank_accuracy_run.py  (614 LOC, class=py-eval, soft=500, hard=1000)
+
+L   120-144    (   25) | def load_reused_cells(
+L   145-163    (   19) | def per_arm_accuracy(
+L   164-233    (   70) | def accuracy_margin_summary(
+L   234-487    (  254) | def run_rerank_accuracy(
+L   488-614    (  127) | def main(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - CLI

@@ -1,0 +1,28 @@
+# dev/plans/runs/0.8.4-gating-rerun.py  (645 LOC, class=py-src, soft=500, hard=800)
+
+L   118-157    (   40) | def model_family(model: str) -> str:
+L   158-165    (    8) | def _meter(model: str, usage: dict) -> None:
+L   166-173    (    8) | def _meter_grag(prompt_tokens: int, completion_tokens: int, model: str) -> float
+L   174-178    (    5) | def _total_spent() -> float:
+L   179-200    (   22) | def grag_index_usd(grag_root: str, model: str) -> float:
+L   201-213    (   13) | def _make_query_root(grag_root: str) -> str:
+L   214-230    (   17) | def _parse_query_log_usage(qroot: str) -> tuple[int, int]:
+L   231-274    (   44) | def _chat(model: str, prompt: str, max_tokens: int, *, temp: float = 0.0, retrie
+L   275-282    (    8) | def _guard(max_usd: float) -> None:
+L   283-288    (    6) | def reader_fn(prompt: str, max_tokens: int) -> str:
+L   289-300    (   12) | def _load_ckpt() -> dict:
+L   301-309    (    9) | def _save_ckpt() -> None:
+L   310-326    (   17) | def load_corpus():
+L   327-341    (   15) | def open_embedder():
+L   342-362    (   21) | def build_d2(docs, max_usd: float) -> CoverageIndex:
+L   363-370    (    8) | def d2_answer(question: str, index: CoverageIndex, embed) -> str:
+L   371-396    (   26) | def graphrag_global(question: str) -> str:
+L   397-449    (   53) | def gen_answers(docs, questions, index, max_usd: float) -> None:
+L   450-454    (    5) | class ClaudeJudge:
+L   455-459    (    5) | def _persist_judgments(judgments: dict) -> None:
+L   460-467    (    8) | def _load_judgments() -> dict:
+L   468-518    (   51) | def _judge_pair_concurrent(judge_obj, ans, questions, pair, n_runs, metrics, jud
+L   519-528    (   10) | def _degenerate_guard(questions) -> None:
+L   529-558    (   30) | def judge(questions, max_usd: float) -> dict:
+L   559-582    (   24) | def write_result(results) -> None:
+L   583-645    (   63) | def main() -> None:

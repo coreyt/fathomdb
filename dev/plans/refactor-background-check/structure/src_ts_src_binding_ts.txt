@@ -1,0 +1,45 @@
+# src/ts/src/binding.ts  (518 LOC, class=ts-src, soft=500, hard=1000)
+
+L    16-16     (    1) | const require = createRequire(import.meta.url);
+L    17-22     (    6) | const here = dirname(fileURLToPath(import.meta.url));
+L    23-30     (    8) | const SEARCH_ROOTS = [
+L    31-41     (   11) | function hostIsMusl(): boolean {
+L    42-51     (   10) | function loadLocal(triple: string): unknown | null {
+L    52-61     (   10) | function loadNative(): unknown {
+L    62-68     (    7) | interface NativeWriteReceipt {
+L    69-76     (    8) | interface NativeEraseReport {
+L    77-86     (   10) | export interface NativeProjectionSpec {
+L    87-93     (    7) | export interface NativeProjectionDelta {
+L    94-98     (    5) | interface NativeSoftFallback {
+L    99-103    (    5) | interface NativeIdSpace {
+L   104-121    (   18) | interface NativeSearchHit {
+L   122-136    (   15) | interface NativeQueryTrace {
+L   137-152    (   16) | export interface NativePerHitExplain {
+L   153-157    (    5) | interface NativeExplanation {
+L   158-165    (    8) | interface NativeSearchResult {
+L   166-172    (    7) | interface NativeSearchFilter {
+L   173-178    (    6) | interface NativeMigrationStepReport {
+L   179-185    (    7) | interface NativeEmbedderIdentity {
+L   186-193    (    8) | export interface NativeNodeRecord {
+L   194-224    (   31) | export interface NativeReadView {
+L   225-230    (    6) | export interface NativeBoundaryCrossing {
+L   231-240    (   10) | export interface NativeOpStoreRow {
+L   241-251    (   11) | export interface NativeReadCollectionOptions {
+L   252-263    (   12) | export interface NativeEmbedderEvent {
+L   264-279    (   16) | interface NativeOpenReport {
+L   280-288    (    9) | interface NativeCounterSnapshot {
+L   289-292    (    4) | interface NativeAttachSubscriberOptions {
+L   293-302    (   10) | interface NativeEngineConfig {
+L   303-307    (    5) | export interface NativeExpandedNode {
+L   308-314    (    7) | export interface NativeSearchExpandResult {
+L   315-321    (    7) | export interface NativeIngestWithExtractorReceipt {
+L   322-327    (    6) | export interface NativeExtractDocument {
+L   328-336    (    9) | export interface NativeConsolidateReceipt {
+L   337-341    (    5) | export interface NativeConsolidateAxis {
+L   342-346    (    5) | interface NativeEngineOpenOptions {
+L   347-351    (    5) | interface NativeAdminConfigureOptions {
+L   352-423    (   72) | export interface NativeEngine {
+L   424-498    (   75) | export interface NativeModule {
+L   499-510    (   12) | export interface NativePredicateInput {
+L   511-517    (    7) | export interface NativeFilterTermInput {
+L   518-518    (    1) | export const native = loadNative() as NativeModule;

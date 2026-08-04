@@ -1,0 +1,23 @@
+# src/python/eval/fracc_voi_run.py  (918 LOC, class=py-eval, soft=800, hard=1200)
+
+L   107-139    (   33) | def assert_ce_active() -> dict[str, Any]:
+L   140-150    (   11) | def boot_ci(vals: Sequence[float], *, seed: int = BOOT_SEED, n: int = BOOT_RESAM
+L   151-164    (   14) | def boot_paired_diff(a: Sequence[float], b: Sequence[float], *, seed: int = BOOT
+L   165-192    (   28) | def auc(scores: Sequence[float], labels: Sequence[int]) -> Optional[float]:
+L   193-204    (   12) | def reblend(pool: list[dict[str, Any]], *, alpha: float, pool_n: int = 50) -> li
+L   205-239    (   35) | def load_stage_a() -> list[dict[str, Any]]:
+L   240-252    (   13) | def _fit_tfidf(train_texts: list[str]) -> tuple[dict[str, int], np.ndarray]:
+L   253-263    (   11) | def _vec(texts: list[str], vocab: dict[str, int], idf: np.ndarray) -> np.ndarray
+L   264-275    (   12) | def _centroids(xtr: np.ndarray, labels: list[str]) -> np.ndarray:
+L   276-350    (   75) | def route_margins(stage_a: list[dict[str, Any]], *, seed: int = 0, k_folds: int 
+L   351-364    (   14) | def misroute_cost(true_intent: str, predicted: str) -> float:
+L   365-373    (    9) | def _rel_prompt(question: str, passage: str) -> str:
+L   374-377    (    4) | def _est_tokens(text: str) -> int:
+L   378-498    (  121) | def run_value_of_signal(
+L   499-505    (    7) | def _bin(x: float, edges: Sequence[float]) -> int:
+L   506-571    (   66) | def voi_grid(
+L   572-588    (   17) | def _ce_breakeven_by_margin(grid: list[dict[str, Any]], crt: float) -> dict[str,
+L   589-654    (   66) | def asymmetric_weighting(feats: list[dict[str, Any]], *, p_catch: float,
+L   655-670    (   16) | def build_features(stage_a: list[dict[str, Any]], margins: dict[str, dict[str, A
+L   671-812    (  142) | def main(argv: Optional[list[str]] = None) -> int:
+L   813-918    (  106) | def write_md(out: dict[str, Any], path: Path) -> None:

@@ -1,0 +1,8 @@
+# scripts/release/cargo-publish-if-new.sh  (241 LOC, class=shell, soft=200, hard=500)
+
+L    44-84     (   41) | usage() {
+L    85-98     (   14) | read_workspace_version() {
+L    99-113    (   15) | read_crate_version() {
+L   114-139    (   26) | resolve_local_version() {
+L   140-181    (   42) | registry_has_version() {
+L   182-241    (   60) | is_dependent_crate() {

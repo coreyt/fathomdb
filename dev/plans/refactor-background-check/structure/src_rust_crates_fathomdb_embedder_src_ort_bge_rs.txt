@@ -1,0 +1,22 @@
+# src/rust/crates/fathomdb-embedder/src/ort_bge.rs  (917 LOC, class=rust-src, soft=500, hard=1000)
+
+L    63-73     (   11) | pub enum OrtPooling {
+L    74-81     (    8) | pub(crate) enum OrtProvider {
+L    82-105    (   24) | impl OrtProvider {
+L   106-125    (   20) | pub(crate) fn map_device_request(req: &DeviceRequest) -> (OrtProvider, Option<St
+L   126-150    (   25) | fn map_extended_provider(raw: &str) -> (OrtProvider, Option<String>) {
+L   151-157    (    7) | fn emit_onnx_warning(msg: &str) {
+L   158-177    (   20) | fn resolve_provider_from_env() -> OrtProvider {
+L   178-200    (   23) | fn resolve_effective_provider_with(
+L   201-209    (    9) | fn resolve_effective_provider(requested: OrtProvider) -> (OrtProvider, Option<St
+L   210-236    (   27) | fn provider_is_available(provider: OrtProvider) -> bool {
+L   237-265    (   29) | fn provider_dispatch(provider: OrtProvider) -> ExecutionProviderDispatch {
+L   266-295    (   30) | fn build_session_with_fallback<S, E, F>(
+L   296-325    (   30) | fn sha256_file(path: &Path) -> Result<[u8; 32], EmbedderError> {
+L   326-343    (   18) | fn compose_asset_revision(model_digest: &[u8; 32], tokenizer_digest: &[u8; 32]) 
+L   344-358    (   15) | fn derive_asset_revision(
+L   359-371    (   13) | pub struct OrtBgeEmbedder {
+L   372-375    (    4) | fn err(context: &str, e: impl std::fmt::Display) -> EmbedderError {
+L   376-478    (  103) | impl OrtBgeEmbedder {
+L   479-551    (   73) | impl Embedder for OrtBgeEmbedder {
+L   552-917    (  366) | mod tests {

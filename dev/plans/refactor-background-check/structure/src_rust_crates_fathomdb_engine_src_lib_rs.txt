@@ -1,0 +1,344 @@
+# src/rust/crates/fathomdb-engine/src/lib.rs  (17910 LOC, class=rust-src, soft=1000, hard=2000)
+
+L     1-1      (    1) | pub mod lifecycle;
+L     2-223    (  222) | mod pcache2;
+L   224-273    (   50) | fn is_erasure_bookkeeping_collection(collection: &str) -> bool {
+L   274-346    (   73) | pub struct Engine {
+L   347-355    (    9) | struct TelemetrySink {
+L   356-362    (    7) | struct ProjectionJob {
+L   363-371    (    9) | struct ProjectionRuntimeState {
+L   372-508    (  137) | struct ProjectionRuntimeShared {
+L   509-518    (   10) | impl std::fmt::Debug for ProjectionRuntimeShared {
+L   519-524    (    6) | struct ProjectionRuntime {
+L   525-543    (   19) | impl std::fmt::Debug for Engine {
+L   544-557    (   14) | struct ProfileContext {
+L   558-565    (    8) | struct ReaderWorkerPool {
+L   566-578    (   13) | impl std::fmt::Debug for ReaderWorkerPool {
+L   579-776    (  198) | enum ReaderRequest {
+L   777-781    (    5) | enum SearchReaderError {
+L   782-793    (   12) | impl From<rusqlite::Error> for SearchReaderError {
+L   794-806    (   13) | pub struct CacheStatusReply {
+L   807-953    (  147) | impl ReaderWorkerPool {
+L   954-959    (    6) | impl Drop for ReaderWorkerPool {
+L   960-1097   (  138) | fn reader_worker_loop(
+L  1098-1134   (   37) | mod reader_search_hook {
+L  1135-1140   (    6) | pub fn arm_reader_search_hook_for_test(hook: Box<dyn Fn() + Send>) {
+L  1141-1144   (    4) | pub fn clear_reader_search_hook_for_test() {
+L  1145-1292   (  148) | impl ProjectionRuntime {
+L  1293-1347   (   55) | pub struct OpenReport {
+L  1348-1355   (    8) | pub struct OpenedEngine {
+L  1356-1361   (    6) | struct LoaderInfo {
+L  1362-1385   (   24) | pub struct WriteReceipt {
+L  1386-1399   (   14) | pub struct SoftFallback {
+L  1400-1457   (   58) | pub enum SoftFallbackBranch {
+L  1458-1466   (    9) | pub enum IdSpaceKind {
+L  1467-1503   (   37) | impl IdSpaceKind {
+L  1504-1510   (    7) | pub struct IdSpace {
+L  1511-1549   (   39) | impl IdSpace {
+L  1550-1558   (    9) | impl std::fmt::Display for IdSpace {
+L  1559-1599   (   41) | pub struct SearchHit {
+L  1600-1610   (   11) | pub struct GraphFrontierStats {
+L  1611-1629   (   19) | impl GraphFrontierStats {
+L  1630-1658   (   29) | pub struct NodeRecord {
+L  1659-1693   (   35) | pub struct ReadView {
+L  1694-1784   (   91) | impl ReadView {
+L  1785-1809   (   25) | pub struct BoundaryCrossing {
+L  1810-1825   (   16) | struct FrozenView {
+L  1826-1868   (   43) | impl FrozenView {
+L  1869-1875   (    7) | pub fn clock_reads_for_test() -> u64 {
+L  1876-1909   (   34) | fn current_epoch_seconds() -> i64 {
+L  1910-1975   (   66) | fn edge_validity_sql(alias: &str, now_idx: usize) -> String {
+L  1976-2006   (   31) | fn iso8601_to_epoch_seconds(connection: &Connection, raw: &str) -> Option<i64> {
+L  2007-2101   (   95) | fn is_iso8601_shape(s: &str) -> bool {
+L  2102-2151   (   50) | fn epoch_seconds_to_iso8601(connection: &Connection, epoch: i64) -> Option<Strin
+L  2152-2176   (   25) | fn reject_unrenderable_edge_epoch(field: &str, value: Option<i64>) -> Result<(),
+L  2177-2217   (   41) | fn json_type_name(value: &Value) -> &'static str {
+L  2218-2253   (   36) | fn normalize_extractor_timestamp(
+L  2254-2271   (   18) | pub struct OpStoreRow {
+L  2272-2296   (   25) | pub struct SearchResult {
+L  2297-2308   (   12) | pub struct Explanation {
+L  2309-2337   (   29) | pub struct QueryTrace {
+L  2338-2380   (   43) | pub struct PerHitExplain {
+L  2381-2391   (   11) | pub enum ScalarValue {
+L  2392-2421   (   30) | pub enum ComparisonOp {
+L  2422-2428   (    7) | pub enum Predicate {
+L  2429-2547   (  119) | impl Predicate {
+L  2548-2557   (   10) | pub enum TraversalDirection {
+L  2558-2593   (   36) | pub struct SearchExpandResult {
+L  2594-2608   (   15) | pub struct SearchFilter {
+L  2609-2640   (   32) | impl SearchFilter {
+L  2641-2672   (   32) | pub enum FilterTerm {
+L  2673-2677   (    5) | pub struct Filter {
+L  2678-2700   (   23) | impl From<&SearchFilter> for Filter {
+L  2701-2803   (  103) | impl Filter {
+L  2804-2813   (   10) | pub struct ExtractDocument {
+L  2814-2830   (   17) | pub struct IngestWithExtractorReceipt {
+L  2831-2842   (   12) | pub struct ConsolidateAxis {
+L  2843-2869   (   27) | pub struct ConsolidateCandidateEdge {
+L  2870-2923   (   54) | pub struct ConsolidateReceipt {
+L  2924-2925   (    2) | pub struct SourceId(String);
+L  2926-2975   (   50) | impl SourceId {
+L  2976-2981   (    6) | impl AsRef<str> for SourceId {
+L  2982-2987   (    6) | impl Display for SourceId {
+L  2988-2995   (    8) | impl TryFrom<String> for SourceId {
+L  2996-3010   (   15) | impl TryFrom<&str> for SourceId {
+L  3011-3135   (  125) | pub enum PreparedWrite {
+L  3136-3141   (    6) | pub enum RowKind {
+L  3142-3168   (   27) | impl RowKind {
+L  3169-3175   (    7) | pub enum LifecycleState {
+L  3176-3234   (   59) | impl LifecycleState {
+L  3235-3253   (   19) | fn is_legal_transition_move(from: LifecycleState, to: LifecycleState) -> bool {
+L  3254-3261   (    8) | pub enum InitialState {
+L  3262-3305   (   44) | impl InitialState {
+L  3306-3311   (    6) | pub struct Bm25fFieldWeights {
+L  3312-3333   (   22) | impl Default for Bm25fFieldWeights {
+L  3334-3339   (    6) | pub struct Bm25fQueryPlan {
+L  3340-3351   (   12) | impl Default for Bm25fQueryPlan {
+L  3352-3368   (   17) | pub struct CounterSnapshot {
+L  3369-3381   (   13) | pub struct CorruptionDetail {
+L  3382-3394   (   13) | pub enum CorruptionKind {
+L  3395-3407   (   13) | pub enum OpenStage {
+L  3408-3422   (   15) | pub enum CorruptionLocator {
+L  3423-3428   (    6) | pub struct RecoveryHint {
+L  3429-3460   (   32) | pub enum EngineOpenError {
+L  3461-3479   (   19) | pub enum EmbedderChoice {
+L  3480-3525   (   46) | impl Display for EngineOpenError {
+L  3526-3528   (    3) | impl Error for EngineOpenError {}
+L  3529-3640   (  112) | pub enum EngineError {
+L  3641-3696   (   56) | impl Display for EngineError {
+L  3697-3729   (   33) | impl EngineError {
+L  3730-3736   (    7) | impl Error for EngineError {}
+L  3737-3746   (   10) | pub struct CheckIntegrityOpts {
+L  3747-3755   (    9) | pub enum Section {
+L  3756-3766   (   11) | pub struct Finding {
+L  3767-3777   (   11) | pub struct IntegrityReport {
+L  3778-3787   (   10) | pub struct SafeExportArtifact {
+L  3788-3795   (    8) | pub struct TraceReport {
+L  3796-3806   (   11) | pub struct TraceEvent {
+L  3807-3818   (   12) | pub enum RebuildKind {
+L  3819-3829   (   11) | pub struct RebuildReport {
+L  3830-3842   (   13) | pub struct ExciseReport {
+L  3843-3855   (   13) | pub enum ProjectionRole {
+L  3856-3878   (   23) | impl ProjectionRole {
+L  3879-3895   (   17) | pub struct ProjectionFts {
+L  3896-3907   (   12) | pub struct ProjectionVector {
+L  3908-3919   (   12) | pub struct ProjectionSpec {
+L  3920-3946   (   27) | pub struct ProjectionDelta {
+L  3947-3957   (   11) | pub struct ExciseRecordReport {
+L  3958-3968   (   11) | pub enum VerifyEmbedderStatus {
+L  3969-3978   (   10) | pub struct VerifyEmbedderReport {
+L  3979-3988   (   10) | pub struct SchemaObject {
+L  3989-3996   (    8) | pub struct DumpSchemaReport {
+L  3997-4005   (    9) | pub struct TableRowCount {
+L  4006-4013   (    8) | pub struct DumpRowCountsReport {
+L  4014-4045   (   32) | pub struct OrphanProvenanceSource {
+L  4046-4060   (   15) | pub struct OrphanProvenanceReport {
+L  4061-4074   (   14) | pub struct DumpProfileReport {
+L  4075-4087   (   13) | pub struct MeanRecomputeReport {
+L  4088-4096   (    9) | pub enum TruncateWalStatus {
+L  4097-4103   (    7) | pub struct TruncateWalReport {
+L  4104-4109   (    6) | impl Drop for Engine {
+L  4110-9117   ( 5008) | impl Engine {
+L  9118-9149   (   32) | fn batch_is_admin(batch: &[PreparedWrite]) -> bool {
+L  9150-9154   (    5) | struct MeanAccumulator {
+L  9155-9183   (   29) | impl MeanAccumulator {
+L  9184-9208   (   25) | fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
+L  9209-9306   (   98) | fn run_pin_and_requantize_pass(
+L  9307-9326   (   20) | fn run_requantize_pass(rows: &[(i64, Vec<u8>)], mean: &[f32]) -> (u64, Vec<Embed
+L  9327-9400   (   74) | pub mod mean_centering_internals_for_test {
+L  9401-9411   (   11) | fn branch_str(branch: SoftFallbackBranch) -> &'static str {
+L  9412-9439   (   28) | fn append_jsonl(path: &Path, value: &serde_json::Value) -> std::io::Result<()> {
+L  9440-9483   (   44) | fn redact_jsonl_stable_ids(
+L  9484-9507   (   24) | fn redact_jsonl_bytes(bytes: &[u8], erased: &std::collections::HashSet<&str>) ->
+L  9508-9530   (   23) | fn redact_jsonl_line(line: &[u8], erased: &std::collections::HashSet<&str>) -> O
+L  9531-9553   (   23) | pub fn fuse_rrf(vector_hits: Vec<SearchHit>, text_hits: Vec<SearchHit>) -> Vec<S
+L  9554-9610   (   57) | pub fn fuse_three_arms(
+L  9611-9649   (   39) | pub fn apply_recency_reweight(hits: Vec<SearchHit>, enabled: bool) -> Vec<Search
+L  9650-9687   (   38) | pub fn apply_importance_reweight(
+L  9688-9738   (   51) | fn build_importance_confidence_maps(
+L  9739-9794   (   56) | pub fn rerank_fused(
+L  9795-9850   (   56) | pub fn rerank_passages(
+L  9851-9944   (   94) | fn ce_rerank(
+L  9945-9952   (    8) | struct CandleCrossEncoder {
+L  9953-9959   (    7) | fn reranker_singleton() -> Option<&'static fathomdb_embedder::CandleTinyBertRera
+L  9960-10021  (   62) | impl CandleCrossEncoder {
+L 10022-10051  (   30) | fn validate_filter_attributes_on_snapshot(
+L 10052-10089  (   38) | fn vector_filter_clause(filter: Option<&SearchFilter>) -> String {
+L 10090-10126  (   37) | fn vector_filter_values(filter: Option<&SearchFilter>) -> Vec<rusqlite::types::V
+L 10127-10150  (   24) | fn build_vector_phase1_sql(filter: Option<&SearchFilter>, final_limit: usize) ->
+L 10151-10161  (   11) | pub fn vector_phase1_sql_for_test(filter: Option<&SearchFilter>) -> String {
+L 10162-10260  (   99) | fn text_hit_passes_filter(
+L 10261-10310  (   50) | fn hit_attributes_pass_filter(
+L 10311-10376  (   66) | fn edge_fts_hit_passes_filter(
+L 10377-11124  (  748) | fn read_search_in_tx(
+L 11125-11462  (  338) | fn bfs_graph_arm_candidates(
+L 11463-11535  (   73) | fn read_get_by_id_in_tx(
+L 11536-11586  (   51) | fn read_collection_in_tx(
+L 11587-11696  (  110) | fn read_list_in_tx(
+L 11697-11765  (   69) | fn build_bfs_sql(direction: TraversalDirection, view: &ReadView) -> String {
+L 11766-11814  (   49) | fn build_bfs_with_depth_sql() -> String {
+L 11815-11859  (   45) | fn crossed_boundary_since_in_tx(
+L 11860-11903  (   44) | fn graph_neighbors_in_tx(
+L 11904-12040  (  137) | fn search_expand_in_tx(
+L 12041-12070  (   30) | fn explain_graph_neighbors_in_tx(
+L 12071-12139  (   69) | fn projection_dispatcher_loop(shared: Arc<ProjectionRuntimeShared>) {
+L 12140-12207  (   68) | fn projection_worker_loop(shared: Arc<ProjectionRuntimeShared>) {
+L 12208-12225  (   18) | enum ProjectionOutcome {
+L 12226-12250  (   25) | fn run_projection_jobs(
+L 12251-12257  (    7) | fn projection_batch_enabled() -> bool {
+L 12258-12332  (   75) | fn embed_projection_batch(
+L 12333-12370  (   38) | fn commit_projection_panic_failures(
+L 12371-12411  (   41) | fn embed_with_watchdog(
+L 12412-12440  (   29) | fn embed_batch_with_watchdog(
+L 12441-12555  (  115) | fn run_projection_job(shared: &ProjectionRuntimeShared, job: &ProjectionJob) -> 
+L 12556-12618  (   63) | fn next_pending_projection_jobs(
+L 12619-12677  (   59) | fn database_has_pending_projection_work(path: &Path) -> rusqlite::Result<bool> {
+L 12678-12706  (   29) | struct CanonicalNodeRow {
+L 12707-12762  (   56) | fn reproject_search_index_after_tokenizer_upgrade(connection: &Connection) -> ru
+L 12763-12790  (   28) | fn search_index_tokenizer_reproject_complete(connection: &Connection) -> rusqlit
+L 12791-12824  (   34) | fn edge_vector_prune_complete(connection: &Connection) -> rusqlite::Result<bool>
+L 12825-12869  (   45) | fn prune_orphaned_edge_vectors(connection: &Connection) -> rusqlite::Result<()> 
+L 12870-12898  (   29) | fn canonical_node_rows(connection: &Connection) -> rusqlite::Result<Vec<Canonica
+L 12899-12907  (    9) | fn row_kind_from_column(value: &str) -> RowKind {
+L 12908-12917  (   10) | fn hex_encode(bytes: &[u8]) -> String {
+L 12918-12926  (    9) | fn hex_nibble(value: u8) -> char {
+L 12927-12957  (   31) | fn physical_section(connection: &Connection, full: bool) -> Section {
+L 12958-12994  (   37) | fn logical_section(connection: &Connection) -> Section {
+L 12995-13015  (   21) | fn semantic_section(connection: &Connection) -> Section {
+L 13016-13038  (   23) | fn collect_integrity_check_findings(connection: &Connection) -> rusqlite::Result
+L 13039-13043  (    5) | fn locator_from_rusqlite_error(err: &rusqlite::Error) -> CorruptionLocator {
+L 13044-13054  (   11) | fn open_runtime_connection(path: &Path) -> rusqlite::Result<Connection> {
+L 13055-13068  (   14) | fn load_projection_cursor(connection: &Connection) -> rusqlite::Result<u64> {
+L 13069-13077  (    9) | fn store_projection_cursor(connection: &Connection, cursor: u64) -> rusqlite::Re
+L 13078-13089  (   12) | fn record_projection_terminal(
+L 13090-13106  (   17) | fn terminal_state_for_cursor(
+L 13107-13120  (   14) | fn advance_projection_cursor(connection: &Connection) -> rusqlite::Result<u64> {
+L 13121-13336  (  216) | fn commit_projection_outcomes(
+L 13337-13359  (   23) | fn recover_mean_vec_pin(
+L 13360-13370  (   11) | fn recompute_mean_in_tx(
+L 13371-13454  (   84) | fn recompute_mean_in_tx_inner(
+L 13455-13504  (   50) | fn enforce_provenance_retention(connection: &Connection, cap: u64) -> rusqlite::
+L 13505-13542  (   38) | fn collect_erased_stable_ids(
+L 13543-13571  (   29) | fn enqueue_pending_redaction(
+L 13572-13579  (    8) | fn digest_record_identity(collection: &str, record_key: &str) -> String {
+L 13580-13614  (   35) | fn projection_status(
+L 13615-13629  (   15) | fn canonical_database_path(path: &Path) -> Result<PathBuf, EngineOpenError> {
+L 13630-13657  (   28) | fn acquire_lock(path: &Path) -> Result<File, EngineOpenError> {
+L 13658-13663  (    6) | fn lock_path(path: &Path) -> PathBuf {
+L 13664-13667  (    4) | fn read_holder_pid(path: &Path) -> Option<u32> {
+L 13668-13698  (   31) | fn map_migration_error(err: SchemaMigrationError) -> EngineOpenError {
+L 13699-13777  (   79) | fn init_perf_experiments_runtime() {
+L 13778-13789  (   12) | fn register_sqlite_vec_extension() {
+L 13790-13800  (   11) | fn probe_open_integrity(connection: &Connection) -> Result<(), EngineOpenError> 
+L 13801-13813  (   13) | fn probe_database_header(connection: &Connection) -> Result<(), EngineOpenError>
+L 13814-13861  (   48) | fn probe_wal_sidecar(db_path: &Path) -> Result<(), EngineOpenError> {
+L 13862-13874  (   13) | fn reject_legacy_shape(connection: &Connection) -> Result<(), EngineOpenError> {
+L 13875-13885  (   11) | fn table_exists(connection: &Connection, table: &str) -> bool {
+L 13886-13909  (   24) | fn read_schema_objects(
+L 13910-13920  (   11) | fn order_canonical_first(mut objects: Vec<SchemaObject>) -> Vec<SchemaObject> {
+L 13921-13934  (   14) | fn load_default_profile(connection: &Connection) -> rusqlite::Result<EmbedderIde
+L 13935-13940  (    6) | fn default_profile_dimension(connection: &Connection) -> Result<u32, EngineError
+L 13941-13950  (   10) | fn kind_is_vector_indexed(connection: &Connection, kind: &str) -> Result<bool, E
+L 13951-13999  (   49) | fn ensure_vector_partition(connection: &mut Connection, dimension: u32) -> rusql
+L 14000-14021  (   22) | fn vector_partition_create_sql(
+L 14022-14035  (   14) | fn create_vector_partition(connection: &Connection, dimension: u32) -> rusqlite:
+L 14036-14047  (   12) | fn attr_vec0_column(name: &str) -> String {
+L 14048-14068  (   21) | fn decode_attr_vec0_column(col: &str) -> Option<String> {
+L 14069-14083  (   15) | fn desired_vector_attr_columns(conn: &Connection) -> rusqlite::Result<Vec<String
+L 14084-14133  (   50) | fn actual_vector_attr_columns(conn: &Connection) -> rusqlite::Result<Vec<String>
+L 14134-14178  (   45) | fn reconcile_vector_attr_columns(conn: &Connection, dimension: u32) -> rusqlite:
+L 14179-14280  (  102) | fn reshape_vector_partition_nondestructive(
+L 14281-14348  (   68) | fn migrate_vector_partition_pack1_to_pack2(
+L 14349-14391  (   43) | fn migrate_vector_partition_to_pack1(
+L 14392-14395  (    4) | fn encode_vector_blob(vector: &[f32]) -> Vec<u8> {
+L 14396-14403  (    8) | fn decode_vector_blob(bytes: &[u8]) -> Vec<f32> {
+L 14404-14413  (   10) | fn identity_requires_mean_centering(identity: &EmbedderIdentity) -> bool {
+L 14414-14443  (   30) | fn read_pinned_mean_vec(
+L 14444-14451  (    8) | fn subtract_mean(v: &[f32], mean: &[f32]) -> Vec<f32> {
+L 14452-14463  (   12) | fn vector_equivalence_probes() -> Vec<&'static str> {
+L 14464-14476  (   13) | struct VectorEquivalenceOutcome {
+L 14477-14518  (   42) | fn probe_embed(embedder: &dyn Embedder, text: &str, dimension: usize) -> Option<
+L 14519-14573  (   55) | fn run_vector_equivalence_probe(
+L 14574-14610  (   37) | fn probe_populate_or_check(
+L 14611-14667  (   57) | fn probe_populate_baseline(
+L 14668-14830  (  163) | fn probe_check_against_baseline(
+L 14831-14838  (    8) | fn l2_distance(a: &[f32], b: &[f32]) -> f32 {
+L 14839-14850  (   12) | fn quantize_binary_via_sql(connection: &Connection, vector: &[f32]) -> Option<Ve
+L 14851-14866  (   16) | fn hamming_bytes(a: &[u8], b: &[u8]) -> u64 {
+L 14867-14897  (   31) | fn resolve_source_type(kind: &str) -> Result<&'static str, EngineError> {
+L 14898-14930  (   33) | fn derive_logical_id(kind: &str, name: &str) -> Result<String, EngineError> {
+L 14931-14955  (   25) | fn derive_stable_id(logical_id: Option<&str>, body: &str) -> IdSpace {
+L 14956-14974  (   19) | fn dedup_prepared_by_logical_id(batch: Vec<PreparedWrite>) -> Vec<PreparedWrite>
+L 14975-14980  (    6) | enum ProviderTask {
+L 14981-15009  (   29) | impl ProviderTask {
+L 15010-15020  (   11) | struct ProviderSession {
+L 15021-15030  (   10) | impl Drop for ProviderSession {
+L 15031-15121  (   91) | impl ProviderSession {
+L 15122-15132  (   11) | fn extractor_io_timeout() -> Duration {
+L 15133-15142  (   10) | fn recv_extractor_line(
+L 15143-15150  (    8) | fn map_runtime_embedder_error(err: RuntimeEmbedderError) -> EngineError {
+L 15151-15158  (    8) | fn default_embedder_identity() -> EmbedderIdentity {
+L 15159-15299  (  141) | fn check_embedder_profile(
+L 15300-15307  (    8) | enum WritePlan {
+L 15308-15314  (    7) | fn validate_batch(
+L 15315-15329  (   15) | fn collect_projection_jobs(
+L 15330-15434  (  105) | fn validate_write(
+L 15435-15447  (   13) | fn collection_metadata(
+L 15448-15458  (   11) | fn validate_payload(schema_json: &str, body: &str) -> Result<(), EngineError> {
+L 15459-15465  (    7) | fn contains_external_ref(schema_json: &str) -> bool {
+L 15466-15480  (   15) | fn value_contains_external_ref(value: &Value) -> bool {
+L 15481-15498  (   18) | fn prior_edge_cursors_by_logical_id(
+L 15499-15510  (   12) | fn prior_node_cursors_by_logical_id(
+L 15511-15530  (   20) | fn prior_edge_cursors_by_triple(
+L 15531-15546  (   16) | struct IndexTargetSet {
+L 15547-15563  (   17) | enum ProjectionClass {
+L 15564-15647  (   84) | struct RowOwnedProjection {
+L 15648-15666  (   19) | fn erase_row_projections(tx: &Connection, write_cursor: i64) -> rusqlite::Result
+L 15667-15682  (   16) | fn purge_row_projections_for_cursor_in(
+L 15683-15699  (   17) | fn truncate_row_projections_in(
+L 15700-15718  (   19) | fn truncate_all_row_projections(tx: &Connection) -> rusqlite::Result<u64> {
+L 15719-15736  (   18) | enum ProjectionPass {
+L 15737-15769  (   33) | impl ProjectionPass {
+L 15770-15779  (   10) | struct StoredProjection {
+L 15780-15872  (   93) | impl StoredProjection {
+L 15873-15883  (   11) | fn is_valid_attribute_name(name: &str) -> bool {
+L 15884-15891  (    8) | fn attribute_json_path(name: &str) -> String {
+L 15892-15944  (   53) | fn load_projection_registry(
+L 15945-15948  (    4) | fn parse_roles_json(s: &str) -> BTreeSet<ProjectionRole> {
+L 15949-15953  (    5) | fn roles_to_storage(roles: &BTreeSet<ProjectionRole>) -> String {
+L 15954-15979  (   26) | fn persist_projection_row(
+L 15980-15987  (    8) | fn remove_projection_row(tx: &Connection, name: &str) -> rusqlite::Result<()> {
+L 15988-15998  (   11) | fn clear_attribute_projection(tx: &Connection, name: &str) -> rusqlite::Result<(
+L 15999-16078  (   80) | fn project_one_attribute(
+L 16079-16092  (   14) | fn encode_attr_vec0_present(value: &str) -> String {
+L 16093-16125  (   33) | fn extract_scalar_attribute(
+L 16126-16156  (   31) | fn vector_attr_insert_fragments(
+L 16157-16168  (   12) | fn project_node_attributes(tx: &Connection, cursor: i64, body: &str) -> rusqlite
+L 16169-16198  (   30) | fn backfill_attribute(
+L 16199-16220  (   22) | fn is_destructive_projection_change(
+L 16221-16250  (   30) | fn describe_projection_delta(existing: &StoredProjection, desired: &StoredProjec
+L 16251-16396  (  146) | fn apply_projection_config(
+L 16397-16434  (   38) | fn rederive_projections_on_boot(conn: &Connection) -> rusqlite::Result<()> {
+L 16435-16458  (   24) | fn index_targets_for_row_kind(row_kind: RowKind) -> IndexTargetSet {
+L 16459-16559  (  101) | fn project_canonical_node_row(
+L 16560-16625  (   66) | fn project_canonical_edge_row(
+L 16626-16644  (   19) | fn fts5_tokenize(connection: &Connection, text: &str) -> rusqlite::Result<Vec<St
+L 16645-16655  (   11) | fn bm25f_match_expression(terms: &[String]) -> String {
+L 16656-16696  (   41) | fn bm25f_score_doc(
+L 16697-16816  (  120) | fn bm25f_search_inner(
+L 16817-17137  (  321) | fn commit_batch(
+L 17138-17157  (   20) | fn load_next_cursor(connection: &Connection) -> u64 {
+L 17158-17169  (   12) | fn reserved_write_cursor(connection: &Connection) -> u64 {
+L 17170-17194  (   25) | fn max_cursor(connection: &Connection, table: &str) -> rusqlite::Result<u64> {
+L 17195-17223  (   29) | fn sqlite_extended_code_name(err: &rusqlite::Error) -> Option<&'static str> {
+L 17224-17250  (   27) | fn sqlite_extended_code_name_from_int(extended: i32) -> &'static str {
+L 17251-17287  (   37) | fn map_open_sqlite_error(err: rusqlite::Error, stage: OpenStage) -> EngineOpenEr
+L 17288-17320  (   33) | fn emit_open_error_event(subscriber: &Arc<dyn lifecycle::Subscriber>, err: &Engi
+L 17321-17358  (   38) | fn install_profile_callback(
+L 17359-17403  (   45) | fn uninstall_profile_callback(connection: &Connection) {
+L 17404-17440  (   37) | fn apply_perf_experiment_writer_pragmas(connection: &Connection) {
+L 17441-17475  (   35) | fn apply_perf_experiment_reader_pragmas(connection: &Connection) {
+L 17476-17504  (   29) | fn configure_reader_lookaside(connection: &Connection) -> std::os::raw::c_int {
+L 17505-17528  (   24) | fn read_lookaside_used_hiwtr(connection: &Connection) -> std::os::raw::c_int {
+L 17529-17620  (   92) | fn read_cache_status(
+L 17621-17910  (  290) | mod tests {

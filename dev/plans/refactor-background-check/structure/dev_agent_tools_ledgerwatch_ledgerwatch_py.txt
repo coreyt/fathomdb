@@ -1,0 +1,24 @@
+# dev/agent-tools/ledgerwatch/ledgerwatch.py  (878 LOC, class=py-src, soft=500, hard=800)
+
+L    81-84     (    4) | def sha1(data: bytes) -> str:
+L    85-89     (    5) | def read_bytes(path: str) -> bytes:
+L    90-93     (    4) | def read_text(path: str) -> str:
+L    94-101    (    8) | def write_text(path: str, text: str) -> None:
+L   102-121    (   20) | def choose_strategy(path: str, override: str | None) -> str:
+L   122-127    (    6) | def first_line_sig(data: bytes) -> str:
+L   128-136    (    9) | def is_json(line: str) -> bool:
+L   137-147    (   11) | def match_select(line: str, select: dict) -> bool:
+L   148-206    (   59) | def strat_tail(path: str, state: dict, select: dict):
+L   207-230    (   24) | def parse_sections(text: str):
+L   231-261    (   31) | def strat_section(path: str, state: dict):
+L   262-288    (   27) | def strat_diff(path: str, state: dict, shadow_path: str):
+L   289-306    (   18) | def render_text(strategy: str, payload: dict) -> str:
+L   307-315    (    9) | def load_state(state_path: str) -> dict:
+L   316-322    (    7) | def save_state(state_path: str, state: dict) -> None:
+L   323-332    (   10) | def parse_select(items):
+L   333-362    (   30) | def do_prune(state_dir: str, out, err) -> int:
+L   363-422    (   60) | def do_validate(path: str, as_json: bool, out, err) -> int:
+L   423-522    (  100) | def do_project(path: str, as_json: bool, out, err) -> int:
+L   523-545    (   23) | def ruling_key(obj: dict, lineno: int):
+L   546-695    (  150) | def do_project_rulings(path: str, as_json: bool, out, err) -> int:
+L   696-878    (  183) | def run(argv, out=sys.stdout, err=sys.stderr) -> int:

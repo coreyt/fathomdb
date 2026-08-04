@@ -1,0 +1,33 @@
+# src/rust/crates/fathomdb-engine/tests/slice10_node_validity.rs  (663 LOC, class=rust-test, soft=600, hard=1200)
+
+L    43-55     (   13) | fn node(kind: &str, body: &str, logical_id: &str) -> PreparedWrite {
+L    56-71     (   16) | fn edge(from: &str, to: &str, logical_id: &str) -> PreparedWrite {
+L    72-79     (    8) | fn db_path(dir: &TempDir, name: &str) -> PathBuf {
+L    80-90     (   11) | fn set_window(path: &Path, logical_id: &str, from: Option<i64>, until: Option<i6
+L    91-105    (   15) | fn window_of(path: &Path, logical_id: &str) -> (Option<i64>, Option<i64>) {
+L   106-109    (    4) | fn at(instant: i64) -> ReadView {
+L   110-122    (   13) | fn ids(rows: &[NodeRecord]) -> Vec<String> {
+L   123-123    (    1) | #[test]
+L   124-177    (   54) | fn r_20_nv_validity_window_matrix() {
+L   178-178    (    1) | #[test]
+L   179-235    (   57) | fn r_20_nv_validity_applies_to_every_read_verb() {
+L   236-236    (    1) | #[test]
+L   237-286    (   50) | fn r_20_nv_validity_applies_at_every_bfs_position_and_direction() {
+L   287-287    (    1) | #[test]
+L   288-336    (   49) | fn r_20_nv_include_out_of_window_relaxes_validity_only() {
+L   337-337    (    1) | #[test]
+L   338-377    (   40) | fn r_20_nv_valid_as_of_is_bound_so_results_are_deterministic() {
+L   378-378    (    1) | #[test]
+L   379-425    (   47) | fn r_20_nv_unbounded_rows_are_visible_in_the_default_view() {
+L   426-426    (    1) | #[test]
+L   427-488    (   62) | fn r_20_nv_crossed_boundary_since_reports_both_boundaries() {
+L   489-489    (    1) | #[test]
+L   490-521    (   32) | fn r_20_nv_crossed_boundary_interval_is_since_exclusive_as_of_inclusive() {
+L   522-522    (    1) | #[test]
+L   523-546    (   24) | fn r_20_nv_crossed_boundary_ignores_unbounded_rows() {
+L   547-547    (    1) | #[test]
+L   548-605    (   58) | fn r_20_nv_crossed_boundary_honours_existence_flags() {
+L   606-606    (    1) | #[test]
+L   607-624    (   18) | fn r_20_nv_read_view_has_no_transaction_time_selector() {
+L   625-625    (    1) | #[test]
+L   626-663    (   38) | fn r_20_nv_edge_temporal_filter_is_unchanged() {

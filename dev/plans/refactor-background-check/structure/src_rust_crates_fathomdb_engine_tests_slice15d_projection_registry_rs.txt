@@ -1,0 +1,62 @@
+# src/rust/crates/fathomdb-engine/tests/slice15d_projection_registry.rs  (1277 LOC, class=rust-test, soft=800, hard=1200)
+
+L    35-38     (    4) | fn db_path(dir: &TempDir, name: &str) -> PathBuf {
+L    39-44     (    6) | fn roles(rs: &[ProjectionRole]) -> BTreeSet<ProjectionRole> {
+L    45-55     (   11) | fn spec(name: &str, rs: &[ProjectionRole], fts: bool, vector: bool) -> Projectio
+L    56-70     (   15) | fn node(logical_id: &str, source: &str, body_json: &str) -> fathomdb_engine::Pre
+L    71-91     (   21) | fn node_state(
+L    92-102    (   11) | fn active_cursor(path: &Path, logical_id: &str) -> i64 {
+L   103-112    (   10) | fn ro(path: &Path) -> rusqlite::Connection {
+L   113-129    (   17) | fn eav_values(path: &Path, attr_name: &str) -> Vec<String> {
+L   130-145    (   16) | fn eav_filter(path: &Path, attr_name: &str, value: &str) -> Vec<i64> {
+L   146-159    (   14) | fn property_fts_match(path: &Path, attr_name: &str, query: &str) -> Vec<i64> {
+L   160-171    (   12) | fn property_fts_rowcount(path: &Path, attr_name: &str) -> i64 {
+L   172-184    (   13) | fn body_fts_counts(path: &Path) -> (i64, i64) {
+L   185-185    (    1) | #[test]
+L   186-200    (   15) | fn configure_and_read_projections_round_trip() {
+L   201-201    (    1) | #[test]
+L   202-219    (   18) | fn idempotent_reregistration_is_a_noop() {
+L   220-220    (    1) | #[test]
+L   221-279    (   59) | fn role_add_builds_and_explicit_drop_drops_exactly_one() {
+L   280-280    (    1) | #[test]
+L   281-330    (   50) | fn destructive_change_requires_explicit_drop() {
+L   331-331    (    1) | #[test]
+L   332-354    (   23) | fn rankable_is_graceful_deferred_never_blocking() {
+L   355-355    (    1) | #[test]
+L   356-389    (   34) | fn vector_subobject_is_stored_not_built() {
+L   390-390    (    1) | #[test]
+L   391-423    (   33) | fn property_filter_returns_correct_rows() {
+L   424-424    (    1) | #[test]
+L   425-450    (   26) | fn property_fts_search_returns_correct_rows() {
+L   451-451    (    1) | #[test]
+L   452-503    (   52) | fn body_fts_behaviour_is_unchanged_by_projection_config() {
+L   504-504    (    1) | #[test]
+L   505-558    (   54) | fn erase_source_reaches_attribute_projections() {
+L   559-559    (    1) | #[test]
+L   560-624    (   65) | fn scalar_json_attributes_project_number_bool_and_string() {
+L   625-625    (    1) | #[test]
+L   626-716    (   91) | fn supersession_purges_stale_attribute_projection_rows() {
+L   717-717    (    1) | #[test]
+L   718-800    (   83) | fn boot_rederive_converges_after_simulated_crash() {
+L   801-801    (    1) | #[test]
+L   802-868    (   67) | fn pending_node_is_not_projected_until_promoted() {
+L   869-869    (    1) | #[test]
+L   870-938    (   69) | fn active_delete_purges_and_undelete_reprojects() {
+L   939-939    (    1) | #[test]
+L   940-976    (   37) | fn pending_reject_projects_nothing() {
+L   977-977    (    1) | #[test]
+L   978-1033   (   56) | fn backslash_projection_name_is_rejected() {
+L  1034-1034   (    1) | #[test]
+L  1035-1076   (   42) | fn duplicate_projection_name_in_one_request_is_rejected() {
+L  1077-1077   (    1) | #[test]
+L  1078-1112   (   35) | fn duplicate_drop_entry_in_one_request_is_rejected() {
+L  1113-1113   (    1) | #[test]
+L  1114-1152   (   39) | fn name_in_both_specs_and_drop_is_the_supported_rebuild() {
+L  1153-1153   (    1) | #[test]
+L  1154-1167   (   14) | fn empty_request_is_a_noop() {
+L  1168-1168   (    1) | #[test]
+L  1169-1185   (   17) | fn dropping_an_absent_name_is_a_clean_noop() {
+L  1186-1186   (    1) | #[test]
+L  1187-1223   (   37) | fn idempotent_reregistration_holds_for_deferred_rankable() {
+L  1224-1224   (    1) | #[test]
+L  1225-1277   (   53) | fn deferred_only_mutation_is_reported_not_unchanged() {

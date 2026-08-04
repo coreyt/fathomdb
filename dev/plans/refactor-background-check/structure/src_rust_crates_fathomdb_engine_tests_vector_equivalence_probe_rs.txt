@@ -1,0 +1,73 @@
+# src/rust/crates/fathomdb-engine/tests/vector_equivalence_probe.rs  (1014 LOC, class=rust-test, soft=800, hard=1200)
+
+L    39-55     (   17) | fn reference_vector(text: &str) -> Vec<f32> {
+L    56-56     (    1) | struct RefEmbedder;
+L    57-69     (   13) | impl Embedder for RefEmbedder {
+L    70-70     (    1) | struct DivergentEmbedder;
+L    71-83     (   13) | impl Embedder for DivergentEmbedder {
+L    84-84     (    1) | struct NoiseEmbedder;
+L    85-102    (   18) | impl Embedder for NoiseEmbedder {
+L   103-103    (    1) | struct P2OnlyEmbedder;
+L   104-117    (   14) | impl Embedder for P2OnlyEmbedder {
+L   118-118    (    1) | struct PanicEmbedder;
+L   119-130    (   12) | impl Embedder for PanicEmbedder {
+L   131-131    (    1) | struct ErrorEmbedder;
+L   132-144    (   13) | impl Embedder for ErrorEmbedder {
+L   145-145    (    1) | struct BgeRefEmbedder;
+L   146-161    (   16) | impl Embedder for BgeRefEmbedder {
+L   162-162    (    1) | struct BgeMeanReflectEmbedder;
+L   163-171    (    9) | impl Embedder for BgeMeanReflectEmbedder {
+L   172-177    (    6) | fn db_path(dir: &TempDir) -> std::path::PathBuf {
+L   178-193    (   16) | fn register_sqlite_vec_once() {
+L   194-205    (   12) | fn all_ones_mean_blob() -> Vec<u8> {
+L   206-217    (   12) | fn set_pinned_mean(path: &std::path::Path, mean: Option<Vec<u8>>) {
+L   218-239    (   22) | fn seed_bge_references_with_pinned_mean(path: &std::path::Path) {
+L   240-256    (   17) | fn seed_references(path: &std::path::Path) {
+L   257-257    (    1) | #[test]
+L   258-305    (   48) | fn probe_set_persisted_at_first_vector_kind_registration() {
+L   306-306    (    1) | #[test]
+L   307-331    (   25) | fn divergent_backend_trips_dense_refusal() {
+L   332-332    (    1) | #[test]
+L   333-357    (   25) | fn same_backend_float_noise_does_not_trip() {
+L   358-358    (    1) | #[test]
+L   359-379    (   21) | fn probe_p1_flip_count_matches_embedding_bin() {
+L   380-380    (    1) | #[test]
+L   381-399    (   19) | fn probe_p2_l2_within_epsilon() {
+L   400-400    (    1) | #[test]
+L   401-420    (   20) | fn probe_respects_mean_centering_gate_non_mc_path() {
+L   421-421    (    1) | #[test]
+L   422-433    (   12) | fn divergent_open_is_degraded_not_failed() {
+L   434-434    (    1) | #[test]
+L   435-470    (   36) | fn every_vector_dependent_arm_refuses_with_typed_error() {
+L   471-471    (    1) | #[test]
+L   472-486    (   15) | fn fts_only_path_still_serves_when_degraded() {
+L   487-487    (    1) | #[test]
+L   488-522    (   35) | fn open_report_surfaces_dense_disabled_and_counter_and_reopen_stays_degraded() {
+L   523-523    (    1) | #[test]
+L   524-547    (   24) | fn panicking_embedder_at_check_fails_safe_not_open() {
+L   548-548    (    1) | #[test]
+L   549-573    (   25) | fn erroring_embedder_at_check_fails_safe_not_open() {
+L   574-574    (    1) | #[test]
+L   575-614    (   40) | fn population_failure_fails_safe_and_persists_no_partial_baseline() {
+L   615-615    (    1) | #[test]
+L   616-678    (   63) | fn post_open_registration_serves_in_session_and_baselines_at_next_open() {
+L   679-679    (    1) | #[test]
+L   680-704    (   25) | fn mc_required_with_pin_same_backend_does_not_trip() {
+L   705-705    (    1) | #[test]
+L   706-728    (   23) | fn mc_required_with_pin_centered_flip_trips_dense() {
+L   729-729    (    1) | #[test]
+L   730-758    (   29) | fn mc_reflect_without_pin_takes_uncentered_path_zero_flips() {
+L   759-759    (    1) | #[test]
+L   760-837    (   78) | fn upgrade_from_v18_with_kind_and_pinned_mean_establishes_baseline_and_checks() 
+L   838-848    (   11) | fn encode_le_f32(v: &[f32]) -> Vec<u8> {
+L   849-867    (   19) | fn assert_degraded_but_fts_serves(path: &std::path::Path) {
+L   868-868    (    1) | #[test]
+L   869-891    (   23) | fn partial_baseline_missing_one_row_fails_safe_not_open() {
+L   892-892    (    1) | #[test]
+L   893-915    (   23) | fn substituted_probe_text_verifying_against_itself_fails_safe_not_open() {
+L   916-916    (    1) | #[test]
+L   917-933    (   17) | fn re_attributed_embedder_identity_fails_safe_not_open() {
+L   934-934    (    1) | #[test]
+L   935-972    (   38) | fn non_contiguous_ordinals_fail_safe_not_open() {
+L   973-973    (    1) | #[test]
+L   974-1014   (   41) | fn mangled_reference_blob_wrong_length_fails_safe_not_open() {

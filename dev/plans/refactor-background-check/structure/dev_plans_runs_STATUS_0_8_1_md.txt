@@ -1,0 +1,41 @@
+# dev/plans/runs/STATUS-0.8.1.md  (1162 LOC, class=plan-status-doc, soft=1100, hard=1800)
+
+L     1-21     (   21) | # FathomDB 0.8.1 — Live status board
+L    22-113    (   92) | ## 1. Current slice
+L   114-132    (   19) | ### ⚠️ Deferred follow-ups — REQUIRED before 0.8.1 GA (gated at Slice 40)
+L   133-136    (    4) | ### ◆ HITL gate — SIGNED 2026-06-13
+L   137-200    (   64) | ### Next action (orchestrator)
+L   201-330    (  130) | ### Experiment budget ledger — running $ spent (HITL 2026-06-14)
+L   331-353    (   23) | ## 2. Per-slice status table (X1/X2/X3)
+L   354-376    (   23) | ## 3. Per-feature scoreboard (0.8.1 targets)
+L   377-387    (   11) | ## 4. Parallelization plan (REQUIRED — from the impl plan)
+L   388-400    (   13) | ## 5. Open HITL questions (live)
+L   401-412    (   12) | ## 6. Outstanding worktrees ledger
+L   413-414    (    2) | ## 7. Recent decisions (newest on top)
+L   415-443    (   29) | ### 2026-06-16 — ◆ GRAPH-ADJUDICATION RE-SEQUENCING (HITL) — 0.8.2–0.8.4 test gr
+L   444-464    (   21) | ### 2026-06-16 — ◆ "BEAT BM25" INVESTIGATION CONCLUDED (HITL) — no cheap retriev
+L   465-503    (   39) | ### 2026-06-16 (cont.) — R6 index-key enrichment: doesn't beat baseline, but con
+L   504-555    (   52) | ### 2026-06-16 — ◆ GRAPH ARM does NOT beat BM25 (measured, literature-corroborat
+L   556-582    (   27) | ### 2026-06-15 (cont.) — ⭐ C1 graph-arm SEEDING implemented + LIVE (the BLOCK-1 
+L   583-602    (   20) | ### 2026-06-15 (cont.) — ◆ HITL: full G0 Phase-2 (incl. PRE-3 SCHEMA-GATE SIGNED
+L   603-636    (   34) | ### 2026-06-15 (cont.) — G0 Phase-2 PART-1 implemented (engine meter + source_id
+L   637-694    (   58) | ### 2026-06-15 (cont.) — ⭐ FUSED/DENSE ARM recall@K LANDED (HANDOFF-3 §3) — dens
+L   695-747    (   53) | ### 2026-06-15 (cont.) — GPU embed enablement + drain fix + embed_batch API LAND
+L   748-803    (   56) | ### 2026-06-15 — Orchestrator session: G0 Phase-2 designed; §5.4/§5.6 LANDED (br
+L   804-825    (   22) | ### 2026-06-14 — P0-A base-testing via airlock Batch API (proven; runner UNCOMMI
+L   826-835    (   10) | ### 2026-06-14 — ◆ HITL: Slice 30 BLOCKED (Option 2) — entity-node source_doc_id
+L   836-871    (   36) | ### 2026-06-14 — Slice 30 Option 3 COMPLETE — LongMemEval benchmark; go/no-go HI
+L   872-895    (   24) | ### 2026-06-14 — Slice 30 Option 2 COMPLETE — ELPS→graph→R2 pipeline validated
+L   896-923    (   28) | ### 2026-06-14 — Slice 25 CLOSED; codex §9 fix-25-1; go/no-go DATA-LIMITED → ⚠️ 
+L   924-958    (   35) | ### 2026-06-13 — Slice 30 MERGED (`84b7a5b`); §9 fix-30-1 committed (`2a78300`);
+L   959-977    (   19) | ### 2026-06-13 — ◆ HITL: ELPS Slice 25 (golden) SIGNED OFF; FathomDB Slice 25 (R
+L   978-1007   (   30) | ### 2026-06-13 — Slice 10 CLOSED (Opus-xhigh §9 PASS, post fix-10-1); Slice 25 O
+L  1008-1018   (   11) | ### 2026-06-13 — HITL: codex confirmation pass WAIVED; Opus §9 PASS accepted as 
+L  1019-1033   (   15) | ### 2026-06-13 — Slice 5 CLOSED on Opus §9 PASS (fix-22..35); Slice 10 OPEN; 4 f
+L  1034-1064   (   31) | ### 2026-06-13 — §9 round 2 (Opus-high fallback): fix-33/34/35 land; QD-sample v
+L  1065-1074   (   10) | ### 2026-06-13 — Slice 5 codex §9 fix cycle (fix-22..24); rate-limited; resume a
+L  1075-1097   (   23) | ### 2026-06-13 — Slices 20 + 35 CLOSED; codex §9 PASS (fix-5..21); Slice 5 compl
+L  1098-1123   (   26) | ### 2026-06-13 — Slice 15 CLOSED; codex §9 fix-1/2/3 applied; Slices 20 + 35 ope
+L  1124-1141   (   18) | ### 2026-06-12 — Slice 0 CLOSED; Prereq 0 merged; codex §9 fix-1 applied
+L  1142-1150   (    9) | ### 2026-06-12 — review of the orchestrator hand-off: 4 gaps closed
+L  1151-1162   (   12) | ### 2026-06-12 — Phase 0.8.1 opened; plan triad + orchestrator hand-off created

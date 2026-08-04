@@ -1,0 +1,33 @@
+# src/rust/crates/fathomdb-engine/tests/slice15e_prekn_filterable.rs  (1052 LOC, class=rust-test, soft=800, hard=1200)
+
+L    40-41     (    2) | struct HashEmbedder;
+L    42-62     (   21) | impl Embedder for HashEmbedder {
+L    63-70     (    8) | fn attr_col(name: &str) -> String {
+L    71-76     (    6) | fn fixture(name: &str) -> (TempDir, std::path::PathBuf) {
+L    77-82     (    6) | fn open(path: &std::path::Path) -> fathomdb_engine::OpenedEngine {
+L    83-95     (   13) | fn node(logical: &str, body_json: &str) -> PreparedWrite {
+L    96-111    (   16) | fn edge(logical: &str, from: &str, to: &str, body_json: &str) -> PreparedWrite {
+L   112-117    (    6) | fn filterable_spec(name: &str) -> ProjectionSpec {
+L   118-131    (   14) | fn table_sql(path: &std::path::Path) -> String {
+L   132-132    (    1) | #[test]
+L   133-183    (   51) | fn filterable_predicate_compiles_into_prekn_match_clause() {
+L   184-184    (    1) | #[test]
+L   185-315    (  131) | fn reshape_is_nondestructive_preserves_bits_rowids_and_sentinel() {
+L   316-316    (    1) | #[test]
+L   317-362    (   46) | fn idempotent_refilterable_registration_is_vec0_noop() {
+L   363-363    (    1) | #[test]
+L   364-394    (   31) | fn filtered_knn_over_attr_column_does_not_hard_error() {
+L   395-395    (    1) | #[test]
+L   396-459    (   64) | fn hybrid_fts_arm_applies_attribute_filter() {
+L   460-460    (    1) | #[test]
+L   461-559    (   99) | fn existing_row_backfilled_from_canonical_attributes_not_blanket_sentinel() {
+L   560-560    (    1) | #[test]
+L   561-673    (  113) | fn attribute_filter_excludes_edge_hits_on_both_arms() {
+L   674-674    (    1) | #[test]
+L   675-789    (  115) | fn empty_string_attribute_value_vs_absent_vector_arm() {
+L   790-790    (    1) | #[test]
+L   791-874    (   84) | fn empty_string_attribute_value_vs_absent_both_arms_fused() {
+L   875-875    (    1) | #[test]
+L   876-976    (  101) | fn undeclared_filter_attribute_is_typed_rejection_on_both_arms() {
+L   977-977    (    1) | #[test]
+L   978-1052   (   75) | fn undeclared_after_concurrent_drop_is_typed_invalidfilter_not_storage_race() {

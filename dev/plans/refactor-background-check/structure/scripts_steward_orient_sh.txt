@@ -1,0 +1,7 @@
+# scripts/steward-orient.sh  (422 LOC, class=shell, soft=200, hard=500)
+
+L   121-134    (   14) | cleanup() {
+L   135-135    (    1) | add() { OUT+="$1"$'\n'; }
+L   136-139    (    4) | note_empty() { EMPTY+=("$1"); }
+L   140-148    (    9) | emit() {
+L   149-422    (  274) | tilde() { printf '%s' "${1/#$HOME/\~}"; }

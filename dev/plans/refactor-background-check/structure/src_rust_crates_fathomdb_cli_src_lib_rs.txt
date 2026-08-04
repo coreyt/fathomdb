@@ -1,0 +1,52 @@
+# src/rust/crates/fathomdb-cli/src/lib.rs  (1050 LOC, class=rust-src, soft=1000, hard=2000)
+
+L    26-48     (   23) | pub mod exit_code {
+L    49-58     (   10) | pub struct Cli {
+L    59-67     (    9) | pub enum Command {
+L    68-77     (   10) | pub struct DoctorArgs {
+L    78-119    (   42) | pub struct RecoverArgs {
+L   120-160    (   41) | pub enum DoctorCommand {
+L   161-170    (   10) | pub struct WarmCacheArgs {
+L   171-201    (   31) | pub struct SimpleDoctorArgs {
+L   202-210    (    9) | pub fn effective_dump_limit(requested: Option<usize>) -> usize {
+L   211-235    (   25) | pub struct DumpMutationsArgs {
+L   236-262    (   27) | pub struct CheckIntegrityArgs {
+L   263-282    (   20) | pub struct SafeExportArgs {
+L   283-302    (   20) | pub struct VerifyEmbedderArgs {
+L   303-318    (   16) | pub struct TraceArgs {
+L   319-335    (   17) | pub enum CliOutcome {
+L   336-349    (   14) | pub fn outcome_to_exit_code(outcome: CliOutcome) -> i32 {
+L   350-377    (   28) | pub fn engine_error_to_outcome(err: &EngineError) -> CliOutcome {
+L   378-395    (   18) | pub fn engine_open_error_to_outcome(err: &EngineOpenError) -> CliOutcome {
+L   396-402    (    7) | pub fn run(cli: Cli) -> i32 {
+L   403-446    (   44) | fn run_recover(args: RecoverArgs) -> i32 {
+L   447-568    (  122) | fn run_doctor(cmd: DoctorCommand) -> i32 {
+L   569-634    (   66) | fn run_doctor_warm_cache(args: WarmCacheArgs) -> i32 {
+L   635-675    (   41) | fn warm_cache_event_json(ev: &fathomdb_embedder::EmbedderEvent) -> Value {
+L   676-686    (   11) | fn run_doctor_verb<F>(db_path: &std::path::Path, verb: &str, f: F) -> i32
+L   687-698    (   12) | fn run_doctor_verb_with_error_outcome<F>(
+L   699-725    (   27) | fn run_doctor_verb_inner<F>(
+L   726-742    (   17) | fn wire_recover<F>(db_path: &std::path::Path, sub_verb: &str, f: F) -> i32
+L   743-746    (    4) | fn emit_engine_error(verb: &str, err: &EngineError) -> i32 {
+L   747-757    (   11) | fn emit_engine_error_with_outcome(verb: &str, err: &EngineError, outcome: CliOut
+L   758-769    (   12) | fn emit_engine_open_error(verb: &str, err: &EngineOpenError) -> i32 {
+L   770-801    (   32) | fn engine_error_code(err: &EngineError) -> &'static str {
+L   802-816    (   15) | fn engine_open_error_code(err: &EngineOpenError) -> &'static str {
+L   817-830    (   14) | fn integrity_report_outcome(report: &IntegrityReport) -> (Value, CliOutcome) {
+L   831-840    (   10) | fn section_json(section: &Section) -> Value {
+L   841-850    (   10) | fn finding_json(f: &Finding) -> Value {
+L   851-874    (   24) | fn locator_json(loc: &CorruptionLocator) -> Value {
+L   875-883    (    9) | fn safe_export_json(a: &SafeExportArtifact) -> Value {
+L   884-895    (   12) | fn trace_report_json(t: &TraceReport) -> Value {
+L   896-909    (   14) | fn rebuild_report_json(verb: &'static str, r: &RebuildReport) -> Value {
+L   910-923    (   14) | fn excise_report_json(r: &ExciseReport) -> Value {
+L   924-933    (   10) | fn excise_record_report_json(r: &ExciseRecordReport) -> Value {
+L   934-950    (   17) | fn verify_embedder_report_json(r: &VerifyEmbedderReport) -> Value {
+L   951-954    (    4) | fn schema_object_json(o: &SchemaObject) -> Value {
+L   955-964    (   10) | fn dump_schema_report_json(r: &DumpSchemaReport) -> Value {
+L   965-977    (   13) | fn recompute_mean_report_json(r: &MeanRecomputeReport) -> Value {
+L   978-987    (   10) | fn dump_row_counts_report_json(r: &DumpRowCountsReport) -> Value {
+L   988-1001   (   14) | fn orphan_provenance_report_json(r: &OrphanProvenanceReport) -> Value {
+L  1002-1010   (    9) | fn dump_profile_report_json(r: &DumpProfileReport) -> Value {
+L  1011-1025   (   15) | fn truncate_wal_report_json(r: &TruncateWalReport) -> Value {
+L  1026-1050   (   25) | mod tests {

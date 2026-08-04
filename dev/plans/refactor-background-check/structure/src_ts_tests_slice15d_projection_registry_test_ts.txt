@@ -1,0 +1,33 @@
+# src/ts/tests/slice15d-projection-registry.test.ts  (630 LOC, class=ts-test, soft=500, hard=750)
+
+L    26-31     (    6) | const SOURCE = "ts-test:slice15d";
+L    32-41     (   10) | const NUL = `a${String.fromCharCode(0)}b`;
+L    42-43     (    2) | const SURROGATE = `a${String.fromCharCode(0xd800)}b`;
+L    44-47     (    4) | function node(logicalId: string, source: string, bodyJson: string): object {
+L    48-55     (    8) | function spec(
+L    56-71     (   16) | function eavValues(path: string, attrName: string): string[] {
+L    72-84     (   13) | function registryNames(path: string): string[] {
+L    85-100    (   16) | function pftsMatch(path: string, attrName: string, query: string): number[] {
+L   101-118    (   18) | test("configure + read.projections round-trips a spec verbatim", async () => {
+L   119-138    (   20) | test("idempotent re-registration is a no-op", async () => {
+L   139-162    (   24) | test("property filter + property-FTS return correct rows at rest", async () => {
+L   163-193    (   31) | test("explicit drop drops exactly one; omission does not drop", async () => {
+L   194-221    (   28) | test("destructive change requires an explicit drop", async () => {
+L   222-239    (   18) | test("fix-5 NUL in projection name rejected at binding, not persisted", async ()
+L   240-259    (   20) | test("fix-5 NUL in ftsTokenizer rejected at binding, not persisted", async () =>
+L   260-279    (   20) | test("fix-5 NUL in vectorEmbedder rejected at binding, not persisted", async () 
+L   280-305    (   26) | test("fix-5 NUL in drop entry rejected at binding", async () => {
+L   306-327    (   22) | test("TC-47 surrogate in projection name rejected at binding, not persisted", as
+L   328-351    (   24) | test("TC-47 surrogate in ftsTokenizer rejected at binding, not persisted", async
+L   352-375    (   24) | test("TC-47 surrogate in vectorEmbedder rejected at binding, not persisted", asy
+L   376-402    (   27) | test("TC-47 surrogate in projection role rejected at binding, not persisted", as
+L   403-435    (   33) | test("TC-47 surrogate in drop entry rejected at binding", async () => {
+L   436-456    (   21) | test("fix-4 orphaned ftsTokenizer (fts:false) rejected at binding, not persisted
+L   457-476    (   20) | test("fix-4 orphaned vectorEmbedder (vector:false) rejected at binding, not pers
+L   477-496    (   20) | test("fix-4 empty ftsTokenizer (fts:true) rejected at binding, not persisted", a
+L   497-516    (   20) | test("fix-4 empty vectorEmbedder (vector:true) rejected at binding, not persiste
+L   517-539    (   23) | test("fix-4 duplicate role rejected at binding, not persisted", async () => {
+L   540-562    (   23) | test("fix-4 CONTROL — a consistent spec round-trips verbatim via read.projection
+L   563-585    (   23) | test("fix-4 AUDIT — fts/vector without the searchable role round-trips (inert bu
+L   586-611    (   26) | test("fix-4 read.projections output round-trips BACK into configureProjections (
+L   612-630    (   19) | test("rankable and vector sub-target are deferred, not built", async () => {

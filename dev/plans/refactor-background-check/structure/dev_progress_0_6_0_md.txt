@@ -1,0 +1,28 @@
+# dev/progress/0.6.0.md  (1034 LOC, class=plan-status-doc, soft=800, hard=1600)
+
+L     1-7      (    7) | # 0.6.0 progress log
+L     8-17     (   10) | ## YYYY-MM-DD — short title
+L    18-77     (   60) | ## 2026-05-20 — Phase 12-GA CLOSED — 0.6.0 GA shipped
+L    78-101    (   24) | ## 2026-05-17 — Phase 12-RC1 HITL decision: loosen HEAD-on-main for RC tags
+L   102-135    (   34) | ## 2026-05-17 — Phase 12-P + 12-V-VERBS HITL signoffs
+L   136-174    (   39) | ## 2026-05-17 — Phase 12 Wave 1 closed (12-D + 12-S; 12-B deferred)
+L   175-224    (   50) | ## 2026-05-17 — Phase 11 closed; Phase 12 plan locked + context infra landed
+L   225-277    (   53) | ## 2026-05-03 — Phase 9 Pack 5 closed (ESCALATE — AC-020 not closed)
+L   278-340    (   63) | ## 2026-05-03 — Phase 9 Pack 5 performance-diagnostics plan landed
+L   341-400    (   60) | ## 2026-05-03 — Phase 9 Packet 4 perf-gate attribution hardening
+L   401-463    (   63) | ## 2026-05-03 — Phase 10 narrow CLI scaffold (parallel with Phase 9)
+L   464-566    (  103) | ## 2026-05-02 — Phase 8 engineering hardening (Findings 1–4)
+L   567-608    (   42) | ## 2026-05-02 — Phase 8 lock-mechanism architectural blocker resolved
+L   609-699    (   91) | ## 2026-05-02 — Phase 8 code-reviewer corrections
+L   700-785    (   86) | ## 2026-05-02 — Phase 8 lifecycle observability + reader pool wiring
+L   786-827    (   42) | ## 2026-05-02 — Phase 5 interface-stubs slice 1 merged
+L   828-843    (   16) | ## 2026-05-02 — Phase 4 design freeze tagged
+L   844-871    (   28) | ## 2026-05-02 — Security review locked; Phase 4 freeze gate cleared
+L   872-895    (   24) | ## 2026-05-02 — Design corpus locked
+L   896-909    (   14) | ## 2026-05-02 — HITL lock-gate packet prepared
+L   910-927    (   18) | ## 2026-05-02 — Needs + traceability drafted
+L   928-940    (   13) | ## 2026-05-02 — HC-018 HITL resolved
+L   941-967    (   27) | ## 2026-05-01 — Workspace relocation + coherence corpus committed
+L   968-990    (   23) | ## 2026-05-01 — Hard-conflict coherence pass drafted
+L   991-1004   (   14) | ## 2026-05-01 — Agentic context engineering Phase 2.5 landed (markdown tooling)
+L  1005-1034   (   30) | ## 2026-05-01 — Agentic context engineering Phases 1+2+3 landed
