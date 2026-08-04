@@ -208,6 +208,14 @@ commit_fixture() {
   ) >/dev/null 2>&1 || true
 }
 
+# CI's fetch-depth: 0 checkout supplies origin/main for protected-PR ratchet
+# comparison. A one-repo fixture has no remote until it creates that ref, so
+# pin the clean fixture's first commit as its full reachable base before the
+# defect commit advances HEAD.
+seed_fixture_origin_main() {
+  git -C "$FIX" update-ref refs/remotes/origin/main HEAD
+}
+
 # THE SLICE 25 BUG SHAPE, verbatim in form: a producer piped into `head` under
 # `set -o pipefail`. `head` closes the pipe, the producer dies of SIGPIPE, and
 # pipefail makes 141 the pipeline's status.
@@ -226,7 +234,9 @@ DEFECT
 run_job_command() {
   local gate="${1:-$FIX/scripts/agent-lint-shell.sh}"
   set +e
-  OUT="$(cd "$FIX" && HOME="$TMPROOT/home" bash "$gate" 2>&1)"
+  OUT="$(cd "$FIX" && HOME="$TMPROOT/home" \
+    GITHUB_EVENT_NAME=pull_request GITHUB_REF=refs/pull/fixture/merge GITHUB_BASE_REF=main \
+    bash "$gate" 2>&1)"
   RC=$?
   set -e
 }
@@ -239,6 +249,15 @@ else
   # --- Arm G0: the clean fixture PASSES (non-vacuity of arm G) -------------
   setup_gate_fixture
   commit_fixture
+  if ! seed_fixture_origin_main; then
+    fail "arm G0 setup: could not create origin/main for the full-checkout fixture"
+  fi
+  if git -C "$FIX" rev-parse --verify --quiet 'refs/remotes/origin/main^{commit}' >/dev/null \
+    && git -C "$FIX" merge-base --is-ancestor 'refs/remotes/origin/main' HEAD; then
+    pass "arm G0 setup: fixture has a full-checkout origin/main base for protected-PR ratchet enforcement"
+  else
+    fail "arm G0 setup: fixture must resolve origin/main before running the protected-PR shell gate"
+  fi
   run_job_command
   if [ "$RC" -eq 0 ]; then
     pass "arm G0: the job's command passes a clean tree (so arm G's red is about the defect)"
