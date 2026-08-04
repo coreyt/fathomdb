@@ -1,0 +1,89 @@
+{
+  "name": "default_ruleset",
+  "target": "branch",
+  "enforcement": "active",
+  "conditions": {
+    "ref_name": {
+      "exclude": [],
+      "include": [
+        "~DEFAULT_BRANCH"
+      ]
+    }
+  },
+  "bypass_actors": [],
+  "rules": [
+    {
+      "type": "pull_request",
+      "parameters": {
+        "required_approving_review_count": 0,
+        "dismiss_stale_reviews_on_push": false,
+        "required_reviewers": [],
+        "require_code_owner_review": false,
+        "require_last_push_approval": false,
+        "required_review_thread_resolution": false,
+        "allowed_merge_methods": [
+          "merge",
+          "squash",
+          "rebase"
+        ]
+      }
+    },
+    {
+      "type": "required_status_checks",
+      "parameters": {
+        "strict_required_status_checks_policy": false,
+        "do_not_enforce_on_create": false,
+        "required_status_checks": [
+          {
+            "context": "verify"
+          },
+          {
+            "context": "security"
+          },
+          {
+            "context": "default-embedder-tests"
+          },
+          {
+            "context": "rust-workspace-race-report"
+          },
+          {
+            "context": "board-currency"
+          },
+          {
+            "context": "c1-contract-conformance"
+          },
+          {
+            "context": "commission-manifest"
+          },
+          {
+            "context": "design-status"
+          },
+          {
+            "context": "docs"
+          },
+          {
+            "context": "governed-surface-pin"
+          },
+          {
+            "context": "ledger-integrity"
+          },
+          {
+            "context": "plan-anchors"
+          },
+          {
+            "context": "release-state-views"
+          },
+          {
+            "context": "steward-orient"
+          },
+          {
+            "context": "transcript-hygiene"
+          },
+          {
+            "context": "CodeQL"
+          }
+        ]
+      }
+    }
+  ]
+}
