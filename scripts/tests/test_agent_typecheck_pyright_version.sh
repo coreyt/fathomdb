@@ -73,6 +73,60 @@ if ! grep -Fq 'ok typecheck-python ' <<<"$OUT"; then
 fi
 printf 'PASS  agent-typecheck.sh accepts the pinned version line with a Pyright update warning\n'
 
+cat >"$FIX/.venv/bin/pyright" <<'PYRIGHT'
+#!/usr/bin/env bash
+if [ "$1" = "--version" ]; then
+  printf 'pyright 1.1.409\n'
+  printf 'pyright 1.1.410\n'
+fi
+PYRIGHT
+chmod +x "$FIX/.venv/bin/pyright"
+
+set +e
+OUT="$(cd "$FIX" && PATH="$FIX/.venv/bin:$PATH" bash scripts/agent-typecheck.sh 2>&1)"
+RC=$?
+set -e
+
+printf '%s\n' "$OUT"
+printf 'exit=%d\n' "$RC"
+
+if [ "$RC" -eq 0 ]; then
+  printf 'FAIL  agent-typecheck.sh accepted a wrong first Pyright version masked by a later matching line\n' >&2
+  exit 1
+fi
+if ! grep -Fq 'pyright 1.1.409' <<<"$OUT"; then
+  printf 'FAIL  mixed Pyright version output did not report the wrong first line\n' >&2
+  exit 1
+fi
+printf 'PASS  agent-typecheck.sh rejects a wrong first Pyright version despite a later matching line\n'
+
+cat >"$FIX/.venv/bin/pyright" <<'PYRIGHT'
+#!/usr/bin/env bash
+if [ "$1" = "--version" ]; then
+  printf 'unparseable pyright version output\n'
+  printf 'pyright 1.1.410\n'
+fi
+PYRIGHT
+chmod +x "$FIX/.venv/bin/pyright"
+
+set +e
+OUT="$(cd "$FIX" && PATH="$FIX/.venv/bin:$PATH" bash scripts/agent-typecheck.sh 2>&1)"
+RC=$?
+set -e
+
+printf '%s\n' "$OUT"
+printf 'exit=%d\n' "$RC"
+
+if [ "$RC" -eq 0 ]; then
+  printf 'FAIL  agent-typecheck.sh accepted a malformed first line masked by a later matching Pyright version\n' >&2
+  exit 1
+fi
+if ! grep -Fq 'unparseable pyright version output' <<<"$OUT"; then
+  printf 'FAIL  mixed malformed Pyright output did not report the first line\n' >&2
+  exit 1
+fi
+printf 'PASS  agent-typecheck.sh rejects a malformed first line despite a later matching Pyright version\n'
+
 printf '#!/usr/bin/env bash\nprintf "unparseable pyright version output\\n"\n' >"$FIX/.venv/bin/pyright"
 chmod +x "$FIX/.venv/bin/pyright"
 

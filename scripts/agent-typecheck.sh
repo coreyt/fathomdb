@@ -30,14 +30,11 @@ if ! pyright_version_output="$("$pyright_bin" --version 2>&1)"; then
   exit 1
 fi
 
-pyright_version_line_found=0
-while IFS= read -r pyright_version_line || [ -n "$pyright_version_line" ]; do
-  if [ "$pyright_version_line" = "pyright $PYRIGHT_VERSION" ]; then
-    pyright_version_line_found=1
-  fi
-done <<<"$pyright_version_output"
+# Pyright's canonical version line comes first; later lines may be update
+# notices, but must not be allowed to mask an incompatible first line.
+pyright_version_line="${pyright_version_output%%$'\n'*}"
 
-if [ "$pyright_version_line_found" -ne 1 ]; then
+if [ "$pyright_version_line" != "pyright $PYRIGHT_VERSION" ]; then
   printf 'FAIL typecheck-python: Pyright %s is required; selected %s. Run scripts/bootstrap.sh in a clean non-worktree checkout.\n' "$PYRIGHT_VERSION" "$pyright_version_output" >&2
   exit 1
 fi
