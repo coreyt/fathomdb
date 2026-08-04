@@ -12,6 +12,17 @@ status: UNREVIEWED
 > `file:line` grounding: memex `dev/design/entity-schema-registry/ADR-C1-eav-projection-lifecycle.md`.
 > **Freezes nothing to build now (build ≠ adopt).** C-1 co-lands at FathomDB **0.9.1 (P2·S-F)** / a coordinated
 > Memex 0.5.x-successor pair. HITL-directed 2026-07-07.
+>
+> **Successor notice (2026-08-04).** FathomDB 0.8.20 delivered the durable
+> projection registry and engine-owned derived property rows, but its source
+> extractor accepts only top-level scalar body fields and its attribute query
+> filter is not public outside Rust. The C-1 semantics remain in force; the
+> planned first-class engine attribute-write fulfillment does not. HITL ruled
+> that Memex B15 will instead use declared nested-source projections and a
+> public projected-attribute query surface. See
+> [Nested-Source Projections](../nested-source-projections.md). This notice
+> supersedes the future-fulfillment mechanics below, not the ownership or
+> lifecycle invariants agreed by C-1.
 
 ## Cohesion seam (governs every decision)
 
@@ -33,7 +44,12 @@ roles they take, the promotion gate). The LLM stays Memex-side.
   idempotently on boot (`load_from_store → derive → configure_projections`). One durable source of truth; drift
   resolves **to the Memex spec**; no two-registry sync.
 
-## Q2 — EAV convergence: ONE engine-owned EAV (sequenced, no over-build)
+## Q2 — EAV convergence: ONE engine-owned EAV (superseded fulfillment)
+
+> **Historical transcript (2026-07-07).** The table and bullets in this
+> section record the original engine-EAV-write plan. They are not current
+> implementation direction; the 2026-08-04 successor notice governs the
+> fulfillment path.
 
 End-state: a single **engine-owned EAV attribute store + property-FTS**. Phasing:
 
@@ -41,7 +57,7 @@ End-state: a single **engine-owned EAV attribute store + property-FTS**. Phasing
 |---|---|---|---|
 | Today | nested dict on the governed `WMEntity` node (`fathom_store.py:4635`) | interim already ships | `body`-FTS only |
 | Commission C (0.5.x, now) | same nested-dict interim | carries the optional `index` hint; does **not** promote the `WorldModelEntityAttribute` DTO into a persisted table | nothing (PLAN-C §7 decouple boundary) |
-| C-1 co-land (0.9.1) | **engine EAV + property-FTS** | repoints `set_entity_attribute` onto the governed engine-EAV verb; retires the interim | builds EAV + property-FTS once; projects via `configure_projections` |
+| C-1 co-land (originally 0.9.1) | **engine EAV + property-FTS** | repoints `set_entity_attribute` onto the governed engine-EAV verb; retires the interim | builds EAV + property-FTS once; projects via `configure_projections` |
 
 - **Forbidden over-build (Memex):** a *persisted* standalone attribute node/table. The `WorldModelEntityAttribute`
   DTO stays a read-materialized facade shape, not a stored table.
@@ -50,6 +66,12 @@ End-state: a single **engine-owned EAV attribute store + property-FTS**. Phasing
   call (breaking-OK stance).
 - Property-level projection does not exist until 0.9.1 (recall rides `body`-FTS + R-B until then — a scope line,
   not a gap).
+
+The original final row is retained as the July decision record. It is no
+longer the implementation plan: C-1 will preserve Memex's canonical body and
+derive property rows through the nested-source projection design. Memex's
+body-write helper therefore remains the writer for its attributes; it does not
+repoint to a separate engine attribute-write API.
 
 ## Q4 — provisional / promotion projection timing (tiered by cost)
 
@@ -133,10 +155,11 @@ same-transaction tier and the worker-enqueue ordering.
   and custom tokenizers graft later via the same idempotent `configure_projections` (same graceful-graft pattern
   as Q4 / Q6a).
 
-**Net: nothing is genuinely open at the contract level.** The residual P2·S0 work is pure FathomDB-internal 0.9.1
-implementation (transaction boundaries) — which every build slice has, and is not a co-design deferral.
+**Historical close state.** This described the July contract's remaining
+0.9.1 implementation work. The 2026-08-04 HITL ruling at the top of this
+document supersedes that fulfillment plan and deliberately assigns no release.
 
-## Landing
+## Historical landing
 
 > **SLOT UPDATE (master F-19/F-20, 2026-07-07):** OPP-12 was pulled into the **0.8.x line** — **C-1 now co-lands
 > at `0.8.20`** (was `0.9.1 P2·S-F`). Read every `0.9.1` / `P2·S-F` in this contract as the **0.8.20** OPP-12

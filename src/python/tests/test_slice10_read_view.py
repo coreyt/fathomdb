@@ -25,10 +25,11 @@ Covered, mirroring the engine matrices in
   * R-20-NV — ``read.crossed_boundary_since`` returns real ``BoundaryCrossing``
     rows naming WHICH boundary was crossed.
 
-Validity windows have NO write-side authoring verb in 0.8.20 (a deliberate,
-escalated gap), so the fixtures below set ``valid_from``/``valid_until`` with
-direct SQL on the CLOSED database — exactly as the engine suite does. The
-READ path is what is under test here, and it is exercised only through the SDK.
+These fixtures explicitly exercise original read-axis rows, so they set
+``valid_from``/``valid_until`` with direct SQL on the CLOSED database — exactly
+as the engine suite does. Node validity is authorable through ``Engine.write``;
+fixture SQL is not a consumer-facing write path. The READ path is what is under
+test here, and it is exercised only through the SDK.
 
 Cross-binding equivalence anchor: ``src/ts/tests/slice10-read-view.test.ts``
 asserts the SAME behaviour for the same inputs (Py ≡ TS, R-X-1).

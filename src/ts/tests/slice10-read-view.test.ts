@@ -25,11 +25,12 @@
 //   * R-20-NV — `read.crossedBoundarySince` returns real `BoundaryCrossing`
 //     rows naming WHICH boundary was crossed.
 //
-// Validity windows have NO write-side authoring verb in 0.8.20 (a deliberate,
-// escalated gap), so the fixtures below set `valid_from`/`valid_until` with
-// direct SQL (`node:sqlite`) on the CLOSED database — exactly as the engine
-// suite does with rusqlite. The READ path is what is under test here, and it is
-// exercised only through the SDK.
+// These fixtures explicitly exercise original read-axis rows, so they set
+// `valid_from`/`valid_until` with direct SQL (`node:sqlite`) on the CLOSED
+// database — exactly as the engine suite does with rusqlite. Node validity is
+// authorable through `Engine.write`; fixture SQL is not a consumer-facing write
+// path. The READ path is what is under test here, and it is exercised only
+// through the SDK.
 //
 // Cross-binding equivalence anchor: `src/python/tests/test_slice10_read_view.py`
 // asserts the SAME behaviour for the same inputs (Py ≡ TS, R-X-1).
