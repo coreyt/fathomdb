@@ -1,0 +1,31 @@
+# src/rust/crates/fathomdb-engine/tests/eu7_real_corpus_ac.rs  (1138 LOC, class=rust-test, soft=800, hard=1200)
+
+L   103-104    (    2) | mod corpus_subset;
+L   105-132    (   28) | mod recall_gate;
+L   133-137    (    5) | struct SerializedBge {
+L   138-144    (    7) | impl SerializedBge {
+L   145-183    (   39) | impl Embedder for SerializedBge {
+L   184-186    (    3) | struct SplitMix64 {
+L   187-205    (   19) | impl SplitMix64 {
+L   206-209    (    4) | fn env_usize(key: &str, default: usize) -> usize {
+L   210-220    (   11) | fn n_values() -> Vec<usize> {
+L   221-235    (   15) | fn percentile_ceil(samples: &[Duration], numerator: usize, denominator: usize) -
+L   236-257    (   22) | fn synth_query(doc: &Doc) -> Option<String> {
+L   258-286    (   29) | fn lead_sentence(body: &str, max_chars: usize) -> String {
+L   287-335    (   49) | fn synth_distractor_body(idx: usize) -> String {
+L   336-343    (    8) | struct QueryItem {
+L   344-374    (   31) | fn load_real_and_queries(num_queries: usize) -> Option<(Vec<Doc>, Vec<QueryItem>
+L   375-392    (   18) | fn haystack_bodies(real: &[Doc], n: usize) -> Vec<String> {
+L   393-431    (   39) | fn seed_slice(engine: &Engine, bodies: &[String], from: usize, to: usize) -> Dur
+L   432-481    (   50) | struct RecallResult {
+L   482-627    (  146) | fn measure_recall(
+L   628-652    (   25) | fn bootstrap_ci(per_query: &[f64], resamples: usize) -> (f64, f64, f64) {
+L   653-657    (    5) | struct LatencyResult {
+L   658-678    (   21) | fn measure_latency(engine: &Engine, queries: &[QueryItem], samples_n: usize) -> 
+L   679-684    (    6) | struct StressResult {
+L   685-760    (   76) | fn measure_stress(
+L   761-762    (    2) | #[test]
+L   763-1069   (  307) | fn eu7_real_corpus_ac_validation() {
+L  1070-1073   (    4) | fn round4(x: f64) -> f64 {
+L  1074-1086   (   13) | struct MeasurementsOut<'a> {
+L  1087-1138   (   52) | fn write_measurements_json(m: MeasurementsOut) {

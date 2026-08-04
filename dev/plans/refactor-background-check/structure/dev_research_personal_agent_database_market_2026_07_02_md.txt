@@ -1,0 +1,35 @@
+# dev/research/personal-agent-database-market-2026-07-02.md  (605 LOC, class=design-doc, soft=500, hard=1000)
+
+L     1-11     (   11) | # The Personal-Agent-Database Market — Landscape, Feature Taxonomy, and FathomDB
+L    12-13     (    2) | ## FathomDB in the Personal-Agent-Database Market — Position & Next-Best Steps
+L    14-26     (   13) | ## 1. Market map
+L    27-34     (    8) | ## 2. Feature taxonomy (condensed)
+L    35-69     (   35) | ## 3. FathomDB audit
+L    70-71     (    2) | ## 4. Three next-best steps (ranked)
+L    72-78     (    7) | ### #1 — Ship an MCP server (+ thin REST) over the existing governed surface
+L    79-85     (    7) | ### #2 — Make identity first-class: user / session / agent namespacing
+L    86-96     (   11) | ### #3 — Turn the bi-temporal foundation into an AS-OF point-in-time query (leap
+L    97-176    (   80) | ## Appendix A — Full player catalog
+L   177-180    (    4) | ## Appendix B — Per-angle raw survey findings
+L   181-201    (   21) | ### Round 1 · Angle A — Products & vendors
+L   202-224    (   23) | ### Round 1 · Angle B — Technical substrates
+L   225-248    (   24) | ### Round 1 · Angle C — Capabilities & framing
+L   249-296    (   48) | ### Round 1 · Angle D — Builder needs & gaps
+L   297-319    (   23) | ### Round 2 · Angle A — Products & vendors
+L   320-340    (   21) | ### Round 2 · Angle B — Technical substrates
+L   341-363    (   23) | ### Round 2 · Angle C — Capabilities & framing
+L   364-402    (   39) | ### Round 2 · Angle D — Builder needs & gaps
+L   403-406    (    4) | ## Appendix C — Full feature taxonomy
+L   407-412    (    6) | ## Agent-Memory Database — Feature Taxonomy
+L   413-426    (   14) | ## TIER 1 — TABLE-STAKES (a credible product must have it)
+L   427-445    (   19) | ## TIER 2 — IMPORTANT (differentiates serious players)
+L   446-465    (   20) | ## TIER 3 — EXCEPTIONAL (rare / cutting-edge / moat)
+L   466-474    (    9) | ### Notes on grounding and judgment calls
+L   475-478    (    4) | ## Appendix D — Full FathomDB capability audit
+L   479-489    (   11) | ## FathomDB Audit vs Agent-Memory Database Feature Taxonomy
+L   490-505    (   16) | ## TIER 1 — TABLE-STAKES
+L   506-526    (   21) | ## TIER 2 — IMPORTANT
+L   527-548    (   22) | ## TIER 3 — EXCEPTIONAL
+L   549-556    (    8) | ## FathomDB's clear STRENGTHS vs the market
+L   557-569    (   13) | ## FathomDB's clear GAPS vs the market
+L   570-605    (   36) | ## Appendix E — Methodology & provenance

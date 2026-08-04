@@ -1,0 +1,32 @@
+# src/python/eval/gap_decomposition_run.py  (1093 LOC, class=py-eval, soft=800, hard=1200)
+
+L   146-149    (    4) | class UnpinnedPricing(RuntimeError):
+L   150-154    (    5) | class BudgetExceeded(RuntimeError):
+L   155-164    (   10) | class CheckpointMissingRecords(RuntimeError):
+L   165-178    (   14) | def price_for(model: str) -> tuple[float, float]:
+L   179-190    (   12) | def resolve_reader(mode: str, reader: Optional[str]) -> str:
+L   191-215    (   25) | def resolve_distiller_model(distiller: Optional[str], reader: str) -> str:
+L   216-222    (    7) | def estimate_tokens(text: str) -> int:
+L   223-291    (   69) | class BudgetLedger:
+L   292-330    (   39) | def load_d0b_cells(
+L   331-355    (   25) | def oracle_context(
+L   356-376    (   21) | def distilled_context(
+L   377-385    (    9) | class DistillerClient(Protocol):
+L   386-416    (   31) | class BlindDistiller:
+L   417-442    (   26) | class RawCompletionDistillerClient:
+L   443-446    (    4) | def _body_hash(body: str) -> str:
+L   447-461    (   15) | def effective_distill_cache_path(
+L   462-474    (   13) | def distill_spent_sidecar(cache_path: str | Path) -> Path:
+L   475-536    (   62) | def distill_corpus(
+L   537-570    (   34) | def answer_with_budget(
+L   571-595    (   25) | def paired_arm_deltas(
+L   596-612    (   17) | def component_paired_deltas(
+L   613-652    (   40) | def fathomdb_distilled_crosscheck(
+L   653-680    (   28) | def per_component_table(
+L   681-689    (    9) | def class_fit_coverage(records: Sequence[Mapping[str, Any]], cls: str) -> float:
+L   690-704    (   15) | def answer_retention(records: Sequence[Mapping[str, Any]], *, arm: str) -> dict[
+L   705-720    (   16) | def _context_contains_answer(context: Sequence[str], answers: Sequence[str]) -> 
+L   721-751    (   31) | def answer_completeness(
+L   752-776    (   25) | def decide_all_classes(
+L   777-1019   (  243) | def run_gap_decomposition(
+L  1020-1093   (   74) | def main(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - CLI

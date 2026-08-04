@@ -1,0 +1,67 @@
+# dev/experiments-ledger.md  (661 LOC, class=doc-other, soft=500, hard=1000)
+
+L     1-20     (   20) | # FathomDB experiments ledger — distilled results of record
+L    21-22     (    2) | ## 0.6.x
+L    23-31     (    9) | ### 0.6.1 — AC-012 canonical text-query latency re-measure (Pack-7 trigger)
+L    32-33     (    2) | ## 0.7.0
+L    34-42     (    9) | ### 0.7.0 — AC-012/AC-020 perf-lever sweep (W1–W5: PRAGMA + top-K LIMIT + PCACHE
+L    43-51     (    9) | ### 0.7.0 — AC-013 vector retrieval: f32-brute RED → binary-quant + f32-rerank (
+L    52-58     (    7) | ### 0.7.0 — AC-020 concurrency architectural lever (PCACHE2 vs WAL2 vs R/W split
+L    59-60     (    2) | ## 0.7.1
+L    61-69     (    9) | ### 0.7.1 — EU-7 real-corpus ANN recall@10 (real bge-small, N=7667)
+L    70-71     (    2) | ## 0.7.2
+L    72-79     (    8) | ### 0.7.2 — PR-2a mean-centering recall decomposition (offline)
+L    80-87     (    8) | ### 0.7.2 — PR-2c recall root-cause (real engine): the EU-7 gap is a measurement
+L    88-95     (    8) | ### 0.7.2 — EU-8 IR-relevance recall (full corpus, 301 labeled queries) → embedd
+L    96-101    (    6) | ### 0.7.2 — PR-2bc keep/shelve decision (recall-floor reframe)
+L   102-108    (    7) | ### 0.7.2 — PR-3 canonical latency/recall → tiered (10k/100k/1M) budget
+L   109-110    (    2) | ## 0.8.0
+L   111-118    (    8) | ### 0.8.0 — B2 FTS5 tokenizer latency experiment
+L   119-125    (    7) | ### 0.8.0 — Graph-model resolution (Slice 32; fact-on-edge, logical_id-alone)
+L   126-131    (    6) | ### 0.8.0 — GA-1 OLD-vs-NEW corpus A/B (recall-floor diagnosis)
+L   132-137    (    6) | ### 0.8.0 — Recall-eval-framework assessment (fidelity vs relevance axes)
+L   138-139    (    2) | ## 0.8.1
+L   140-147    (    8) | ### 0.8.1 — Slice-30 LME baseline + graph-vs-Mem0/Zep diagnosis
+L   148-154    (    7) | ### 0.8.1 — Graph BFS arm vs BM25 (LongMemEval, n=40)
+L   155-161    (    7) | ### 0.8.1 — Dense/fused base retrieval vs BM25 (LongMemEval, n=160)
+L   162-167    (    6) | ### 0.8.1 — R6 index-key enrichment + BM25 b-tuning (LongMemEval, n=40)
+L   168-174    (    7) | ### 0.8.1 (IR-C) — R0 candidate-recall CDF + cross-encoder latency
+L   175-180    (    6) | ### 0.8.1 (IR-C) — R2 end-to-end parity eval (Slice 25)
+L   181-186    (    6) | ### 0.8.1 (IR-C) — Dense diagnostics (chunking / pooling / model sweep)
+L   187-192    (    6) | ### 0.8.1 — Embedder GPU + cross-vendor portability (decision record, not a benc
+L   193-194    (    2) | ## 0.8.2
+L   195-200    (    6) | ### 0.8.2 — M1 comparator-selection diagnostic (bridge-vs-answer, $0)
+L   201-207    (    7) | ### 0.8.2 — M1 multi-hop graph-arm answer-accuracy (ppr_fusion vs fused-RRF)
+L   208-213    (    6) | ### 0.8.2 — bge CLS-vs-Mean pooling engine defect (flagged, not measured)
+L   214-215    (    2) | ## 0.8.3 (Mem0-parity track)
+L   216-222    (    7) | ### 0.8.3 — D0b Mem0 competitor-parity gap (n=606)
+L   223-229    (    7) | ### 0.8.3 — Gap-decomposition: retrieval-precision is the cause (n=606)
+L   230-235    (    6) | ### 0.8.3 — eu7 0.937→0.896 fidelity-regression bisect (offline, $0)
+L   236-241    (    6) | ### 0.8.3 — Slice-15a embedder-ceiling probe (NO-SWAP)
+L   242-247    (    6) | ### 0.8.3 — CE-rerank α-lever offline tuning sweep ($0, n=606)
+L   248-254    (    7) | ### 0.8.3 — CE-rerank accuracy arm, production α=0.3 (n=606, citable)
+L   255-261    (    7) | ### 0.8.3 — CE-rerank accuracy arm, tuned α=1.0/pool_n=10 reblend (354/606, ABOR
+L   262-267    (    6) | ### 0.8.3 — Mem0-parity resolution (Slice 30, CLOSED_AS_IS)
+L   268-269    (    2) | ## 0.8.4 (GraphRAG-parity track)
+L   270-276    (    7) | ### 0.8.4 — Cross-family premise pilot (self-preference overturn; Qwen answerer)
+L   277-282    (    6) | ### 0.8.4 — Powered cross-family pilot (answerer is the confound; gpt-5.4 answer
+L   283-289    (    7) | ### 0.8.4 — GraphRAG community-summary paradigm — provisional resolution ("third
+L   290-296    (    7) | ### 0.8.4 — Literal head-to-head vs running Microsoft GraphRAG 3.1.0 (15 docs)
+L   297-302    (    6) | ### 0.8.4 — AutoE powered-run cost projection (deterministic, $0)
+L   303-309    (    7) | ### 0.8.4 — Tier-1 FAIR re-run (the 15-doc loss was largely a measurement artifa
+L   310-317    (    8) | ### 0.8.4 — SCALE powered run @ 200 docs ("GraphRAG wins at scale" refuted)
+L   318-324    (    7) | ### 0.8.4 — GATING re-run (SPLIT verdict; full-strength GraphRAG level-1) — CURR
+L   325-351    (   27) | ## 0.8.11 — planner-router experiment ladder (Track E; F-11 discharge)
+L   352-358    (    7) | ### Gate-0 — golden-set re-scope (Slice 5, RESOLVED 2026-06-28)
+L   359-388    (   30) | ### Gate-2 — oracle-routing upper bound (Slice 5, RESOLVED 2026-06-28)
+L   389-417    (   29) | ### EXP-A — recall generation / candidate breadth (Slice 10, RESOLVED 2026-06-28
+L   418-445    (   28) | ### EXP-M4 — embedder-ceiling measurement (Slice 10, RESOLVED 2026-06-28)
+L   446-488    (   43) | ### EXP-B′ + EXP-B′.5 — 3-stage joint tuning (Slice 15 KEYSTONE, RESOLVED 2026-0
+L   489-528    (   40) | ### EXP-Fr-acc base — classifier accuracy + asymmetric mis-route cost (Slice 20,
+L   529-573    (   45) | ### EXP-Fr-acc / VoI finalize — value-of-signal + ask-or-not VoI + asymmetric we
+L   574-623    (   50) | ### EXP-AF — agent-feedback value test (Slice 30, RESOLVED 2026-06-28, KILL → HI
+L   624-625    (    2) | ## research/ (UNTRACKED — git-ignored; results live ONLY here)
+L   626-632    (    7) | ### research/eu-0 — eu7 embedder + quantization-path sweep (RESOLVED)
+L   633-638    (    6) | ### research/pr-2a — EU-0(0.933)→EU-7(0.828) mean-centering decomposition (RESOL
+L   639-646    (    8) | ### research/pr-2a — offline(0.944)→real(0.847) residual: GT-accounting + title-
+L   647-661    (   15) | ## Deferred / revisit

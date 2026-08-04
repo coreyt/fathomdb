@@ -1,0 +1,29 @@
+# experiments/_lib.py  (500 LOC, class=py-src, soft=500, hard=800)
+
+L    52-60     (    9) | def corpus_manifest_path() -> str:
+L    61-68     (    8) | class Code:
+L    69-75     (    7) | class ConfigRef:
+L    76-82     (    7) | class Corpus:
+L    83-90     (    8) | class Env:
+L    91-119    (   29) | class Record:
+L   120-137    (   18) | def _build_nested(cls: type, value: Any, name: str) -> Any:
+L   138-166    (   29) | def record_from_dict(data: dict[str, Any]) -> Record:
+L   167-171    (    5) | def canonical_json(obj: Any) -> str:
+L   172-181    (   10) | def _resolved_dict(config_obj: Any) -> dict:
+L   182-187    (    6) | def config_sha256(config_obj: Any) -> str:
+L   188-192    (    5) | def _slug(text: str) -> str:
+L   193-196    (    4) | def _ts_compact(ts: datetime) -> str:
+L   197-200    (    4) | def _ts_iso(ts: datetime) -> str:
+L   201-224    (   24) | def make_run_id(experiment: str, ts: datetime, sha256: str) -> str:
+L   225-233    (    9) | def git_env(overrides: dict | None = None) -> dict:
+L   234-247    (   14) | def _git(args: list[str], repo_root: str | Path) -> str:
+L   248-257    (   10) | def git_info(repo_root: str | Path | None = None) -> dict:
+L   258-264    (    7) | def _sha256_file(path: str | Path) -> str | None:
+L   265-277    (   13) | def env_info(
+L   278-288    (   11) | def corpus_manifest_sha256(path: str | Path | None = None) -> str | None:
+L   289-307    (   19) | def index_run_ids(index_path: str | Path | None = None) -> set[str]:
+L   308-337    (   30) | def append_index(record: dict, *, index_path: str | Path | None = None) -> None:
+L   338-345    (    8) | def _md_cell(value: Any) -> str:
+L   346-379    (   34) | def regen_index_md(
+L   380-496    (  117) | def write_record(
+L   497-500    (    4) | def _dump_yaml(obj: dict) -> str:

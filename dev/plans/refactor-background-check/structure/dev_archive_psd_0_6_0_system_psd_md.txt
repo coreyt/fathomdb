@@ -1,0 +1,35 @@
+# dev/archive/psd/0.6.0-system-psd.md  (1016 LOC, class=plan-status-doc, soft=800, hard=1600)
+
+L    10-20     (   11) | # Preliminary Solution Design (PSD): FathomDB 0.6.0 Embedded Hybrid Search Engin
+L    21-40     (   20) | ## 1. Purpose
+L    41-68     (   28) | ## 2. Scope
+L    69-70     (    2) | ## 3. Inputs
+L    71-78     (    8) | ### 3.1 User Needs (Desires / Wants / Needs)
+L    79-119    (   41) | #### Customer Needs (all **Need / Must**)
+L   120-157    (   38) | #### Functional Needs (all **Want / Should**)
+L   158-186    (   29) | #### Non-Functional Needs (all **Want / Should**)
+L   187-195    (    9) | #### Explicit Non-Needs (all **Desire / Nice — out of scope for 0.6.0**)
+L   196-299    (  104) | ### 3.2 Constraints and Limitations (Technical Input)
+L   300-337    (   38) | ### 3.3 Assumptions
+L   338-358    (   21) | ## 4. Evaluation Criteria
+L   359-364    (    6) | ## 5. Candidate Solutions (architectural axes)
+L   365-407    (   43) | ### 5.1 Storage substrate
+L   408-443    (   36) | ### 5.2 Concurrency model
+L   444-491    (   48) | ### 5.3 Database lock mechanism
+L   492-526    (   35) | ### 5.4 Op-store placement and write-tx shape
+L   527-564    (   38) | ### 5.5 Projection model
+L   565-620    (   56) | ### 5.6 Operator surface and embedder ownership
+L   621-627    (    7) | ## 6. Trade-Off Analysis
+L   628-645    (   18) | ### 6.1 Storage substrate
+L   646-664    (   19) | ### 6.2 Concurrency model
+L   665-681    (   17) | ### 6.3 Database lock mechanism
+L   682-700    (   19) | ### 6.4 Op-store placement and write-tx shape
+L   701-717    (   17) | ### 6.5 Projection model
+L   718-734    (   17) | ### 6.6 Operator surface and embedder ownership
+L   735-753    (   19) | ## 7. Recommended Solution
+L   754-806    (   53) | ### 7.1 High-Level Description
+L   807-834    (   28) | ### 7.2 How It Meets the Needs
+L   835-904    (   70) | ## 8. Alternatives Considered
+L   905-929    (   25) | ## 9. Open Questions and Risks
+L   930-940    (   11) | ## 10. Next Steps
+L   941-1016   (   76) | ## 11. References

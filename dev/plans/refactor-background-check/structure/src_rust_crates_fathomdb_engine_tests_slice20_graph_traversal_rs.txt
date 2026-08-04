@@ -1,0 +1,42 @@
+# src/rust/crates/fathomdb-engine/tests/slice20_graph_traversal.rs  (688 LOC, class=rust-test, soft=600, hard=1200)
+
+L    26-29     (    4) | fn db_path(dir: &TempDir, name: &str) -> std::path::PathBuf {
+L    30-42     (   13) | fn node(kind: &str, body: &str, logical_id: &str) -> PreparedWrite {
+L    43-59     (   17) | fn edge(from: &str, to: &str, logical_id: &str) -> PreparedWrite {
+L    60-81     (   22) | fn edge_with_t_invalid(from: &str, to: &str, logical_id: &str, t_invalid: i64) -
+L    82-82     (    1) | #[test]
+L    83-114    (   32) | fn graph_neighbors_depth1_returns_adjacent() {
+L   115-115    (    1) | #[test]
+L   116-142    (   27) | fn graph_neighbors_depth2_returns_two_hops() {
+L   143-143    (    1) | #[test]
+L   144-172    (   29) | fn graph_neighbors_depth3_limit() {
+L   173-173    (    1) | #[test]
+L   174-191    (   18) | fn graph_neighbors_depth_gt3_rejected() {
+L   192-192    (    1) | #[test]
+L   193-221    (   29) | fn graph_neighbors_cycle_guard() {
+L   222-222    (    1) | #[test]
+L   223-247    (   25) | fn graph_neighbors_cap50_enforced() {
+L   248-248    (    1) | #[test]
+L   249-284    (   36) | fn graph_neighbors_valid_time_filter_drops_invalidated() {
+L   285-285    (    1) | #[test]
+L   286-326    (   41) | fn explain_plan_uses_indexes() {
+L   327-327    (    1) | #[test]
+L   328-359    (   32) | fn search_expand_returns_neighbors() {
+L   360-360    (    1) | #[test]
+L   361-416    (   56) | fn search_expand_deduplicates() {
+L   417-417    (    1) | #[test]
+L   418-460    (   43) | fn expired_edge_is_excluded_from_traversal() {
+L   461-461    (    1) | #[test]
+L   462-490    (   29) | fn search_expand_depth0_populates_all_logical_ids() {
+L   491-491    (    1) | #[test]
+L   492-509    (   18) | fn graph_neighbors_depth0_rejected() {
+L   510-510    (    1) | #[test]
+L   511-554    (   44) | fn search_expand_reports_nearest_hop_count() {
+L   555-555    (    1) | #[test]
+L   556-593    (   38) | fn graph_neighbors_inactive_intermediate_not_traversed() {
+L   594-594    (    1) | #[test]
+L   595-638    (   44) | fn search_expand_anon_node_hit_does_not_crash() {
+L   639-639    (    1) | #[test]
+L   640-663    (   24) | fn write_rejects_logical_id_containing_record_separator() {
+L   664-664    (    1) | #[test]
+L   665-688    (   24) | fn write_rejects_edge_endpoint_containing_record_separator() {

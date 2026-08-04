@@ -1,0 +1,31 @@
+# dev/design/0.5.1x0.8.11.2/20-multifield-fts-design.md  (520 LOC, class=design-doc, soft=500, hard=1000)
+
+L     5-21     (   17) | # Multi-field + recursive-payload FTS — design-on-spec (0.8.11.2)
+L    22-49     (   28) | ## 0. Provenance, scope, and what this is not
+L    50-51     (    2) | ## 1. Motivation + the recall-vs-ranking framing
+L    52-72     (   21) | ### 1.1 What FathomDB FTS does today
+L    73-90     (   18) | ### 1.2 The gap and the framing
+L    91-118    (   28) | ### 1.3 Provenance finding — multi-field-recall is the *most substitutable* of t
+L   119-124    (    6) | ## 2. The opt-in projection-declaration config (scoped `ProjectionTarget` reviva
+L   125-161    (   37) | ### 2.1 The config type
+L   162-177    (   16) | ### 2.2 The admin verb to register it
+L   178-185    (    8) | ## 3. Schema migration (widen the FTS5 vtable; backward-compatible)
+L   186-200    (   15) | ### 3.1 Two registry tables (additive, no exemption needed)
+L   201-226    (   26) | ### 3.2 Widening the FTS5 vtable — column model decision
+L   227-247    (   21) | ### 3.3 Reader-path correctness constraint (MANDATORY — projected text is index-
+L   248-257    (   10) | ### 3.3 Backward-compatibility
+L   258-292    (   35) | ## 4. Write-path projection changes (gated, mirroring the vector-index gate)
+L   293-316    (   24) | ## 5. Recursive-payload flatten (bounded tree-walk → indexed text)
+L   317-344    (   28) | ## 6. Dual rebuild-path changes (both must honor the new projection)
+L   345-367    (   23) | ## 7. Backward-compat / default-off / migration-safety
+L   368-387    (   20) | ## 8. VALUE TEST (REQUIRED — the load-bearing section)
+L   388-404    (   17) | ### 8.1 Corpus + gold query set
+L   405-422    (   18) | ### 8.2 Ablation matrix
+L   423-434    (   12) | ### 8.3 Metrics
+L   435-454    (   20) | ### 8.4 The DISCRIMINATING decision rule
+L   455-463    (    9) | ### 8.5 What a pass / fail produces
+L   464-465    (    2) | ## 9. Cost / effort + governance
+L   466-474    (    9) | ### 9.1 Engineering cost — MEDIUM
+L   475-483    (    9) | ### 9.2 Runtime cost — WRITE + STORAGE only, NOT per-query
+L   484-494    (   11) | ### 9.3 Governance note (REQUIRED)
+L   495-520    (   26) | ## 10. Open questions for HITL

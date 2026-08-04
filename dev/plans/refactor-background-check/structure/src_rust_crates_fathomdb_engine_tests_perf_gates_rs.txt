@@ -1,0 +1,65 @@
+# src/rust/crates/fathomdb-engine/tests/perf_gates.rs  (1581 LOC, class=rust-test, soft=800, hard=1200)
+
+L    15-20     (    6) | struct DeterministicEmbedder {
+L    21-30     (   10) | impl DeterministicEmbedder {
+L    31-42     (   12) | impl Embedder for DeterministicEmbedder {
+L    43-46     (    4) | struct RoutedEmbedder {
+L    47-52     (    6) | impl RoutedEmbedder {
+L    53-71     (   19) | impl Embedder for RoutedEmbedder {
+L    72-77     (    6) | fn fixture_path(name: &str) -> (TempDir, std::path::PathBuf) {
+L    78-85     (    8) | fn percentile_ceil(samples: &[Duration], numerator: usize, denominator: usize) -
+L    86-93     (    8) | fn unit_vector(dimension: usize) -> Vector {
+L    94-97     (    4) | fn long_run_enabled() -> bool {
+L    98-101    (    4) | fn ac020_queries() -> [&'static str; 4] {
+L   102-132    (   31) | fn seed_ac020_fixture(engine: &Engine) {
+L   133-194    (   62) | fn run_ac020_mix(engine: &Engine) {
+L   195-207    (   13) | fn env_usize(key: &str, default_full: usize, default_short: usize) -> usize {
+L   208-211    (    4) | fn ac012_corpus_n() -> usize {
+L   212-224    (   13) | fn ac013_corpus_n() -> usize {
+L   225-235    (   11) | fn retrieval_vector_dim() -> u32 {
+L   236-239    (    4) | struct SeededRng {
+L   240-260    (   21) | impl SeededRng {
+L   261-274    (   14) | fn perf_vocab() -> Vec<String> {
+L   275-282    (    8) | fn zipf_index(rng: &mut SeededRng, cumulative: &[f64]) -> usize {
+L   283-294    (   12) | fn zipf_cumulative(vocab_size: usize) -> Vec<f64> {
+L   295-313    (   19) | fn synth_chunk_body(rng: &mut SeededRng, vocab: &[String], cumulative: &[f64]) -
+L   314-321    (    8) | fn ac012_query_token_band(vocab: &[String]) -> Vec<String> {
+L   322-378    (   57) | fn seed_ac012_corpus(engine: &Engine, n: usize) -> Duration {
+L   379-383    (    5) | struct VaryingEmbedder {
+L   384-420    (   37) | impl VaryingEmbedder {
+L   421-434    (   14) | impl Embedder for VaryingEmbedder {
+L   435-477    (   43) | fn seed_ac013_corpus(engine: &Engine, n: usize) -> Duration {
+L   478-489    (   12) | fn ac013_query_bodies(count: usize) -> Vec<String> {
+L   490-495    (    6) | struct LatencyHistogram {
+L   496-535    (   40) | impl LatencyHistogram {
+L   536-536    (    1) | #[test]
+L   537-607    (   71) | fn ac_012_text_query_latency_on_fts5_path() {
+L   608-608    (    1) | #[test]
+L   609-669    (   61) | fn ac_013_vector_retrieval_latency() {
+L   670-670    (    1) | #[test]
+L   671-788    (  118) | fn ac_013b_recall_at_10_floor() {
+L   789-789    (    1) | #[test]
+L   790-831    (   42) | fn ac_013b_floor_matches_adr() {
+L   832-832    (    1) | #[test]
+L   833-911    (   79) | fn ac_013_vector_read_path_smoke() {
+L   912-912    (    1) | #[test]
+L   913-959    (   47) | fn ac_017_vector_projection_freshness_p99_le_five_seconds() {
+L   960-960    (    1) | #[test]
+L   961-996    (   36) | fn ac_018_drain_of_100_vectors_le_two_seconds() {
+L   997-997    (    1) | #[test]
+L   998-1104   (  107) | fn ac_019_mixed_retrieval_stress_workload_tail() {
+L  1105-1105   (    1) | #[test]
+L  1106-1152   (   47) | fn ac_020_reads_do_not_serialize_on_a_single_reader_connection() {
+L  1153-1154   (    2) | #[test]
+L  1155-1173   (   19) | fn ac_020_sequential_only() {
+L  1174-1175   (    2) | #[test]
+L  1176-1219   (   44) | fn ac_020_concurrent_only() {
+L  1220-1221   (    2) | #[test]
+L  1222-1325   (  104) | fn g3_5_cache_pressure_telemetry() {
+L  1326-1338   (   13) | fn a3_evidence_path(name: &str) -> std::path::PathBuf {
+L  1339-1340   (    2) | #[test]
+L  1341-1429   (   89) | fn ac_a3_counters_concurrent() {
+L  1430-1431   (    2) | #[test]
+L  1432-1526   (   95) | fn ac_a3_explain_query_plan() {
+L  1527-1528   (    2) | #[test]
+L  1529-1581   (   53) | fn ac_a3_threadsafe_and_compile_options() {

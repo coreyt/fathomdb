@@ -1,0 +1,8 @@
+# scripts/tests/test_check_release_state_views.sh  (716 LOC, class=shell-test, soft=500, hard=800)
+
+L    40-40     (    1) | pass() { printf 'PASS  %s\n' "$1"; }
+L    41-43     (    3) | fail() { printf 'FAIL  %s\n' "$1" >&2; FAILED=$((FAILED + 1)); }
+L    44-77     (   34) | cleanup() {
+L    78-135    (   58) | gate_facts() {
+L   136-231    (   96) | setup_fixture() {
+L   232-716    (  485) | run_gate() {

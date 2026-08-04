@@ -1,0 +1,19 @@
+# src/rust/crates/fathomdb-embedder/src/candle_reranker.rs  (844 LOC, class=rust-src, soft=500, hard=1000)
+
+L    74-177    (  104) | fn resolve_device() -> Device {
+L   178-208    (   31) | pub enum RerankerLoadError {
+L   209-218    (   10) | pub struct CandleTinyBertReranker {
+L   219-436    (  218) | impl CandleTinyBertReranker {
+L   437-564    (  128) | mod tests {
+L   565-650    (   86) | mod gpu_tests {
+L   651-657    (    7) | struct LoadedWeights {
+L   658-670    (   13) | fn cache_dir() -> Result<PathBuf, RerankerLoadError> {
+L   671-698    (   28) | fn load_pinned_reranker_weights() -> Result<LoadedWeights, RerankerLoadError> {
+L   699-735    (   37) | fn fetch_under_lock(dir: &Path, name: &str, sha: &str) -> Result<(), RerankerLoa
+L   736-761    (   26) | fn download_with_retries(url: &str, partial: &Path) -> Result<(), RerankerLoadEr
+L   762-790    (   29) | fn download_once(
+L   791-814    (   24) | fn acquire_lock(f: &File, lock_path: &Path) -> Result<(), RerankerLoadError> {
+L   815-815    (    1) | struct LockGuard<'a>(&'a File);
+L   816-821    (    6) | impl Drop for LockGuard<'_> {
+L   822-830    (    9) | fn file_matches_sha(path: &Path, expected: &str) -> Result<bool, RerankerLoadErr
+L   831-844    (   14) | fn sha256_file(path: &Path) -> std::io::Result<String> {

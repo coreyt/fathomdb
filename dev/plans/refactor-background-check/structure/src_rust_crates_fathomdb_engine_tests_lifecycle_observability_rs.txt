@@ -1,0 +1,50 @@
+# src/rust/crates/fathomdb-engine/tests/lifecycle_observability.rs  (734 LOC, class=rust-test, soft=600, hard=1200)
+
+L    21-22     (    2) | mod corruption;
+L    23-29     (    7) | fn fixture() -> (TempDir, Engine) {
+L    30-36     (    7) | struct CapturingSubscriber {
+L    37-55     (   19) | impl Subscriber for CapturingSubscriber {
+L    56-56     (    1) | #[test]
+L    57-75     (   19) | fn ac_001_phase_enum_has_five_typed_variants() {
+L    76-76     (    1) | #[test]
+L    77-106    (   30) | fn ac_001_event_struct_carries_typed_source_and_category() {
+L   107-107    (    1) | #[test]
+L   108-229    (  122) | fn ac_002_no_log_files_without_subscriber() {
+L   230-230    (    1) | #[test]
+L   231-251    (   21) | fn ac_003a_writer_events_flow_to_subscriber() {
+L   252-252    (    1) | #[test]
+L   253-264    (   12) | fn ac_003b_search_events_flow_to_subscriber() {
+L   265-265    (    1) | #[test]
+L   266-282    (   17) | fn ac_003c_admin_events_flow_to_subscriber() {
+L   283-283    (    1) | #[test]
+L   284-295    (   12) | fn ac_003d_error_events_flow_to_subscriber() {
+L   296-296    (    1) | #[test]
+L   297-318    (   22) | fn ac_004a_counter_snapshot_key_set() {
+L   319-319    (    1) | #[test]
+L   320-359    (   40) | fn ac_004b_counter_delta_exact_over_mixed_ops() {
+L   360-360    (    1) | #[test]
+L   361-372    (   12) | fn ac_004c_counter_snapshot_does_not_perturb() {
+L   373-373    (    1) | #[test]
+L   374-408    (   35) | fn ac_005a_profiling_toggleable_at_runtime() {
+L   409-409    (    1) | #[test]
+L   410-429    (   20) | fn ac_005b_profile_record_typed_numeric_fields() {
+L   430-430    (    1) | #[test]
+L   431-460    (   30) | fn ac_006_sqlite_internal_events_typed_source() {
+L   461-461    (    1) | #[test]
+L   462-509    (   48) | fn ac_006_interior_page_corruption_emits_sqlite_corrupt() {
+L   510-510    (    1) | #[test]
+L   511-543    (   33) | fn ac_007a_slow_statement_event_at_default_threshold() {
+L   544-544    (    1) | #[test]
+L   545-577    (   33) | fn ac_007b_slow_threshold_reconfigurable() {
+L   578-589    (   12) | fn cte_sql(n: u64) -> String {
+L   590-620    (   31) | fn calibrate_cte_n(engine: &Engine, target_ms: u64) -> u64 {
+L   621-621    (    1) | #[test]
+L   622-654    (   33) | fn ac_008_slow_signal_feeds_lifecycle() {
+L   655-655    (    1) | #[test]
+L   656-688    (   33) | fn ac_009_poison_thread_emits_full_stress_failure_context() {
+L   689-689    (    1) | #[test]
+L   690-708    (   19) | fn ac_009_stress_failure_context_constructs() {
+L   709-709    (    1) | #[test]
+L   710-723    (   14) | fn ac_010_projection_status_enum_three_values() {
+L   724-724    (    1) | #[test]
+L   725-734    (   10) | fn counter_snapshot_default_is_zero() {

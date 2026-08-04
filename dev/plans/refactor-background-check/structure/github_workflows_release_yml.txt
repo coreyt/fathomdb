@@ -1,0 +1,32 @@
+# .github/workflows/release.yml  (602 LOC, class=ci-workflow, soft=300, hard=600)
+
+L     1-2      (    2) | name: Release
+L     3-3      (    1) | on:
+L     4-6      (    3) |   push:
+L     7-13     (    7) |   workflow_dispatch:
+L    14-14     (    1) | permissions:
+L    15-15     (    1) |   actions: read
+L    16-16     (    1) |   contents: write
+L    17-18     (    2) |   id-token: write
+L    19-19     (    1) | env:
+L    20-27     (    8) |   DRY_RUN: ${{ inputs.dry_run || 'false' }}
+L    28-29     (    2) |   NPM_DIST_TAG: "next"
+L    30-36     (    7) | jobs:
+L    37-86     (   50) |   verify-release:
+L    87-143    (   57) |   build-python:
+L   144-202    (   59) |   build-napi:
+L   203-224    (   22) |   build-rust:
+L   225-247    (   23) |   all-builds-passed:
+L   248-268    (   21) |   publish-rust-t1-embedder-api:
+L   269-289    (   21) |   publish-rust-t2-schema:
+L   290-316    (   27) |   publish-rust-t3-query:
+L   317-337    (   21) |   publish-rust-t4-embedder:
+L   338-358    (   21) |   publish-rust-t5-engine:
+L   359-380    (   22) |   publish-rust-t6-facade:
+L   381-406    (   26) |   publish-rust-t7-cli:
+L   407-440    (   34) |   publish-pypi:
+L   441-481    (   41) |   publish-npm-platform-linux-x64-gnu:
+L   482-526    (   45) |   publish-npm:
+L   527-566    (   40) |   post-publish-smoke:
+L   567-586    (   20) |   co-tagging-assert:
+L   587-602    (   16) |   github-release:

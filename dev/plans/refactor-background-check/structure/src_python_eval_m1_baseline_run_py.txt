@@ -1,0 +1,10 @@
+# src/python/eval/m1_baseline_run.py  (541 LOC, class=py-eval, soft=500, hard=1000)
+
+L    68-78     (   11) | def _is_retryable(exc: BaseException) -> bool:
+L    79-106    (   28) | def _retry_after_seconds(exc: BaseException) -> "float | None":
+L   107-233    (  127) | class CostTrackingAnswerer(AirlockAnswerer):
+L   234-322    (   89) | def build_power_block(paired_records: list[dict[str, Any]], cost: dict[str, Any]
+L   323-350    (   28) | def select_sample(
+L   351-359    (    9) | def recall_sample(questions: Sequence[Question], *, n: int, seed: int = 0) -> li
+L   360-444    (   85) | def run(
+L   445-541    (   97) | def main(argv: Optional[list[str]] = None) -> int:

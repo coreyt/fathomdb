@@ -1,0 +1,16 @@
+# scripts/tests/test_check_governed_surface_pin.sh  (558 LOC, class=shell-test, soft=500, hard=800)
+
+L    52-52     (    1) | pass() { printf 'PASS  %s\n' "$1"; }
+L    53-55     (    3) | fail() { printf 'FAIL  %s\n' "$1" >&2; FAILED=$((FAILED + 1)); }
+L    56-64     (    9) | cleanup() {
+L    65-72     (    8) | copy_file() {
+L    73-86     (   14) | mutate() {
+L    87-95     (    9) | run_checker() {
+L    96-99     (    4) | check_fixture() {
+L   100-109    (   10) | expect_rc() {
+L   110-119    (   10) | expect_out() {
+L   120-294    (  175) | expect_routes_to_hitl() {
+L   295-325    (   31) | omit_count_pin() {
+L   326-456    (  131) | type_count_pin() {
+L   457-473    (   17) | make_repo() {
+L   474-558    (   85) | run_preflight() {

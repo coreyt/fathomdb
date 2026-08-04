@@ -1,0 +1,50 @@
+# src/rust/crates/fathomdb-engine/tests/slice15_byo_llm_ingest.rs  (1189 LOC, class=rust-test, soft=800, hard=1200)
+
+L    21-24     (    4) | fn fixture_dir() -> std::path::PathBuf {
+L    25-31     (    7) | fn stub_harness_cmd() -> Vec<String> {
+L    32-37     (    6) | fn db_path(dir: &TempDir, name: &str) -> std::path::PathBuf {
+L    38-42     (    5) | struct FixedEmbedder {
+L    43-51     (    9) | impl FixedEmbedder {
+L    52-66     (   15) | impl Embedder for FixedEmbedder {
+L    67-67     (    1) | #[test]
+L    68-110    (   43) | fn handshake_hello_ready() {
+L   111-111    (    1) | #[test]
+L   112-178    (   67) | fn extract_dispatch_and_entity_node_mapping() {
+L   179-179    (    1) | #[test]
+L   180-256    (   77) | fn edge_canonical_edges_mapping() {
+L   257-257    (    1) | #[test]
+L   258-332    (   75) | fn invalidate_not_accumulate() {
+L   333-333    (    1) | #[test]
+L   334-387    (   54) | fn edge_fts_searchable() {
+L   388-388    (    1) | #[test]
+L   389-442    (   54) | fn edge_vector_searchable() {
+L   443-443    (    1) | #[test]
+L   444-479    (   36) | fn footprint_no_network_egress() {
+L   480-480    (    1) | #[test]
+L   481-534    (   54) | fn golden_fixture_reproducibility() {
+L   535-535    (    1) | #[test]
+L   536-563    (   28) | fn no_facts_warning_no_error() {
+L   564-564    (    1) | #[test]
+L   565-605    (   41) | fn model_provenance() {
+L   606-606    (    1) | #[test]
+L   607-671    (   65) | fn superseded_edge_excluded_from_fts() {
+L   672-672    (    1) | #[test]
+L   673-717    (   45) | fn max_docs_per_request_zero_rejected() {
+L   718-718    (    1) | #[test]
+L   719-779    (   61) | fn edge_fts_kind_filter_applied() {
+L   780-780    (    1) | #[test]
+L   781-867    (   87) | fn edge_fts_source_type_filter_passes_edge_hits() {
+L   868-868    (    1) | #[test]
+L   869-938    (   70) | fn edge_fts_created_after_filter_checks_vector_default() {
+L   939-939    (    1) | #[test]
+L   940-974    (   35) | fn ingest_rejects_wrong_result_type() {
+L   975-975    (    1) | #[test]
+L   976-1014   (   39) | fn ingest_rejects_mismatched_request_id() {
+L  1015-1015   (    1) | #[test]
+L  1016-1060   (   45) | fn ingest_rejects_out_of_range_confidence() {
+L  1061-1061   (    1) | #[test]
+L  1062-1096   (   35) | fn ingest_rejects_colon_in_entity_type() {
+L  1097-1097   (    1) | #[test]
+L  1098-1147   (   50) | fn ingest_dedups_duplicate_edges_within_batch() {
+L  1148-1148   (    1) | #[test]
+L  1149-1189   (   41) | fn ingest_times_out_on_hung_harness() {

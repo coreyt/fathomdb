@@ -1,0 +1,74 @@
+# dev/plans/runs/STATUS-0.8.0.md  (2087 LOC, class=plan-status-doc, soft=1100, hard=1800)
+
+L     1-43     (   43) | # FathomDB 0.8.0 — Live status board
+L    44-195    (  152) | ## 1. Current slice
+L   196-228    (   33) | ### Slice 15 — G0 Canonical Identity Substrate (KEYSTONE — schema 11→12) `[imple
+L   229-247    (   19) | ### Slice 10 — G9 RRF + G10 filtered-KNN + G12-recency `[implementation]` — ✅ CL
+L   248-263    (   16) | ### Slice 5 — G1 Structured Hits + FTS5 tokenizer `[implementation]` — ✅ CLOSED 
+L   264-271    (    8) | ### Slice 0 — Setup + ADR Kickoff `[design-adr]` — ✅ CLOSED 2026-06-02
+L   272-302    (   31) | ## 2. Per-slice status table (with X1/X2/X3 column)
+L   303-323    (   21) | ## 3. Per-AC scoreboard (0.8.0 targets)
+L   324-340    (   17) | ## 4. Parallelization plan (REQUIRED — verbatim from the impl plan)
+L   341-346    (    6) | ## 5. Open HITL questions (live)
+L   347-380    (   34) | ### Slice-0 gate package (produced now; signed downstream)
+L   381-422    (   42) | ## 6. Outstanding worktrees ledger
+L   423-424    (    2) | ## 7. Recent decisions (newest on top)
+L   425-453    (   29) | ### 2026-06-09 — ◆ HITL freeze-target ruling + COR-2 freeze TOOLING landed (unbl
+L   454-474    (   21) | ### 2026-06-08 — IR-B (IR-1 Phase 2) MERGED post-GA (codex §9 1×[P2]→fix-1) — IR
+L   475-492    (   18) | ### 2026-06-08 — ★ 0.8.0 GA SHIPPED — v0.8.0 tagged + PUBLISHED (crates.io · npm
+L   493-504    (   12) | ### 2026-06-08 — GA-3 MERGED (codex §9 clean PASS) — eu7 AC-075 gate GENUINELY G
+L   505-522    (   18) | ### 2026-06-08 — ◆ HITL SEQUENCING: finish GA → IR in parallel (branch, merge po
+L   523-543    (   21) | ### 2026-06-08 — ◆ HITL RULING: 0.8960 vector-stage fidelity ACCEPTED for 0.8.0 
+L   544-570    (   27) | ### 2026-06-08 — ⛔ GA RE-HALTED: real eu7 vector-stage recall@10 = 0.8960 < 0.90
+L   571-596    (   26) | ### 2026-06-08 — eu7 re-measure: first run REAPED at 6632/7667 → relaunched bull
+L   597-609    (   13) | ### 2026-06-08 — ◆ GA sign-off GATED on a real eu7 re-measure (HITL); perf-canon
+L   610-639    (   30) | ### 2026-06-08 — GA-2 / Slice-40 MERGED (codex §9 PASS, 1×[P3]→fix-1) — AC-075/0
+L   640-664    (   25) | ### 2026-06-08 — ◆ B-1 RULED (HITL): Option 1 — correct eu7 to measure the ANN+ 
+L   665-685    (   21) | ### 2026-06-08 — IR-A (IR-1 Phase 1) CLOSED — measure consensus-signed; orchestr
+L   686-714    (   29) | ### 2026-06-08 — GA-1 RETURNED → ◆ B-1 PREMISE OVERTURNED (no corpus change; eu7
+L   715-739    (   25) | ### 2026-06-07 — Campaign kickoff: scaffolds landed; GA-1 ∥ IR-A delegated (back
+L   740-753    (   14) | ### 2026-06-07 — Master orchestrator hand-off + session scaffold generator autho
+L   754-782    (   29) | ### 2026-06-07 — IR-1 split (Phase 1 runnable now; Ph2–4 deferred) + sequenced G
+L   783-808    (   26) | ### 2026-06-07 — Recall-eval framework assessment → fidelity-vs-relevance refram
+L   809-842    (   34) | ### 2026-06-07 — Re-scoped Slice 40 RAN → GA HALTED on the RECALL FLOOR (real pr
+L   843-876    (   34) | ### 2026-06-07 — CONSOLIDATED: Slice-40 re-scope = the single remaining 0.8.0 wo
+L   877-897    (   21) | ### 2026-06-07 — HITL B2 ruling: RUN THE PERF GATE IN RELEASE, not debug (no AC/
+L   898-942    (   45) | ### 2026-06-07 — Slice 6 (B2 experiment) MERGED → B2 root-cause CORRECTED: token
+L   943-977    (   35) | ### 2026-06-06 — HITL ruled on the Slice-40 HALT (B1/B2/Q3) + B1 precedent found
+L   978-1023   (   46) | ### 2026-06-06 — Slice 40 Phase A RAN → HALTED to HITL (3 RED gates; recall-gate
+L  1024-1056   (   33) | ### 2026-06-06 — Slice 37 determination (DEFER, no 0.8.0 action) + Slice 40 PROM
+L  1057-1075   (   19) | ### 2026-06-06 — Slice 35 CLOSED (HITL-signed; both qualifications honored)
+L  1076-1100   (   25) | ### 2026-06-06 — Slice 35 MERGED + codex §9 PASS (2×[P3] resolved) — ⏸ PENDING H
+L  1101-1132   (   32) | ### 2026-06-06 — Slice 35 SPLIT (HITL) + PROMPTED; F9/F5 deferred to post-0.8.0 
+L  1133-1157   (   25) | ### 2026-06-06 — Slice 34 CLOSED (fix-1; orchestrator-run §9 caught [P2], fix-1 
+L  1158-1177   (   20) | ### 2026-06-06 — Slice 27 CLOSED (fix-2 codex §9 clean PASS; [P1]→fix-1→[P1]→fix
+L  1178-1204   (   27) | ### 2026-06-06 — Slice 27 fix-1 MERGED (Option B) but codex re-review = 1×[P1] →
+L  1205-1226   (   22) | ### 2026-06-05 — Slice 27 [P1] → HITL chose Option B; fix-1 PROMPTED (single sli
+L  1227-1251   (   25) | ### 2026-06-05 — Slice 33 CLOSED · Slice 27 MERGED-but-BLOCKED (codex [P1] → HAL
+L  1252-1278   (   27) | ### 2026-06-05 — Slices 27 + 33 PROMPTED (reserved-gap band) — parallel-safe
+L  1279-1362   (   84) | ### 2026-06-05 — Slice 32 prompt REBUILT + FINALIZED (resolve the intended graph
+L  1363-1381   (   19) | ### 2026-06-05 — Slice 32 PLACEHOLDER created (graph-context evaluation of the `
+L  1382-1416   (   35) | ### 2026-06-05 — G0 identity-scope re-scope SIGNED (active-uniqueness = `logical
+L  1417-1451   (   35) | ### 2026-06-04 — Slice 30 PROMPTED (governed SDK read verbs; anchors re-verified
+L  1452-1495   (   44) | ### 2026-06-04 — Slice 25 CLOSED (governed-surface conformance rewrite; PASS aft
+L  1496-1534   (   39) | ### 2026-06-04 — Slice 25 PROMPTED (governed-surface conformance rewrite; ADR al
+L  1535-1561   (   27) | ### 2026-06-04 — Interim Slice 21 (pyright-zero cleanup) inserted + PROMPTED (HI
+L  1562-1596   (   35) | ### 2026-06-04 — Slice 21 CLOSED (pyright-zero cleanup; item-D premise corrected
+L  1597-1636   (   40) | ### 2026-06-04 — Slice 20 CLOSED (G8 dangling-edge; PASS after codex [P1] BLOCK 
+L  1637-1662   (   26) | ### 2026-06-03 — pre-Slice-30 supersession gate SIGNED + Slice 20 PROMPTED
+L  1663-1695   (   33) | ### 2026-06-03 — Slice 15 CLOSED (KEYSTONE G0 substrate; PASS via codex override
+L  1696-1729   (   34) | ### 2026-06-03 — Slice 10 CLOSED (PASS after codex CONCERN→fix-1→BLOCK→fix-2; po
+L  1730-1762   (   33) | ### 2026-06-02 — Slice 0 & 5 OOB forensic audit + best-practices review → verdic
+L  1763-1780   (   18) | ### 2026-06-02 — Slice prompt TEMPLATE authored (path-isolation + recover-out-lo
+L  1781-1805   (   25) | ### 2026-06-02 — OOB-work evaluation (Slice 5 + the corpus-line integration)
+L  1806-1823   (   18) | ### 2026-06-02 — Slice 10 PROMPTED (no-knob contract; codex is primary reviewer)
+L  1824-1859   (   36) | ### 2026-06-02 — Slice 5 CLOSED (PASS after codex BLOCK→fix-1; pointer → Slice 1
+L  1860-1873   (   14) | ### 2026-06-02 — Execution-model correction (HITL): orchestrator owns NO worktre
+L  1874-1896   (   23) | ### 2026-06-02 — Slice 5 PROMPTED (implementer prompt written)
+L  1897-1917   (   21) | ### 2026-06-02 — Slice 0 CLOSED (PASS; pointer → Slice 5)
+L  1918-1935   (   18) | ### 2026-06-02 — Slice 0 spawned (plan-as-state-machine stood up)
+L  1936-1944   (    9) | ### 2026-06-02 — Subagent-type discrepancy resolved on disk (implementer EXISTS)
+L  1945-2017   (   73) | ## 8. Next action
+L  2018-2035   (   18) | ## 9. Compaction-resume checklist
+L  2036-2054   (   19) | ## Implementer-vs-general-purpose witness (subagent-type ruling)
+L  2055-2087   (   33) | ## X1 SDK functional-harness contract (convention only — NO code in Slice 0)

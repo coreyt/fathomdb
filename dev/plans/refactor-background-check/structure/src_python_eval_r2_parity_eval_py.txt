@@ -1,0 +1,36 @@
+# src/python/eval/r2_parity_eval.py  (1494 LOC, class=py-eval, soft=800, hard=1200)
+
+L   109-125    (   17) | class Hit:
+L   126-144    (   19) | class GoldQuery:
+L   145-174    (   30) | class BaseAnswerer:
+L   175-188    (   14) | class StubAnswerer(BaseAnswerer):
+L   189-194    (    6) | class _Record:
+L   195-210    (   16) | class RecordingAnswerer(StubAnswerer):
+L   211-225    (   15) | class NullAnswerer(BaseAnswerer):
+L   226-283    (   58) | class LLMAnswerer(BaseAnswerer):
+L   284-290    (    7) | class RetrievalAdapter(Protocol):
+L   291-303    (   13) | class StubAdapter:
+L   304-314    (   11) | def session_id_of(source_doc_id: str) -> str:
+L   315-357    (   43) | def _make_doc_id_of(cursor_to_doc: dict[int, str]) -> Any:
+L   358-408    (   51) | class FathomDBAdapter:
+L   409-455    (   47) | class NaiveRAGAdapter:
+L   456-632    (  177) | class Mem0OSSAdapter:
+L   633-645    (   13) | def _normalize(text: str) -> str:
+L   646-657    (   12) | def normalize_answer(text: Optional[str]) -> Optional[str]:
+L   658-670    (   13) | def _match(ground_truth: list[str], system_answer: str) -> bool:
+L   671-674    (    4) | def _tokenize(text: str) -> list[str]:
+L   675-700    (   26) | class PerClassScorer:
+L   701-725    (   25) | def _parse_gold(raw: dict[str, Any]) -> list[GoldQuery]:
+L   726-777    (   52) | def load_repin_gold(gold_path: str | Path) -> tuple[str, str, list[GoldQuery]]:
+L   778-781    (    4) | def _mean(values: list[float]) -> Optional[float]:
+L   782-787    (    6) | def _delta(a: Optional[float], b: Optional[float]) -> Optional[float]:
+L   788-931    (  144) | class R2Harness:
+L   932-955    (   24) | def run_r2_eval(
+L   956-963    (    8) | def _default_corpus_dir() -> Path:
+L   964-979    (   16) | def _load_documents(raw_dir: Path) -> dict[str, str]:
+L   980-994    (   15) | def _format_lme_session(turns: list) -> str:
+L   995-1060   (   66) | def load_longmemeval(
+L  1061-1103   (   43) | def load_longmemeval_from_file(
+L  1104-1226   (  123) | def _build_fathomdb(
+L  1227-1398   (  172) | def main(argv: Optional[list[str]] = None) -> int:
+L  1399-1494   (   96) | def _main_lme(args: Any) -> int:

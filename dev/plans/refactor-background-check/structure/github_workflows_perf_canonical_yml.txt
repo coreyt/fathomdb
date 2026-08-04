@@ -1,0 +1,10 @@
+# .github/workflows/perf-canonical.yml  (340 LOC, class=ci-workflow, soft=300, hard=600)
+
+L     1-51     (   51) | name: perf-canonical (AC-012 / AC-013 / AC-019 long-run gate)
+L    52-52     (    1) | on:
+L    53-89     (   37) |   workflow_dispatch:
+L    90-90     (    1) | permissions:
+L    91-96     (    6) |   contents: read
+L    97-97     (    1) | jobs:
+L    98-234    (  137) |   ac012-canonical-measure:
+L   235-340    (  106) |   perf-experiment:

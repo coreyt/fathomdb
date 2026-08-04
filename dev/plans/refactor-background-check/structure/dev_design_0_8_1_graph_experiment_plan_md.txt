@@ -1,0 +1,33 @@
+# dev/design/0.8.1-graph-experiment-plan.md  (726 LOC, class=design-doc, soft=700, hard=1100)
+
+L     5-50     (   46) | # 0.8.1 graph/IR experiment plan — finding the most valuable design choices (LME
+L    51-96     (   46) | ## 1. Principles (the methodology that keeps us honest)
+L    97-120    (   24) | ## 2. The experiment program (phases, dependencies, parallelism, gates)
+L   121-158    (   38) | ### Phase 0.0 — Capability tracer (do this FIRST; it is the fix for the planning
+L   159-194    (   36) | ### P0 — unblock measurement (only after G0)
+L   195-238    (   44) | ### P1 — memory-track design discrimination (after G1; E2 result feeds the re-ba
+L   239-245    (    7) | ### P2 — parked
+L   246-250    (    5) | ## 3. Smallest-but-valid iteration set (the math)
+L   251-259    (    9) | ### 3.1 Two independent knobs — only one is safe to shrink
+L   260-271    (   12) | ### 3.2 Sessions to extract — scales with questions, but the multiplier MUST be 
+L   272-286    (   15) | ### 3.3 Estimation precision — per-class recall CI
+L   287-310    (   24) | ### 3.4 Decision power — paired comparison (McNemar)
+L   311-372    (   62) | ### 3.5 Conclusions
+L   373-380    (    8) | ## 4. Cost forecast
+L   381-393    (   13) | ### 4.1 What costs money, and when (the lifecycle)
+L   394-407    (   14) | ### 4.2 Extraction cost by coverage level (one-time each; in 3,600 / out 800 per
+L   408-425    (   18) | ### 4.3 Embedding wall-clock (LLM-free, but the real bottleneck for fused runs)
+L   426-439    (   14) | ### 4.4 End-to-end gate cost by reader (per gate run; answerer 8,500/200 + judge
+L   440-447    (    8) | ### 4.5 Data lifecycle — runs do NOT overwrite each other
+L   448-459    (   12) | ### 4.6 Program total (order of magnitude)
+L   460-470    (   11) | ## 5. Acceptance criteria / measures (per experiment)
+L   471-500    (   30) | ## 6. Gates
+L   501-559    (   59) | ## 7. Decisions
+L   560-565    (    6) | ## 8. Session plan & live state
+L   566-582    (   17) | ### 8.1 Retrospective — why we inserted P0.0 (the planning miss)
+L   583-591    (    9) | ### 8.2 What the smoke DID establish (kept)
+L   592-681    (   90) | ### 8.3 The G0 prerequisite slice (tracer + E0a + E0b + PRE-1/2/3, resolved toge
+L   682-689    (    8) | ### 8.4 Live state (2026-06-14)
+L   690-700    (   11) | ### 8.5 Immediate next actions (this thread orchestrates)
+L   701-717    (   17) | ### 8.6 ELPS work map (does the extractor need touching, where, how heavy)
+L   718-726    (    9) | ## 9. References

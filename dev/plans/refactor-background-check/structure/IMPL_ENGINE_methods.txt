@@ -1,0 +1,142 @@
+# impl Engine  (L4110-9117, 5008 lines) - 140 methods
+
+L  4111-4129   (  19) | pub fn open(path: impl Into<PathBuf>) -> Result<OpenedEngine, EngineOpenError> {
+L  4130-4162   (  33) | pub fn open_with_choice(
+L  4163-4196   (  34) | fn open_default_embedder(path: impl Into<PathBuf>) -> Result<OpenedEngine, EngineOpenError
+L  4197-4203   (   7) | fn open_default_embedder(_path: impl Into<PathBuf>) -> Result<OpenedEngine, EngineOpenErro
+L  4204-4219   (  16) | pub fn open_with_migration_event_sink(
+L  4220-4236   (  17) | pub fn open_with_migrations_for_test(
+L  4237-4251   (  15) | pub fn open_with_subscriber_for_test(
+L  4252-4265   (  14) | pub fn open_without_embedder_for_test(
+L  4266-4280   (  15) | pub fn open_with_embedder_for_test(
+L  4281-4299   (  19) | fn open_with_embedder_and_subscriber(
+L  4300-4425   ( 126) | fn open_with_migrations(
+L  4426-4662   ( 237) | fn open_locked(
+L  4663-4666   (   4) | pub fn path(&self) -> &Path {
+L  4667-4703   (  37) | pub fn write(&self, batch: &[PreparedWrite]) -> Result<WriteReceipt, EngineError> {
+L  4704-4779   (  76) | fn write_inner(&self, batch: &[PreparedWrite]) -> Result<WriteReceipt, EngineError> {
+L  4780-4802   (  23) | pub fn ingest_with_extractor(
+L  4803-4881   (  79) | fn provider_session(
+L  4882-5261   ( 380) | fn run_extract_session(
+L  5262-5279   (  18) | pub fn consolidate_with_provider(
+L  5280-5373   (  94) | fn run_consolidate_session(
+L  5374-5415   (  42) | fn assemble_consolidate_cluster(
+L  5416-5556   ( 141) | fn apply_consolidate_verdicts(
+L  5557-5592   (  36) | fn active_edge_write_cursor(
+L  5593-5614   (  22) | fn prune_edge_projection_shadows(
+L  5615-5633   (  19) | pub fn search(&self, query: &str) -> Result<SearchResult, EngineError> {
+L  5634-5653   (  20) | pub fn search_view(&self, query: &str, view: &ReadView) -> Result<SearchResult, EngineErro
+L  5654-5681   (  28) | pub fn search_reranked_view(
+L  5682-5719   (  38) | pub fn search_filtered(
+L  5720-5738   (  19) | pub fn search_filter(&self, query: &str, filter: &Filter) -> Result<SearchResult, EngineEr
+L  5739-5769   (  31) | pub fn search_reranked(
+L  5770-5802   (  33) | pub fn search_explained(
+L  5803-5811   (   9) | pub fn search_text_only(&self, query: &str) -> Result<SearchResult, EngineError> {
+L  5812-5877   (  66) | pub fn search_text_only_view(
+L  5878-5884   (   7) | pub fn dense_disabled(&self) -> bool {
+L  5885-5892   (   8) | pub fn dense_disabled_reason(&self) -> Option<String> {
+L  5893-5901   (   9) | pub fn vector_equivalence_refusal_count(&self) -> u64 {
+L  5902-5961   (  60) | fn search_reranked_with_explain(
+L  5962-5985   (  24) | pub fn enable_telemetry(&self, sink_path: &str) -> Result<(), EngineError> {
+L  5986-6004   (  19) | pub fn last_telemetry_query_id(&self) -> Option<String> {
+L  6005-6059   (  55) | fn capture_telemetry(&self, query: &str, result: &SearchResult) {
+L  6060-6095   (  36) | pub fn record_feedback(
+L  6096-6110   (  15) | fn detect_slow(&self, started: Instant, category: lifecycle::EventCategory) {
+L  6111-6127   (  17) | fn emit_event(
+L  6128-6142   (  15) | fn emit_sqlite_internal_error(&self, err: &rusqlite::Error) {
+L  6143-6170   (  28) | fn search_inner(
+L  6171-6332   ( 162) | fn search_inner_with_stats(
+L  6333-6344   (  12) | pub fn _graph_frontier_stats_for_test(
+L  6345-6357   (  13) | pub fn read_get(
+L  6358-6394   (  37) | pub fn read_get_many(
+L  6395-6444   (  50) | pub fn graph_neighbors(
+L  6445-6491   (  47) | pub fn search_expand(
+L  6492-6521   (  30) | pub fn explain_graph_neighbors_for_test(
+L  6522-6532   (  11) | pub fn read_collection(
+L  6533-6541   (   9) | pub fn read_mutations(
+L  6542-6579   (  38) | fn read_collection_dispatch(
+L  6580-6626   (  47) | pub fn read_list(
+L  6627-6664   (  38) | pub fn read_list_filter(
+L  6665-6685   (  21) | pub fn crossed_boundary_since(
+L  6686-6716   (  31) | pub fn close(&self) -> Result<(), EngineError> {
+L  6717-6729   (  13) | pub fn drain(&self, timeout_ms: u64) -> Result<(), EngineError> {
+L  6730-6738   (   9) | pub fn counters(&self) -> CounterSnapshot {
+L  6739-6748   (  10) | pub fn set_profiling(&self, enabled: bool) -> Result<(), EngineError> {
+L  6749-6759   (  11) | pub fn set_slow_threshold_ms(&self, value: u64) -> Result<(), EngineError> {
+L  6760-6765   (   6) | pub fn subscribe(&self, subscriber: Arc<dyn lifecycle::Subscriber>) -> Subscription {
+L  6766-6771   (   6) | pub fn reader_worker_count_for_test(&self) -> usize {
+L  6772-6781   (  10) | pub fn live_reader_worker_count_for_test(&self) -> usize {
+L  6782-6792   (  11) | pub fn reader_lookaside_config_rcs_for_test(&self) -> Vec<i32> {
+L  6793-6803   (  11) | pub fn reader_lookaside_used_per_worker_for_test(&self) -> Vec<i32> {
+L  6804-6809   (   6) | pub fn cache_status_per_worker_for_test(&self, label: &str) -> Vec<CacheStatusReply> {
+L  6810-6821   (  12) | pub fn force_next_commit_failure_for_test(&self) {
+L  6822-6845   (  24) | pub fn execute_for_test(&self, sql: &str) -> Result<(), EngineError> {
+L  6846-6925   (  80) | pub fn run_one_thread_poison_for_test(&self) -> Result<(), EngineError> {
+L  6926-6930   (   5) | pub fn set_projection_scheduler_frozen_for_test(&self, frozen: bool) {
+L  6931-6937   (   7) | pub fn set_projection_retry_delays_for_test(&self, delays_ms: &[u64]) {
+L  6938-6944   (   7) | pub fn set_embed_timeout_ms_for_test(&self, timeout_ms: u64) {
+L  6945-6950   (   6) | pub fn set_embed_circuit_threshold_for_test(&self, threshold: u64) {
+L  6951-6955   (   5) | pub fn embed_circuit_open_for_test(&self) -> bool {
+L  6956-6966   (  11) | pub fn projection_status_for_test(
+L  6967-6976   (  10) | pub fn has_vector_for_cursor_for_test(&self, cursor: u64) -> Result<bool, EngineError> {
+L  6977-6992   (  16) | pub fn projection_failure_count_for_test(&self, cursor: u64) -> Result<u64, EngineError> {
+L  6993-6997   (   5) | pub fn set_provenance_row_cap_for_test(&self, cap: Option<u64>) {
+L  6998-7007   (  10) | pub fn provenance_row_count_for_test(&self) -> Result<u64, EngineError> {
+L  7008-7031   (  24) | pub fn oldest_provenance_record_key_for_test(
+L  7032-7050   (  19) | pub fn configure_vector_kind_for_test(&self, kind: &str) -> Result<(), EngineError> {
+L  7051-7067   (  17) | pub fn secure_delete_enabled_for_test(&self) -> Result<bool, EngineError> {
+L  7068-7081   (  14) | pub fn reader_secure_delete_enabled_for_test(&self) -> Result<bool, EngineError> {
+L  7082-7101   (  20) | pub fn runtime_secure_delete_enabled_for_test(&self) -> Result<bool, EngineError> {
+L  7102-7165   (  64) | pub fn write_canonical_row_with_kind_for_test(
+L  7166-7200   (  35) | pub fn canonical_rows_with_row_kind_for_test(
+L  7201-7225   (  25) | pub fn bm25f_search(
+L  7226-7233   (   8) | pub fn embed_text(&self, text: &str) -> Result<Vec<f32>, EngineError> {
+L  7234-7379   ( 146) | pub fn write_vector_for_test(
+L  7380-7398   (  19) | pub fn drain_mean_centering_events_for_test(&self) -> Result<Vec<EmbedderEvent>, EngineErr
+L  7399-7423   (  25) | pub fn drain_embedder_events(&self) -> Result<Vec<EmbedderEvent>, EngineError> {
+L  7424-7472   (  49) | pub fn recompute_mean(&self) -> Result<MeanRecomputeReport, EngineError> {
+L  7473-7480   (   8) | pub fn set_search_limit_for_test(&self, limit: usize) {
+L  7481-7490   (  10) | pub fn set_recency_reweight_enabled_for_test(&self, enabled: bool) {
+L  7491-7506   (  16) | pub fn set_importance_reweight_enabled_for_test(&self, enabled: bool) {
+L  7507-7530   (  24) | pub fn write_node_importance(
+L  7531-7553   (  23) | pub fn node_importance(&self, write_cursor: u64) -> Result<Option<f64>, EngineError> {
+L  7554-7562   (   9) | pub fn set_vector_stage_only_for_test(&self, enabled: bool) {
+L  7563-7567   (   5) | pub fn force_next_recompute_failure_for_test(&self) {
+L  7568-7577   (  10) | pub fn vector_row_count_for_test(&self) -> Result<u64, EngineError> {
+L  7578-7593   (  16) | pub fn read_vector_blob_for_test(&self, rowid: i64) -> Result<Vec<u8>, EngineError> {
+L  7594-7612   (  19) | pub fn read_vector_bin_for_test(&self, rowid: i64) -> Result<Vec<u8>, EngineError> {
+L  7613-7625   (  13) | pub fn query_i64_col_for_test(&self, sql: &str) -> Result<Vec<i64>, EngineError> {
+L  7626-7636   (  11) | pub fn query_text_col_for_test(&self, sql: &str) -> Result<Vec<String>, EngineError> {
+L  7637-7647   (  11) | pub fn default_embedder_profile_for_test(&self) -> Result<EmbedderIdentity, EngineError> {
+L  7648-7666   (  19) | pub fn check_integrity(
+L  7667-7706   (  40) | pub fn safe_export(
+L  7707-7715   (   9) | pub fn rebuild_projections(&self) -> Result<RebuildReport, EngineError> {
+L  7716-7725   (  10) | pub fn rebuild_vec0(&self) -> Result<RebuildReport, EngineError> {
+L  7726-7782   (  57) | pub fn trace_source_ref(&self, source_id: &str) -> Result<TraceReport, EngineError> {
+L  7783-7820   (  38) | fn resolve_lifecycle_target(id: &str) -> Result<String, EngineError> {
+L  7821-7930   ( 110) | pub fn transition(
+L  7931-7955   (  25) | pub fn configure_projections(
+L  7956-7985   (  30) | pub fn read_projections(&self) -> Result<Vec<ProjectionSpec>, EngineError> {
+L  7986-8018   (  33) | pub fn purge(&self, logical_id: &str) -> Result<(), EngineError> {
+L  8019-8153   ( 135) | fn purge_inner(&self, lid: &str) -> Result<(), EngineError> {
+L  8154-8167   (  14) | pub fn erase_source(&self, source_id: &str) -> Result<ExciseReport, EngineError> {
+L  8168-8182   (  15) | pub fn excise_source(&self, source_id: &str) -> Result<ExciseReport, EngineError> {
+L  8183-8225   (  43) | fn erase_source_shared(
+L  8226-8257   (  32) | pub fn verify_embedder(
+L  8258-8272   (  15) | pub fn dump_schema(&self) -> Result<DumpSchemaReport, EngineError> {
+L  8273-8307   (  35) | pub fn dump_row_counts(&self) -> Result<DumpRowCountsReport, EngineError> {
+L  8308-8393   (  86) | pub fn orphan_provenance(&self) -> Result<OrphanProvenanceReport, EngineError> {
+L  8394-8420   (  27) | pub fn dump_profile(&self) -> Result<DumpProfileReport, EngineError> {
+L  8421-8443   (  23) | pub fn truncate_wal(&self) -> Result<TruncateWalReport, EngineError> {
+L  8444-8503   (  60) | fn wal_checkpoint_truncate_once(
+L  8504-8575   (  72) | fn complete_erasure_at_rest(&self, verb: &'static str) -> Result<(), EngineError> {
+L  8576-8611   (  36) | fn discharge_pending_redactions(&self, verb: &'static str) -> Result<(), EngineError> {
+L  8612-8643   (  32) | fn load_pending_redactions(&self) -> Result<Vec<(i64, Vec<String>)>, EngineError> {
+L  8644-8690   (  47) | fn clear_pending_redactions(&self, row_ids: &[i64]) -> Result<(), EngineError> {
+L  8691-8759   (  69) | fn redact_telemetry_stable_ids(
+L  8760-8911   ( 152) | fn excise_source_inner(
+L  8912-8942   (  31) | pub fn excise_collection_record(
+L  8943-8997   (  55) | fn excise_collection_record_inner(
+L  8998-9016   (  19) | fn run_rebuild(
+L  9017-9108   (  92) | fn rebuild_shadow_state(
+L  9109-9117   (   9) | fn ensure_open(&self) -> Result<(), EngineError> {

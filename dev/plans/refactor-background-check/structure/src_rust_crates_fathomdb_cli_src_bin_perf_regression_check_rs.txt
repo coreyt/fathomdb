@@ -1,0 +1,17 @@
+# src/rust/crates/fathomdb-cli/src/bin/perf-regression-check.rs  (565 LOC, class=rust-src, soft=500, hard=1000)
+
+L    93-108    (   16) | struct RawRecord {
+L   109-125    (   17) | struct Record {
+L   126-142    (   17) | fn fixed_digits(field: &str, width: usize) -> Option<i64> {
+L   143-222    (   80) | fn parse_rfc3339_epoch(s: &str) -> Result<i64, String> {
+L   223-252    (   30) | fn load_record(path: &Path) -> Result<Record, String> {
+L   253-267    (   15) | fn median(values: &[f64]) -> Option<f64> {
+L   268-280    (   13) | struct GroupVerdict {
+L   281-286    (    6) | struct Report {
+L   287-355    (   69) | fn evaluate_group(ac_id: &str, n: u64, runs: &[Record]) -> GroupVerdict {
+L   356-364    (    9) | impl Record {
+L   365-403    (   39) | fn build_report(dir: &Path) -> Result<Report, String> {
+L   404-429    (   26) | fn print_human(report: &Report) {
+L   430-440    (   11) | fn print_usage() {
+L   441-501    (   61) | fn main() -> ExitCode {
+L   502-565    (   64) | mod tests {

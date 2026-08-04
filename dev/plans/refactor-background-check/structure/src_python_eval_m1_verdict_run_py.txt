@@ -1,0 +1,9 @@
+# src/python/eval/m1_verdict_run.py  (548 LOC, class=py-eval, soft=500, hard=1000)
+
+L    63-66     (    4) | def _load_extractions(path: Path) -> dict[str, Any]:
+L    67-80     (   14) | def _atomic_write_json(path: Path, obj: Any) -> None:
+L    81-98     (   18) | def _resolve_resume(
+L    99-341    (  243) | def run(
+L   342-345    (    4) | def _fmt(x: Optional[float], nd: int = 4) -> str:
+L   346-493    (  148) | def write_report(art: dict[str, Any], path: Path, *, cheap_art: Optional[dict[st
+L   494-548    (   55) | def main(argv: Optional[list[str]] = None) -> int:

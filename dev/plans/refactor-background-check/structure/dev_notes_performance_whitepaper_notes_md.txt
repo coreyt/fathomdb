@@ -1,0 +1,55 @@
+# dev/notes/performance-whitepaper-notes.md  (1665 LOC, class=design-doc, soft=700, hard=1100)
+
+L     1-8      (    8) | # Performance Whitepaper Notes — Engine Read Path & AC-020 Concurrency Gate
+L     9-10     (    2) | ## 1. Context / framing
+L    11-27     (   17) | ### AC-020 contract
+L    28-40     (   13) | ### Test workload
+L    41-50     (   10) | ### Hardware where the numbers below were taken
+L    51-58     (    8) | ## 2. Current status of perf gates
+L    59-65     (    7) | ### AC-020 retained run (best)
+L    66-76     (   11) | ### Other observed runs from the investigation
+L    77-78     (    2) | ## 3. Breadcrumbs — commits and code anchors
+L    79-86     (    8) | ### Commits worth referencing
+L    87-100    (   14) | ### Engine code anchors (`src/rust/crates/fathomdb-engine/src/lib.rs`)
+L   101-105    (    5) | ### Lifecycle anchors (`src/rust/crates/fathomdb-engine/src/lifecycle.rs`)
+L   106-115    (   10) | ### Test anchors (`src/rust/crates/fathomdb-engine/tests/perf_gates.rs`)
+L   116-206    (   91) | ## 4. Experiments tried — kept
+L   207-303    (   97) | ## 5. Experiments tried — reverted (with reason)
+L   304-321    (   18) | ## 6. Hypothesis hierarchy for the remaining gap
+L   322-332    (   11) | ### Primary: SQLite global allocator mutex (THREADSAFE=1)
+L   333-339    (    7) | ### Secondary: pcache mutex; lookaside not configured per-connection
+L   340-347    (    8) | ### Tertiary: per-search prepare cost amplifies allocator traffic
+L   348-349    (    2) | ## 7. Untried options ranked by likely payoff
+L   350-359    (   10) | ### 7.1 Diagnostic first (do this before more reverts)
+L   360-369    (   10) | ### 7.2 Rebuild bundled SQLite with `SQLITE_THREADSAFE=2`
+L   370-383    (   14) | ### 7.3 Runtime `sqlite3_config(SQLITE_CONFIG_MULTITHREAD)` done correctly
+L   384-388    (    5) | ### 7.4 `SQLITE_CONFIG_MEMSTATUS=0`
+L   389-394    (    6) | ### 7.5 Per-connection lookaside and page cache
+L   395-403    (    9) | ### 7.6 Structural: collapse search to one prepared statement
+L   404-503    (  100) | ### 7.7 SWMR + per-reader `OPEN_NOMUTEX` stacked on B.1 (2026-05-03 hypothesis)
+L   504-828    (  325) | ### 7.8 E synthesis track — staged residual tuning (2026-05-03 hypothesis)
+L   829-881    (   53) | ## 8. Open questions for the whitepaper
+L   882-894    (   13) | ## 9. Cross-references
+L   895-899    (    5) | ## 10. Phase 9 Packet 4 appendix — AC-018 / AC-020 notes
+L   900-911    (   12) | ### Context
+L   912-926    (   15) | ### Harness / setup notes
+L   927-939    (   13) | ### Retained changes
+L   940-954    (   15) | ### Reverted / unsuccessful experiments
+L   955-977    (   23) | ### Measured results to preserve
+L   978-989    (   12) | ### Diagnostics and later-work breadcrumbs
+L   990-1001   (   12) | ### Worktree breadcrumbs
+L  1002-1414   (  413) | ## 11. Phase 9 Pack 5 narrative log (append-only)
+L  1415-1421   (    7) | ## 12. Phase 9 Pack 6 + Pack 6.G synthesis (append-only)
+L  1422-1449   (   28) | ### 12.1 Pack 6 (F.0) — thread-affine reader workers KEPT
+L  1450-1474   (   25) | ### 12.2 Pack 6.G G.0 — telemetry pass reframes the residual
+L  1475-1503   (   29) | ### 12.3 Pack 6.G G.1 — per-connection lookaside LANDED (INCONCLUSIVE)
+L  1504-1522   (   19) | ### 12.4 Pack 6.G G.3.5 — cache-pressure screening ⇒ SKIP_G4
+L  1523-1541   (   19) | ### 12.5 Cumulative position at Pack 6.G close
+L  1542-1565   (   24) | ### 12.6 Why ~3.5× and not 8×
+L  1566-1585   (   20) | ### 12.7 Process meta-findings (Pack 6 + Pack 6.G)
+L  1586-1593   (    8) | ## 13. Appendix — lever enumeration across Pack 5 / Pack 6 / Pack 6.G
+L  1594-1607   (   14) | ### 13.1 Negative or nominal effect
+L  1608-1618   (   11) | ### 13.2 Positive effect
+L  1619-1636   (   18) | ### 13.3 Not tested or lacking data
+L  1637-1652   (   16) | ### 13.4 Re-combinations worth testing under design change
+L  1653-1665   (   13) | ### 13.5 Counts

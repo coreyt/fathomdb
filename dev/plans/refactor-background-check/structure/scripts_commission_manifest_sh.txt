@@ -1,0 +1,3 @@
+# scripts/commission-manifest.sh  (806 LOC, class=shell, soft=200, hard=500)
+
+L    88-806    (  719) | usage() {

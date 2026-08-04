@@ -1,0 +1,3 @@
+# scripts/check-governed-surface-pin.sh  (397 LOC, class=shell, soft=200, hard=500)
+
+L    96-397    (  302) | usage() {

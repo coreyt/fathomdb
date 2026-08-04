@@ -1,0 +1,108 @@
+# src/rust/crates/fathomdb-napi/src/lib.rs  (2561 LOC, class=rust-src, soft=1000, hard=2000)
+
+L   112-117    (    6) | struct TypedEnvelope<'a> {
+L   118-135    (   18) | fn typed_error(code: &'static str, message: impl Into<String>, payload: JsonValu
+L   136-148    (   13) | pub fn validate_ffi_string(value: &str) -> std::result::Result<(), String> {
+L   149-157    (    9) | fn validate_ffi_string_napi(value: &str) -> Result<()> {
+L   158-177    (   20) | fn checked_ids_napi(name: &str, ids: &[i64]) -> Result<Vec<u64>> {
+L   178-271    (   94) | fn engine_error_to_napi(err: RustEngineError) -> Error {
+L   272-280    (    9) | fn corruption_kind_str(kind: CorruptionKind) -> &'static str {
+L   281-289    (    9) | fn open_stage_str(stage: OpenStage) -> &'static str {
+L   290-306    (   17) | fn corruption_to_napi(detail: CorruptionDetail) -> Error {
+L   307-372    (   66) | fn engine_open_error_to_napi(err: EngineOpenError) -> Error {
+L   373-382    (   10) | fn panic_error() -> Error {
+L   383-403    (   21) | async fn call_engine<R, F>(f: F) -> Result<R>
+L   404-416    (   13) | fn call_engine_sync<R, F>(f: F) -> Result<R>
+L   417-429    (   13) | pub struct WriteReceipt {
+L   430-443    (   14) | impl WriteReceipt {
+L   444-452    (    9) | pub struct EraseReport {
+L   453-468    (   16) | impl EraseReport {
+L   469-477    (    9) | pub struct ProjectionSpec {
+L   478-594    (  117) | impl ProjectionSpec {
+L   595-601    (    7) | pub struct ProjectionDelta {
+L   602-614    (   13) | impl ProjectionDelta {
+L   615-620    (    6) | pub struct IngestWithExtractorReceipt {
+L   621-632    (   12) | impl IngestWithExtractorReceipt {
+L   633-640    (    8) | pub struct ConsolidateReceipt {
+L   641-653    (   13) | impl ConsolidateReceipt {
+L   654-664    (   11) | pub struct SoftFallback {
+L   665-671    (    7) | pub struct IdSpace {
+L   672-678    (    7) | impl IdSpace {
+L   679-707    (   29) | pub struct SearchHit {
+L   708-730    (   23) | impl SearchHit {
+L   731-737    (    7) | pub struct NodeRecord {
+L   738-752    (   15) | impl NodeRecord {
+L   753-762    (   10) | pub struct OpStoreRow {
+L   763-781    (   19) | impl OpStoreRow {
+L   782-789    (    8) | pub struct SearchFilterInput {
+L   790-799    (   10) | pub struct SearchResult {
+L   800-821    (   22) | impl SearchResult {
+L   822-836    (   15) | pub struct QueryTrace {
+L   837-863    (   27) | impl QueryTrace {
+L   864-879    (   16) | pub struct PerHitExplain {
+L   880-902    (   23) | impl PerHitExplain {
+L   903-988    (   86) | mod per_hit_explain_tests {
+L   989-993    (    5) | pub struct Explanation {
+L   994-1003   (   10) | impl Explanation {
+L  1004-1009   (    6) | pub struct MigrationStepReport {
+L  1010-1016   (    7) | impl MigrationStepReport {
+L  1017-1022   (    6) | pub struct EmbedderIdentity {
+L  1023-1036   (   14) | impl EmbedderIdentity {
+L  1037-1054   (   18) | pub struct EmbedderEvent {
+L  1055-1121   (   67) | impl EmbedderEvent {
+L  1122-1143   (   22) | pub struct OpenReport {
+L  1144-1163   (   20) | impl OpenReport {
+L  1164-1173   (   10) | pub struct CounterSnapshot {
+L  1174-1178   (    5) | pub struct AttachSubscriberOptions {
+L  1179-1187   (    9) | pub struct EngineConfig {
+L  1188-1199   (   12) | pub struct EngineOpenOptions {
+L  1200-1207   (    8) | pub struct AdminConfigureOptions {
+L  1208-1213   (    6) | pub struct Engine {
+L  1214-1732   (  519) | impl Engine {
+L  1733-1781   (   49) | pub async fn admin_configure(
+L  1782-1793   (   12) | pub struct ReadViewInput {
+L  1794-1807   (   14) | fn read_view_or_default(view: Option<ReadViewInput>) -> RustReadView {
+L  1808-1816   (    9) | pub struct BoundaryCrossing {
+L  1817-1827   (   11) | impl BoundaryCrossing {
+L  1828-1833   (    6) | pub struct ReadCollectionOptions {
+L  1834-1846   (   13) | pub async fn read_get(
+L  1847-1861   (   15) | pub async fn read_get_many(
+L  1862-1870   (    9) | pub async fn read_collection(
+L  1871-1878   (    8) | pub async fn read_mutations(
+L  1879-1899   (   21) | async fn read_collection_impl(
+L  1900-1912   (   13) | pub struct PredicateInput {
+L  1913-1946   (   34) | fn napi_predicate_to_rust(pred: PredicateInput) -> Result<RustPredicate> {
+L  1947-1971   (   25) | pub async fn read_list(
+L  1972-1982   (   11) | pub struct FilterTermInput {
+L  1983-2014   (   32) | fn napi_filter_term_to_rust(term: FilterTermInput) -> Result<RustFilterTerm> {
+L  2015-2045   (   31) | pub async fn read_list_filter(
+L  2046-2057   (   12) | pub struct ExpandedNode {
+L  2058-2063   (    6) | pub struct SearchExpandResult {
+L  2064-2080   (   17) | impl SearchExpandResult {
+L  2081-2100   (   20) | fn parse_direction_napi(direction: &str) -> Result<RustTraversalDirection> {
+L  2101-2118   (   18) | pub async fn graph_neighbors(
+L  2119-2135   (   17) | pub async fn crossed_boundary_since(
+L  2136-2176   (   41) | pub async fn search_expand(
+L  2177-2180   (    4) | fn translate_batch(batch: Vec<JsonValue>) -> Result<Vec<PreparedWrite>> {
+L  2181-2184   (    4) | fn json_get<'a>(v: &'a JsonValue, key: &str) -> Option<&'a JsonValue> {
+L  2185-2199   (   15) | fn json_str(v: &JsonValue, key: &str) -> Result<Option<String>> {
+L  2200-2209   (   10) | fn json_str_required(v: &JsonValue, key: &str) -> Result<String> {
+L  2210-2230   (   21) | fn json_serialised(v: &JsonValue, key: &str) -> Result<Option<String>> {
+L  2231-2240   (   10) | fn json_serialised_required(v: &JsonValue, key: &str) -> Result<String> {
+L  2241-2267   (   27) | fn translate_write_item(item: JsonValue) -> Result<PreparedWrite> {
+L  2268-2274   (    7) | fn json_str_alt(item: &JsonValue, camel: &str, snake: &str) -> Result<Option<Str
+L  2275-2293   (   19) | fn json_str_alt_required(item: &JsonValue, camel: &str, snake: &str) -> Result<S
+L  2294-2315   (   22) | fn json_source_id_required(item: &JsonValue, kind: &str) -> Result<SourceId> {
+L  2316-2322   (    7) | fn json_serialised_alt(item: &JsonValue, camel: &str, snake: &str) -> Result<Opt
+L  2323-2332   (   10) | fn json_serialised_alt_required(item: &JsonValue, camel: &str, snake: &str) -> R
+L  2333-2381   (   49) | fn translate_node(item: &JsonValue) -> Result<PreparedWrite> {
+L  2382-2402   (   21) | fn json_i64(v: &JsonValue, key: &str) -> Result<Option<i64>> {
+L  2403-2409   (    7) | fn json_i64_alt(item: &JsonValue, camel: &str, snake: &str) -> Result<Option<i64
+L  2410-2447   (   38) | fn translate_edge(item: &JsonValue) -> Result<PreparedWrite> {
+L  2448-2455   (    8) | fn translate_op_store(item: &JsonValue) -> Result<PreparedWrite> {
+L  2456-2476   (   21) | fn translate_admin_schema(item: &JsonValue) -> Result<PreparedWrite> {
+L  2477-2498   (   22) | impl Engine {
+L  2499-2508   (   10) | pub fn force_panic_for_test() -> Result<()> {
+L  2509-2515   (    7) | pub fn force_panic_in_accessor_for_test() -> Result<()> {
+L  2516-2532   (   17) | fn call_panicking_engine_for_test() -> Result<()> {
+L  2533-2561   (   29) | mod tests {

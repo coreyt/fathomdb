@@ -1,0 +1,20 @@
+# src/rust/crates/fathomdb-schema/src/lib.rs  (999 LOC, class=rust-src, soft=500, hard=1000)
+
+L    32-50     (   19) | pub fn bootstrap_steps() -> &'static [&'static str] {
+L    51-56     (    6) | pub struct Migration {
+L    57-63     (    7) | pub struct MigrationStepReport {
+L    64-70     (    7) | pub struct MigrationReport {
+L    71-77     (    7) | pub struct MigrationFailureReport {
+L    78-83     (    6) | pub enum MigrationError {
+L    84-99     (   16) | impl Display for MigrationError {
+L   100-882    (  783) | impl std::error::Error for MigrationError {}
+L   883-886    (    4) | pub fn migrate(conn: &Connection) -> Result<MigrationReport, MigrationError> {
+L   887-893    (    7) | pub fn migrate_with_steps(
+L   894-948    (   55) | pub fn migrate_with_event_sink(
+L   949-965    (   17) | fn apply_one(conn: &Connection, migration: &Migration) -> rusqlite::Result<()> {
+L   966-970    (    5) | fn user_version(conn: &Connection) -> Result<u32, MigrationError> {
+L   971-975    (    5) | fn duration_ms(started: Instant) -> u64 {
+L   976-979    (    4) | pub struct MigrationAccretionError {
+L   980-985    (    6) | impl Display for MigrationAccretionError {
+L   986-987    (    2) | impl std::error::Error for MigrationAccretionError {}
+L   988-999    (   12) | pub fn check_migration_accretion(name: &str, sql: &str) -> Result<(), MigrationA

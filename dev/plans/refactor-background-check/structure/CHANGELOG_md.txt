@@ -1,0 +1,45 @@
+# CHANGELOG.md  (804 LOC, class=plan-status-doc, soft=800, hard=1600)
+
+L     1-8      (    8) | # Changelog
+L     9-12     (    4) | ## [Unreleased]
+L    13-104    (   92) | ### Changed — BREAKING
+L   105-147    (   43) | ### Added
+L   148-155    (    8) | ### Documentation
+L   156-166    (   11) | ### Maintenance
+L   167-177    (   11) | ## 0.8.9 — 2026-06-28
+L   178-200    (   23) | ### Added
+L   201-204    (    4) | ### Removed
+L   205-209    (    5) | ## 0.8.0 — 2026-06-08
+L   210-231    (   22) | ### Added
+L   232-259    (   28) | ### Changed
+L   260-263    (    4) | ### Removed
+L   264-276    (   13) | ## 0.7.2 - 2026-06-01
+L   277-346    (   70) | ### Added
+L   347-389    (   43) | ### Changed
+L   390-402    (   13) | ### Deferred
+L   403-406    (    4) | ### Removed
+L   407-419    (   13) | ### Known limitations
+L   420-434    (   15) | ## 0.7.1 - 2026-06-01
+L   435-463    (   29) | ### Added
+L   464-474    (   11) | ### Changed
+L   475-489    (   15) | ### Fixed
+L   490-493    (    4) | ### Removed
+L   494-513    (   20) | ### Known limitations
+L   514-529    (   16) | ## 0.7.0 - 2026-06-01
+L   530-559    (   30) | ### Added
+L   560-582    (   23) | ### Changed
+L   583-590    (    8) | ### Fixed
+L   591-607    (   17) | ### Deferred / known gaps at 0.7.0 ship
+L   608-611    (    4) | ### Removed
+L   612-620    (    9) | ## 0.6.1 - 2026-05-25
+L   621-633    (   13) | ## 0.6.1-rc.1 - 2026-05-25
+L   634-657    (   24) | ### Fixed
+L   658-669    (   12) | ### Security
+L   670-684    (   15) | ### Changed
+L   685-688    (    4) | ### Removed
+L   689-708    (   20) | ### Deferred (carry-over)
+L   709-714    (    6) | ## 0.6.0 - 2026-05-19
+L   715-748    (   34) | ### Added
+L   749-777    (   29) | ### Changed
+L   778-801    (   24) | ### Deferred
+L   802-804    (    3) | ### Removed

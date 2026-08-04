@@ -1,0 +1,17 @@
+# dev/architecture.md  (557 LOC, class=doc-other, soft=500, hard=1000)
+
+L    11-22     (   12) | # Architecture
+L    23-74     (   52) | ## 1. Crate topology
+L    75-98     (   24) | ## 2. Module subsystems inside `fathomdb-engine`
+L    99-220    (  122) | ## 3. Write path
+L   221-268    (   48) | ## 4. Read path
+L   269-295    (   27) | ### Governed `read.*` retrieval (Slice 30 / G2 + G3)
+L   296-357    (   62) | ## 5. On-disk layout
+L   358-371    (   14) | ## 6. Process / thread topology
+L   372-373    (    2) | ## 7. Component → ADR / REQ matrix
+L   374-410    (   37) | ### Runtime ADRs (decision-index #1..#28)
+L   411-421    (   11) | ### Meta ADRs (no runtime footprint)
+L   422-476    (   55) | ### REQ coverage
+L   477-495    (   19) | ## 8. Non-goals (architectural)
+L   496-537    (   42) | ## 9. Open architectural questions
+L   538-557    (   20) | ## 10. Architectural deltas vs 0.5.x

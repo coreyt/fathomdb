@@ -1,0 +1,25 @@
+# src/python/eval/fracc_classifier_run.py  (733 LOC, class=py-eval, soft=500, hard=1000)
+
+L    74-77     (    4) | def _load_json(p: Path) -> Any:
+L    78-126    (   49) | def load_labeled_queries(*, seed: int = 0) -> dict[str, list[str]]:
+L   127-145    (   19) | def balanced_sample(
+L   146-149    (    4) | def _tokenize(text: str) -> list[str]:
+L   150-163    (   14) | def _fit_tfidf(train_texts: list[str]) -> tuple[dict[str, int], np.ndarray]:
+L   164-175    (   12) | def _vectorize(texts: list[str], vocab: dict[str, int], idf: np.ndarray) -> np.n
+L   176-193    (   18) | def _nearest_centroid_predict(
+L   194-207    (   14) | def stratified_folds(labels: list[str], *, k: int, seed: int) -> list[list[int]]
+L   208-285    (   78) | def run_classifier(*, n_per_class: Optional[int], k_folds: int, seed: int, n_boo
+L   286-327    (   42) | def _locomo_items(intent: str, *, n: int, distractors: int, seed: int) -> list[d
+L   328-361    (   34) | def _musique_items(*, n: int, distractors: int, seed: int) -> list[dict[str, Any
+L   362-370    (    9) | def build_misroute_items(intent: str, *, n: int, distractors: int, seed: int) ->
+L   371-434    (   64) | class LLM:
+L   435-439    (    5) | def _est_tokens(text: str) -> int:
+L   440-448    (    9) | def _direct_prompt(question: str, chunks: list[str]) -> str:
+L   449-456    (    8) | def _map_prompt(question: str, chunk: str) -> str:
+L   457-465    (    9) | def _reduce_prompt(question: str, summaries: list[str]) -> str:
+L   466-475    (   10) | def _judge_prompt(question: str, gold: list[str], candidate: str) -> str:
+L   476-479    (    4) | def _norm(s: str) -> str:
+L   480-484    (    5) | def _contains_match(gold: list[str], candidate: str) -> int:
+L   485-496    (   12) | def _call(llm: LLM, ledger: BudgetLedger, prompt: str, cost: dict[str, int]) -> 
+L   497-639    (  143) | def run_misroute(
+L   640-733    (   94) | def main(argv: Optional[list[str]] = None) -> int:

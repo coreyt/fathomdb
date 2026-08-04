@@ -1,0 +1,36 @@
+# src/python/tests/test_m1_verdict.py  (688 LOC, class=py-test, soft=600, hard=1000)
+
+L    59-65     (    7) | class FakeEncoder:
+L    66-70     (    5) | class FakeReranker:
+L    71-86     (   16) | def _mini_question(qid: str, hop: int, answer: str) -> Question:
+L    87-94     (    8) | def _mini_set() -> list[Question]:
+L    95-112    (   18) | def _mini_extractions(questions: list[Question]) -> dict[str, dict]:
+L   113-127    (   15) | def test_augment_hook_adds_fifth_arm() -> None:
+L   128-138    (   11) | def test_comparator_is_fused_not_rerank() -> None:
+L   139-159    (   21) | def test_endpoint_pooled_ge3hop_paired_bootstrap() -> None:
+L   160-176    (   17) | def test_endpoint_deterministic_given_seed() -> None:
+L   177-194    (   18) | def test_verdict_derived_mechanically_from_decide() -> None:
+L   195-211    (   17) | def test_stage1_power_gate_forces_no_go() -> None:
+L   212-231    (   20) | def test_decide_inputs_power_ok_true_path_is_live() -> None:
+L   232-240    (    9) | def test_stage2_clear_loss_recommends_no_stage2() -> None:
+L   241-252    (   12) | def test_stage2_borderline_recommends_stage2() -> None:
+L   253-261    (    9) | def test_ppr_divergence_reports_structure() -> None:
+L   262-271    (   10) | def test_graph_qids_extracts_question_ids() -> None:
+L   272-284    (   13) | class CountingAnswerer(StubAnswerer):
+L   285-301    (   17) | def test_prior_answers_from_artifact_skips_none() -> None:
+L   302-336    (   35) | def test_resume_recalls_only_failed_cells() -> None:
+L   337-358    (   22) | def test_resume_all_reused_pays_zero_calls() -> None:
+L   359-378    (   20) | def test_checkpoint_emits_resume_loadable_records() -> None:
+L   379-398    (   20) | def test_build_artifact_schema_and_five_arm_table() -> None:
+L   399-426    (   28) | class _AbstainOrFailAnswerer(BaseAnswerer):
+L   427-454    (   28) | def test_abstention_is_scored_but_failure_is_missing() -> None:
+L   455-484    (   30) | def test_failure_recalled_on_resume_excluded_from_answered_set() -> None:
+L   485-538    (   54) | def test_abstention_is_reused_not_recalled() -> None:
+L   539-563    (   25) | def test_auto_resume_reuses_preserved_214_cells() -> None:
+L   564-583    (   20) | def test_resolve_resume_auto_detects_sidecar_without_a_flag(tmp_path) -> None:
+L   584-601    (   18) | def _distinct_question(qid: str, hop: int, answer: str) -> Question:
+L   602-617    (   16) | def _star_extractions(questions: list[Question]) -> dict[str, dict]:
+L   618-654    (   37) | def test_run_auto_resumes_with_no_flag_zero_respend(tmp_path) -> None:
+L   655-664    (   10) | def test_atomic_write_json_round_trips(tmp_path) -> None:
+L   665-683    (   19) | def test_atomic_checkpoint_survives_midwrite_death(tmp_path, monkeypatch) -> Non
+L   684-688    (    5) | def test_checkpoint_cadence_is_at_least_every_10_questions() -> None:

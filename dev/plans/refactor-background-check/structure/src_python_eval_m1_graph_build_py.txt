@@ -1,0 +1,17 @@
+# src/python/eval/m1_graph_build.py  (587 LOC, class=py-eval, soft=500, hard=1000)
+
+L    81-91     (   11) | def load_questions(corpus_path: str | Path) -> list[dict]:
+L    92-105    (   14) | def compute_corpus_hash(corpus_path: str | Path) -> str:
+L   106-124    (   19) | def validate_corpus_hash(corpus_path: str | Path, expected_hash: str) -> str:
+L   125-198    (   74) | def sample_questions(
+L   199-212    (   14) | def paragraph_documents(questions: Sequence[dict]) -> dict[str, str]:
+L   213-250    (   38) | def extract_question_graphs(
+L   251-255    (    5) | def _qid_of(cid: str) -> str:
+L   256-262    (    7) | def _qnorm(qid: str, name: Any) -> Optional[str]:
+L   263-364    (  102) | def build_question_graph_engine(
+L   365-395    (   31) | class CoverageReport:
+L   396-400    (    5) | def _scalar(con: sqlite3.Connection, sql: str, params: Sequence[Any] = ()) -> in
+L   401-474    (   74) | def verify_coverage(
+L   475-480    (    6) | class CoverageIncompleteError(RuntimeError):
+L   481-508    (   28) | def assert_coverage(
+L   509-587    (   79) | def main(argv: Optional[list[str]] = None) -> int:

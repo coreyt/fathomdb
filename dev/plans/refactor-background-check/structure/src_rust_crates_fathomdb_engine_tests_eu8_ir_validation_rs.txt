@@ -1,0 +1,23 @@
+# src/rust/crates/fathomdb-engine/tests/eu8_ir_validation.rs  (636 LOC, class=rust-test, soft=600, hard=1200)
+
+L    54-81     (   28) | mod corpus_subset;
+L    82-86     (    5) | struct SerializedBge {
+L    87-93     (    7) | impl SerializedBge {
+L    94-103    (   10) | impl Embedder for SerializedBge {
+L   104-106    (    3) | struct SplitMix64 {
+L   107-122    (   16) | impl SplitMix64 {
+L   123-128    (    6) | fn env_usize(key: &str, default: usize) -> usize {
+L   129-137    (    9) | struct IRQueryResult {
+L   138-153    (   16) | struct IRRecallResult {
+L   154-160    (    7) | struct AggBucket {
+L   161-188    (   28) | impl AggBucket {
+L   189-205    (   17) | fn build_body_to_doc_id_map(docs: &[Doc]) -> (HashMap<String, String>, usize) {
+L   206-226    (   21) | fn map_bodies_to_doc_ids(bodies: &[String], map: &HashMap<String, String>) -> (V
+L   227-257    (   31) | fn compute_ir_metrics(
+L   258-282    (   25) | fn compute_ndcg(expected: &HashSet<String>, top: &[String], k: usize) -> f64 {
+L   283-308    (   26) | fn bootstrap_ci(per_query: &[f64], resamples: usize) -> (f64, f64, f64) {
+L   309-365    (   57) | fn measure_ir_recall(
+L   366-370    (    5) | fn round4(x: f64) -> f64 {
+L   371-439    (   69) | fn write_ir_measurements_json(
+L   440-440    (    1) | #[test]
+L   441-636    (  196) | fn eu8_ir_validation() {

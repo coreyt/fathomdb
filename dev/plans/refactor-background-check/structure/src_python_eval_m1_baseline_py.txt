@@ -1,0 +1,30 @@
+# src/python/eval/m1_baseline.py  (948 LOC, class=py-eval, soft=800, hard=1200)
+
+L   127-133    (    7) | class EncoderProtocol(Protocol):
+L   134-152    (   19) | class FusedRerankerProtocol(Protocol):
+L   153-164    (   12) | class Paragraph:
+L   165-178    (   14) | class Question:
+L   179-187    (    9) | def corpus_hash(path: str | Path) -> str:
+L   188-236    (   49) | def load_musique(path: str | Path, *, assert_hash: bool = True) -> list[Question
+L   237-240    (    4) | def _tokenize(text: str) -> list[str]:
+L   241-275    (   35) | def bm25_rank(query: str, passages: Sequence[Paragraph], *, k1: float = 1.5, b: 
+L   276-369    (   94) | class BGEEncoder:
+L   370-383    (   14) | def dense_rank(query: str, passages: Sequence[Paragraph], encoder: EncoderProtoc
+L   384-399    (   16) | def rrf_fuse_scored(
+L   400-409    (   10) | def rrf_fuse(rankings: Sequence[Sequence[int]], *, k: int = RRF_K) -> list[int]:
+L   410-478    (   69) | class FusedPoolReranker:
+L   479-514    (   36) | def retrieve_arms(
+L   515-521    (    7) | def normalize_squad(text: str) -> str:
+L   522-528    (    7) | def em_score(pred: Optional[str], golds: Sequence[str]) -> float:
+L   529-557    (   29) | def f1_score(pred: Optional[str], golds: Sequence[str]) -> float:
+L   558-568    (   11) | def is_confident_answer(pred: Optional[str]) -> bool:
+L   569-575    (    7) | def supporting_positions(question: Question) -> set[int]:
+L   576-583    (    8) | def recall_at_k(ranked: Sequence[int], gold: set[int], k: int) -> Optional[float
+L   584-600    (   17) | def bridges_present_at_k(ranked: Sequence[int], gold: set[int], k: int) -> Optio
+L   601-662    (   62) | def retrieval_recall(
+L   663-674    (   12) | class QuestionResult:
+L   675-690    (   16) | def _bump_n_errors(answerer: BaseAnswerer) -> None:
+L   691-862    (  172) | def run_baseline(
+L   863-866    (    4) | def _mean(values: list[float]) -> Optional[float]:
+L   867-873    (    7) | def _var(values: list[float]) -> Optional[float]:
+L   874-948    (   75) | def _aggregate(

@@ -1,0 +1,30 @@
+# dev/archive/interface-inventory/option2-public-surface-first/interfaces.md  (848 LOC, class=plan-status-doc, soft=800, hard=1600)
+
+L     9-23     (   15) | # Interfaces
+L    24-55     (   32) | ## IF-001: Five-verb SDK surface (canonical set)
+L    56-96     (   41) | ## IF-002: `Engine.open` open-path contract
+L    97-132    (   36) | ## IF-003: `Engine.write(&[PreparedWrite])` batch contract
+L   133-163    (   31) | ## IF-004: `Engine.search` retrieval result contract
+L   164-192    (   29) | ## IF-005: Cursor contract (`c_w` and `projection_cursor`)
+L   193-222    (   30) | ## IF-006: PreparedWrite typed write boundary
+L   223-247    (   25) | ## IF-007: Lifecycle phase enum
+L   248-277    (   30) | ## IF-008: Host-routed diagnostics (source / category)
+L   278-302    (   25) | ## IF-009: Counter snapshot
+L   303-326    (   24) | ## IF-010: Per-statement profile record
+L   327-349    (   23) | ## IF-011: Stress-failure context
+L   350-381    (   32) | ## IF-012: Migration per-step event
+L   382-410    (   29) | ## IF-013: Subscriber registration protocol
+L   411-446    (   36) | ## IF-014: Error taxonomy roots + variants
+L   447-477    (   31) | ## IF-015: CorruptionDetail open-path payload
+L   478-514    (   37) | ## IF-016: CLI two-root operator surface
+L   515-540    (   26) | ## IF-017: `doctor check-integrity` JSON report
+L   541-565    (   25) | ## IF-018: `recover` machine-readable progress + summary
+L   566-597    (   32) | ## IF-019: Database lock contract (sidecar + SQLite EXCLUSIVE)
+L   598-639    (   42) | ## IF-020: Embedder protocol + identity invariant
+L   640-672    (   33) | ## IF-021: Op-store collection registry
+L   673-697    (   25) | ## IF-022: Bindings five-verb parity invariant
+L   698-724    (   27) | ## IF-023: Bindings async dispatch invariants A–D
+L   725-751    (   27) | ## IF-024: Build/packaging contract per binding
+L   752-783    (   32) | ## IF-025: Wire format
+L   784-817    (   34) | ## IF-026: Drain / bounded-completion verb
+L   818-848    (   31) | ## IF-027: Doctor finding code stable surface

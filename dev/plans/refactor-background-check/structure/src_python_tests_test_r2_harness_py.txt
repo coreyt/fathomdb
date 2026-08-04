@@ -1,0 +1,33 @@
+# src/python/tests/test_r2_harness.py  (607 LOC, class=py-test, soft=600, hard=1000)
+
+L    40-49     (   10) | class _StubHit:
+L    50-82     (   33) | def test_chunked_session_source_resolves_to_bare_session_id() -> None:
+L    83-119    (   37) | def _write_stub_gold(path: Path, *, corpus_hash: str) -> Path:
+L   120-139    (   20) | def _stub_systems() -> dict[str, StubAdapter]:
+L   140-176    (   37) | def test_identical_answerer_constraint_enforced(tmp_path: Path) -> None:
+L   177-183    (    7) | def test_per_class_scoring_has_all_five_classes() -> None:
+L   184-190    (    7) | def test_abstention_counted_as_miss() -> None:
+L   191-198    (    8) | def test_answering_a_negative_query_is_a_false_positive() -> None:
+L   199-209    (   11) | def test_correct_answer_scores_one() -> None:
+L   210-215    (    6) | def test_harness_rejects_wrong_corpus_hash(tmp_path: Path) -> None:
+L   216-226    (   11) | def test_harness_accepts_pinned_corpus_hash(tmp_path: Path) -> None:
+L   227-260    (   34) | def test_output_json_has_required_keys(tmp_path: Path) -> None:
+L   261-268    (    8) | def _good_manifest(n_min: int = 150) -> dict:
+L   269-281    (   13) | def test_corpus_validity_catches_n0_memory_class() -> None:
+L   282-291    (   10) | def test_corpus_validity_catches_under_n_min_class() -> None:
+L   292-301    (   10) | def test_corpus_validity_catches_missing_memory_class() -> None:
+L   302-308    (    7) | def test_corpus_validity_passes_a_well_formed_manifest() -> None:
+L   309-329    (   21) | def test_pinned_d0a_manifest_is_valid() -> None:
+L   330-365    (   36) | def test_answerer_seam_scores_over_repinned_gold() -> None:
+L   366-388    (   23) | class _FakeMem0Backend:
+L   389-403    (   15) | def test_mem0_adapter_returns_topk_hits_under_shared_contract() -> None:
+L   404-412    (    9) | def test_mem0_adapter_unavailable_without_backend() -> None:
+L   413-425    (   13) | def test_local_mem0_config_is_footprint_safe() -> None:
+L   426-450    (   25) | def test_local_mem0_config_is_per_run_isolated() -> None:
+L   451-465    (   15) | def _mk_q(query_class: str, doc_ids: list[str]) -> dict:
+L   466-484    (   19) | def test_class_predicate_rejects_single_session_span_class() -> None:
+L   485-512    (   28) | def test_pinned_d0a_gold_has_no_single_session_span_violations() -> None:
+L   513-541    (   29) | def test_from_repin_gold_raises_on_underfilled_manifest(tmp_path: Path) -> None:
+L   542-561    (   20) | def test_build_local_mem0_config_callable_as_try_build_passes_it() -> None:
+L   562-592    (   31) | def test_try_build_constructs_config_without_typeerror(monkeypatch) -> None:  # 
+L   593-607    (   15) | def test_repin_gold_qrels_version_reflects_repin_hash_not_corpus_hash() -> None:
