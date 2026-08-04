@@ -66,7 +66,7 @@ if mode == "empty-valid-advisory-snapshot":
     snapshot["advisories"] = []
     source.write_text(json.dumps(snapshot), encoding="utf-8")
     data["advisory_snapshot"]["sha256"] = hashlib.sha256(source.read_bytes()).hexdigest()
-if mode in {"forged-metadata-source", "forged-source", "malformed-advisory-id", "mismatched-advisory-url"}:
+if mode in {"forged-metadata-source", "forged-source", "malformed-advisory-id", "mismatched-advisory-url", "canonical-looking-forgery"}:
     source = root / "scripts/pinned-override-advisories.json"
     snapshot = json.loads(source.read_text())
     if mode == "forged-metadata-source":
@@ -75,6 +75,10 @@ if mode in {"forged-metadata-source", "forged-source", "malformed-advisory-id", 
         snapshot["source"]["name"] = "Invented advisory source"
     elif mode == "malformed-advisory-id":
         snapshot["advisories"][0]["id"] = "NOT-A-GHSA"
+    elif mode == "canonical-looking-forgery":
+        snapshot["advisories"][0]["id"] = "GHSA-2345-2345-2345"
+        snapshot["advisories"][0]["url"] = "https://github.com/advisories/GHSA-2345-2345-2345"
+        snapshot["source"]["provenance"] = "Forged but canonical-looking GitHub advisory source"
     else:
         snapshot["advisories"][0]["url"] = "https://github.com/advisories/GHSA-0000-0000-0000"
     source.write_text(json.dumps(snapshot), encoding="utf-8")
@@ -96,6 +100,38 @@ run_fixture() {
   local fixture="$1"
   set +e
   OUT="$(bash "$CHECKER" --root "$fixture" 2>&1)"
+  RC=$?
+  set -e
+}
+
+# Structural checks must still apply after an intentionally reviewed snapshot
+# refresh. This copies the checker and replaces only its source-owned anchor
+# with the fixture's digest; ordinary fixtures always use the real anchor.
+run_fixture_with_reanchored_snapshot() {
+  local fixture="$1"
+  local fixture_checker="$fixture/check-pinned-override-rot.py"
+  python3 - "$REPO_ROOT/scripts/check-pinned-override-rot.py" "$fixture" "$fixture_checker" <<'PY'
+import hashlib
+import re
+import sys
+from pathlib import Path
+
+source = Path(sys.argv[1]).read_text(encoding="utf-8")
+root = Path(sys.argv[2])
+target = Path(sys.argv[3])
+digest = hashlib.sha256((root / "scripts/pinned-override-advisories.json").read_bytes()).hexdigest()
+updated, count = re.subn(
+    r'^PINNED_ADVISORY_SNAPSHOT_SHA256 = "[0-9a-f]{64}"$',
+    f'PINNED_ADVISORY_SNAPSHOT_SHA256 = "{digest}"',
+    source,
+    flags=re.MULTILINE,
+)
+if count != 1:
+    raise SystemExit("fixture could not replace exactly one checker advisory anchor")
+target.write_text(updated, encoding="utf-8")
+PY
+  set +e
+  OUT="$(python3 "$fixture_checker" --root "$fixture" 2>&1)"
   RC=$?
   set -e
 }
@@ -183,7 +219,7 @@ expect_failure 'UNVERIFIED pinned-override-rot: advisory snapshot sha256' \
 
 # Updating the digest cannot make an intentionally empty but valid JSON
 # snapshot trustworthy: completeness is checked separately from integrity.
-run_fixture "$(make_fixture empty-valid-advisory-snapshot empty-valid-advisory-snapshot)"
+run_fixture_with_reanchored_snapshot "$(make_fixture empty-valid-advisory-snapshot empty-valid-advisory-snapshot)"
 if [ "$RC" -ne 2 ]; then
   fail "empty advisory snapshot must be unverified, got rc=$RC output=$OUT"
 fi
@@ -209,26 +245,36 @@ fi
 expect_failure 'UNVERIFIED pinned-override-rot: advisory_snapshot.source' \
   'metadata source must be the canonical GitHub Advisory Database'
 
-run_fixture "$(make_fixture forged-source forged-source)"
+run_fixture_with_reanchored_snapshot "$(make_fixture forged-source forged-source)"
 if [ "$RC" -ne 2 ]; then
   fail "forged advisory source must be unverified, got rc=$RC output=$OUT"
 fi
 expect_failure 'UNVERIFIED pinned-override-rot: advisory snapshot source.name' \
   'snapshot source must be the canonical GitHub Advisory Database'
 
-run_fixture "$(make_fixture malformed-advisory-id malformed-advisory-id)"
+run_fixture_with_reanchored_snapshot "$(make_fixture malformed-advisory-id malformed-advisory-id)"
 if [ "$RC" -ne 2 ]; then
   fail "malformed GitHub advisory id must be unverified, got rc=$RC output=$OUT"
 fi
 expect_failure 'UNVERIFIED pinned-override-rot: advisory snapshot advisories[0].id' \
   'snapshot advisory id must use the canonical GHSA form'
 
-run_fixture "$(make_fixture mismatched-advisory-url mismatched-advisory-url)"
+run_fixture_with_reanchored_snapshot "$(make_fixture mismatched-advisory-url mismatched-advisory-url)"
 if [ "$RC" -ne 2 ]; then
   fail "mismatched GitHub advisory URL must be unverified, got rc=$RC output=$OUT"
 fi
 expect_failure 'UNVERIFIED pinned-override-rot: advisory snapshot advisories[0].url' \
   'snapshot advisory URL must exactly name its GHSA identifier'
+
+# A checksum recorded only in mutable metadata cannot authenticate a forged
+# but canonical-looking GitHub source. Recomputing that metadata checksum must
+# still fail against the checker-source anchor.
+run_fixture "$(make_fixture canonical-looking-forgery canonical-looking-forgery)"
+if [ "$RC" -ne 2 ]; then
+  fail "canonical-looking forged advisory snapshot must be unverified, got rc=$RC output=$OUT"
+fi
+expect_failure 'UNVERIFIED pinned-override-rot: advisory snapshot sha256 does not match independently pinned checker digest' \
+  'canonical-looking forged advisory snapshot cannot bypass the checker anchor'
 
 # Cargo git sources can appear in workspace and target-specific dependency
 # tables, not just root dependency sections. Both must block a clean result.

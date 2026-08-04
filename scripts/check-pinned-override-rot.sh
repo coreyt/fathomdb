@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Check that dependency overrides remain justified, non-vulnerable, and scoped.
 #
-# The predicate is deliberately offline: advisory data and governed override
-# rationale live in scripts/pinned-override-rot.json. A missing or malformed
-# record is UNVERIFIED and fails; R2 also fails closed for every live override.
+# The predicate is deliberately offline: advisory data lives in
+# scripts/pinned-override-advisories.json and override metadata lives in
+# scripts/pinned-override-rot.json. A missing or malformed record is
+# UNVERIFIED and fails; R2 also fails closed for every live override.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

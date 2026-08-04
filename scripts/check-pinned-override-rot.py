@@ -24,6 +24,14 @@ SHA256 = re.compile(r"^[0-9a-f]{64}$")
 ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 GHSA_ID = re.compile(r"^GHSA-[23456789cfghjmpqrvwx]{4}-[23456789cfghjmpqrvwx]{4}-[23456789cfghjmpqrvwx]{4}$")
 GITHUB_ADVISORY_SOURCE = "GitHub Advisory Database"
+# This is deliberately source-owned rather than read from metadata: otherwise
+# a forged snapshot can recompute the metadata checksum and self-authenticate.
+# Refresh procedure: independently review the upstream GHSA records; write the
+# reviewed snapshot; compute its SHA-256; update this constant and metadata's
+# advisory_snapshot.sha256 together; then run the pin-rot fixture. Never derive
+# this value from metadata or make it configurable at runtime: either mismatch
+# is an UNVERIFIED hard failure.
+PINNED_ADVISORY_SNAPSHOT_SHA256 = "0aee0fc7be3dceb63bcd5abcb4877eaac256a03ca9511b37448f235a1a3c1f97"
 
 
 def read_json(path: Path, label: str) -> dict[str, Any]:
@@ -130,6 +138,10 @@ def advisory_snapshot_path(root: Path, metadata: dict[str, Any]) -> Path:
     if actual_digest != expected_digest:
         raise Unverified(
             f"advisory snapshot sha256 {actual_digest} does not match governed digest {expected_digest}"
+        )
+    if expected_digest != PINNED_ADVISORY_SNAPSHOT_SHA256:
+        raise Unverified(
+            "advisory snapshot sha256 does not match independently pinned checker digest"
         )
     return path
 
