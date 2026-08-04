@@ -214,6 +214,37 @@ fn nested_composite_terminal_rejects_write_and_backfill_atomically() {
 }
 
 #[test]
+fn source_change_requires_drop_before_nested_backfill_validation() {
+    let dir = TempDir::new().unwrap();
+    let opened = Engine::open(db_path(&dir, "source_change_precedence")).unwrap();
+    let engine = &opened.engine;
+    let original = nested_spec(
+        "value",
+        &["attributes", "core:deadline", "value"],
+        &[ProjectionRole::Filterable],
+        false,
+    );
+    engine.configure_projections(std::slice::from_ref(&original), &[]).unwrap();
+    engine
+        .write(&[node(
+            "node",
+            "slice45:source-change",
+            r#"{"attributes":{"core:deadline":{"value":"scalar","replacement":{"nested":"object"}}}}"#,
+        )])
+        .unwrap();
+    let changed = nested_spec(
+        "value",
+        &["attributes", "core:deadline", "replacement"],
+        &[ProjectionRole::Filterable],
+        false,
+    );
+    assert!(matches!(
+        engine.configure_projections(&[changed], &[]),
+        Err(EngineError::ProjectionDestructive { .. })
+    ));
+}
+
+#[test]
 fn projected_text_search_is_field_scoped_filtered_and_text_only() {
     let dir = TempDir::new().unwrap();
     let opened = Engine::open(db_path(&dir, "search")).unwrap();
