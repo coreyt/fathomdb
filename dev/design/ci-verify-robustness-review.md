@@ -516,8 +516,14 @@ There is also no `bash -n`, no `shfmt`, and no `checkbashisms`. `actionlint`
 does embed shellcheck for workflow `run:` blocks — but it never sees
 `scripts/**`, which is where every incident in this class has occurred.
 
-So SC2312 (`check-extra-masked-returns`, the check that flags exactly this
-bug), SC2086, and SC2181 are all off **by absence**, not by decision.
+So SC2312 (`check-extra-masked-returns`), SC2086, and SC2181 are all off **by
+absence**, not by decision.
+
+> **CORRECTION (Slice 30).** The parenthetical here originally read "the check
+> that flags exactly this bug". **It does not** — measured and refuted while
+> implementing R1.1; see the CORRECTION under R1.1 and the struck bullet in the
+> §4.1 comparison. SC2312 is still worth enabling, and Slice 30 enables it, but
+> it is not the leg that catches this bug class.
 
 #### 3.1.1 This is the third occurrence of the same bug class
 
@@ -735,11 +741,27 @@ matters.** Be blunt about this, because it disciplines the §4.1 recommendations
 - A container matching `ubuntu-latest`: **probably not**, for the same reason.
   A different CPU count would shift the odds, not close them.
 - Running the suite in a loop: would find it eventually, at unbounded cost.
-- **`shellcheck --enable=check-extra-masked-returns`: would have caught it
-  deterministically, in under a second, before the code was ever committed.**
+- ~~**`shellcheck --enable=check-extra-masked-returns`: would have caught it
+  deterministically, in under a second, before the code was ever committed.**~~
+  **❌ FALSE — measured and refuted in Slice 30. See the CORRECTION under R1.1.**
+  Fed the verbatim pre-fix line, shellcheck 0.11.0 reports **nothing** under
+  SC2312 or any of its eleven optional checks — in an assignment the
+  substitution's status *is* the assignment's status, so by SC2312's own rule
+  nothing is masked, even though `pipefail` has already poisoned it with the
+  producer's SIGPIPE. Independently re-verified by the Steward: with
+  `--enable=all --severity=style` the only output is SC2250, a cosmetic
+  brace-style suggestion.
+  **What does catch it** is the repo's own early-exiting-consumer detector
+  (`scripts/lib/shell-early-consumer.sh`), which Slice 30 shipped as a third
+  enforced leg precisely because of this refutation. Verified against both the
+  real pre-fix line and the P0 `if … | grep -q .` shape.
 
-That asymmetry is the central conclusion of this review. For *this* bug class,
-environment fidelity is nearly worthless and static analysis is nearly free.
+**The asymmetry survives; the mechanism does not.** For *this* bug class
+environment fidelity is still nearly worthless and static analysis is still
+nearly free — but the static analysis that works is a **purpose-built detector**,
+not a stock shellcheck flag. Shipping shellcheck alone would have been a vacuous
+green about the very failure this review was commissioned for: a gate that
+claims the bug class and does not detect it.
 Environment fidelity (§4.1) is still worth some investment — it addresses a
 different class (toolchain drift, unlocked installs) — but it must not be sold
 as the answer to what happened on 2026-08-04.
