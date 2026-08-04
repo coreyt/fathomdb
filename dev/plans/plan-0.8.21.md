@@ -39,6 +39,9 @@ experiment needs its own proposal and evidence gate.
    execution visible on a green run. Slice 45, added 2026-08-04.
 9. Stop paying for avoidable runs and floating linters. Slice 50, added
    2026-08-04.
+10. Add declared nested-source projections without duplicating canonical-body
+    attributes, with matching portable exact-attribute and property-text query
+    surfaces. Slice 60, remapped by HITL ruling `seq-242` on 2026-08-04.
 
 ## Requirements and acceptance criteria
 
@@ -66,6 +69,10 @@ experiment needs its own proposal and evidence gate.
   is the same defect as TC-37 one layer up.
 - Linters are **pinned and version-checked**, so a finding set changes only when
   the repository decides it does.
+- Nested projections read one declared scalar from the canonical body in the
+  node-write transaction; missing/null produces no row and composite terminals
+  reject atomically. The public Rust, Python, and TypeScript surfaces ship
+  together, with no consumer-owned attribute index or raw-path query API.
 
 ## Slice ladder
 
@@ -82,6 +89,8 @@ experiment needs its own proposal and evidence gate.
 | 40 | Guard that a dependency pin is still a fix, not the vulnerability | 20 |
 | 45 | Make a CI failure legible without log-diving; make suite execution visible on success | 35 |
 | 50 | Pin `pyright` with a drift test; stop superseded runs | 20 |
+| 55 | Mechanically total fast and heavy verifier tiers | 45 |
+| 60 | Nested-source projections and public attribute query surface | 20 |
 
 ### Slices 45 and 50 — observability and run hygiene (added 2026-08-04)
 
@@ -172,10 +181,18 @@ each can mask a real failure. Splitting `verify` into fast and heavy tiers is
 deferred: it needs a mechanical totality guard first, or it reintroduces the
 vacuous-green hazard that the 0.8.20 collect-all harness was built to remove.
 
+### Slice 60 — nested-source projections (remapped 2026-08-04)
+
+HITL ruling `seq-242` remaps the retained local candidate
+`impl-0.8.21-slice-45-nested-projections-local` to Slice 60. Slice 45 remains
+the landed CI-observability work. Slice 60 may begin with a fresh rebase of the
+candidate onto current `origin/main`; its implementation, governed-surface
+change, independent review, and merge remain separate gates.
+
 ## Landed foundation
 
 <!-- BEGIN GENERATED release-state:0.8.21:plan-landed-roll-up -->
-**LANDED on `origin/main`, in full:** Slices 0 (`2ea2c884`) · 5 (`a6cf2bbe`) · 10 (`f94275e1`) · 15 (`19d8f072`) · 20 (`354ee9b4`) · 25 (`11766d8b`) · 30 (`e0c5dfd3`) · 35 (`e0c5dfd3`) · 40 (`895d7cec`) · 45 (`e0c5dfd3`) · 50 (`60e43ff9`) · 55 (`e0c5dfd3`). SCHEMA is 24; remaining ladder = none.<!-- END GENERATED release-state:0.8.21:plan-landed-roll-up -->
+**LANDED on `origin/main`, in full:** Slices 0 (`2ea2c884`) · 5 (`a6cf2bbe`) · 10 (`f94275e1`) · 15 (`19d8f072`) · 20 (`354ee9b4`) · 25 (`11766d8b`) · 30 (`e0c5dfd3`) · 35 (`e0c5dfd3`) · 40 (`895d7cec`) · 45 (`e0c5dfd3`) · 50 (`60e43ff9`) · 55 (`e0c5dfd3`). SCHEMA is 24; remaining ladder = 60.<!-- END GENERATED release-state:0.8.21:plan-landed-roll-up -->
 
 ## Reserved-gap policy
 
@@ -199,5 +216,7 @@ retained in place; current indexes must identify current authority.
 
 ## Immediate next slice
 
-None: the 0.8.21 ladder is complete. Release closure and the opening of 0.8.22
-remain explicit state transitions; this completion does not imply either action.
+<!-- BEGIN GENERATED release-state:0.8.21:plan-immediate-next -->
+**IMMEDIATE NEXT: Slice 60** (`NESTED-PROJECTIONS`) — nested-source canonical-body projections and public attribute query surface
+
+**Remaining ladder:** 60.<!-- END GENERATED release-state:0.8.21:plan-immediate-next -->
