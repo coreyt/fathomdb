@@ -7,20 +7,159 @@
   "schema_version": 24,
   "schema_version_source": "pub const SCHEMA_VERSION in src/rust/crates/fathomdb-schema/src/lib.rs",
   "ladder": [
-    {"slice": 0, "short": "FOUNDATION", "title": "state, documentation, toolchain, platform-manifest, and tracking design", "depends_on": [], "status": "LANDED", "sha": "2ea2c884", "merge_subject": "0.8.21 foundation and tracking authority"},
-    {"slice": 5, "short": "TC-91", "title": "hardened projection-worker commit", "depends_on": [0], "status": "LANDED", "sha": "a6cf2bbe", "design_refs": ["dev/design/0.8.20-tc91-projection-commit-hardening.md"]},
-    {"slice": 10, "short": "SERIAL", "title": "reproducible serial local verifier", "depends_on": [5], "status": "LANDED", "sha": "f94275e1"},
-    {"slice": 15, "short": "LINUX-ARM64", "title": "Linux aarch64 package/build/smoke proof", "depends_on": [10], "status": "LANDED", "sha": "19d8f072"},
-    {"slice": 20, "short": "DOC-DRIFT", "title": "current-documentation and platform-drift checks", "depends_on": [15], "status": "LANDED", "sha": "354ee9b4"},
-    {"slice": 25, "short": "SHELL-FIX", "title": "remediate the audited SIGPIPE and fail-open shell sites", "depends_on": [20], "status": "UNBLOCKED", "sha": null, "design_refs": ["dev/design/ci-verify-robustness-review.md"]},
-    {"slice": 30, "short": "SHELLCHECK", "title": "shellcheck in agent-lint.sh with .shellcheckrc and masked-return checks", "depends_on": [25], "status": "NOT_STARTED", "sha": null, "design_refs": ["dev/design/ci-verify-robustness-review.md"]},
-    {"slice": 35, "short": "SHELL-LINT-CI", "title": "always-on shell-lint CI job ahead of the verify gate", "depends_on": [30], "status": "NOT_STARTED", "sha": null, "design_refs": ["dev/design/ci-verify-robustness-review.md"]},
-    {"slice": 40, "short": "PIN-ROT", "title": "guard that a dependency pin is still a fix and has not become the vulnerability", "depends_on": [20], "status": "UNBLOCKED", "sha": null, "design_refs": ["dev/design/pinned-override-rot-guard.md"]}
+    {
+      "slice": 0,
+      "short": "FOUNDATION",
+      "title": "state, documentation, toolchain, platform-manifest, and tracking design",
+      "depends_on": [],
+      "status": "LANDED",
+      "sha": "2ea2c884",
+      "merge_subject": "0.8.21 foundation and tracking authority"
+    },
+    {
+      "slice": 5,
+      "short": "TC-91",
+      "title": "hardened projection-worker commit",
+      "depends_on": [
+        0
+      ],
+      "status": "LANDED",
+      "sha": "a6cf2bbe",
+      "design_refs": [
+        "dev/design/0.8.20-tc91-projection-commit-hardening.md"
+      ]
+    },
+    {
+      "slice": 10,
+      "short": "SERIAL",
+      "title": "reproducible serial local verifier",
+      "depends_on": [
+        5
+      ],
+      "status": "LANDED",
+      "sha": "f94275e1"
+    },
+    {
+      "slice": 15,
+      "short": "LINUX-ARM64",
+      "title": "Linux aarch64 package/build/smoke proof",
+      "depends_on": [
+        10
+      ],
+      "status": "LANDED",
+      "sha": "19d8f072"
+    },
+    {
+      "slice": 20,
+      "short": "DOC-DRIFT",
+      "title": "current-documentation and platform-drift checks",
+      "depends_on": [
+        15
+      ],
+      "status": "LANDED",
+      "sha": "354ee9b4"
+    },
+    {
+      "slice": 25,
+      "short": "SHELL-FIX",
+      "title": "remediate the audited SIGPIPE and fail-open shell sites",
+      "depends_on": [
+        20
+      ],
+      "status": "LANDED",
+      "sha": "11766d8b",
+      "design_refs": [
+        "dev/design/ci-verify-robustness-review.md"
+      ]
+    },
+    {
+      "slice": 30,
+      "short": "SHELLCHECK",
+      "title": "shellcheck in agent-lint.sh with .shellcheckrc and masked-return checks",
+      "depends_on": [
+        25
+      ],
+      "status": "UNBLOCKED",
+      "sha": null,
+      "design_refs": [
+        "dev/design/ci-verify-robustness-review.md"
+      ]
+    },
+    {
+      "slice": 35,
+      "short": "SHELL-LINT-CI",
+      "title": "always-on shell-lint CI job ahead of the verify gate",
+      "depends_on": [
+        30
+      ],
+      "status": "NOT_STARTED",
+      "sha": null,
+      "design_refs": [
+        "dev/design/ci-verify-robustness-review.md"
+      ]
+    },
+    {
+      "slice": 40,
+      "short": "PIN-ROT",
+      "title": "guard that a dependency pin is still a fix and has not become the vulnerability",
+      "depends_on": [
+        20
+      ],
+      "status": "UNBLOCKED",
+      "sha": null,
+      "design_refs": [
+        "dev/design/pinned-override-rot-guard.md"
+      ]
+    },
+    {
+      "slice": 45,
+      "short": "OBSERVE",
+      "title": "make a CI failure legible without log-diving, and suite execution visible on success",
+      "depends_on": [
+        35
+      ],
+      "status": "NOT_STARTED",
+      "sha": null,
+      "design_refs": [
+        "dev/design/ci-verify-robustness-review.md"
+      ]
+    },
+    {
+      "slice": 50,
+      "short": "RUN-HYGIENE",
+      "title": "pin pyright with a drift test and stop superseded runs",
+      "depends_on": [
+        20
+      ],
+      "status": "UNBLOCKED",
+      "sha": null,
+      "design_refs": [
+        "dev/design/ci-verify-robustness-review.md"
+      ]
+    }
   ],
-  "landed": [0, 5, 10, 15, 20],
-  "next_slice": 25,
-  "remaining_ladder": [25, 30, 35, 40],
+  "landed": [
+    0,
+    5,
+    10,
+    15,
+    20,
+    25
+  ],
+  "next_slice": 30,
+  "remaining_ladder": [
+    30,
+    35,
+    40,
+    45,
+    50
+  ],
   "generated_views": [
-    {"id": "plan-landed-roll-up", "file": "dev/plans/plan-0.8.21.md", "location": "Landed foundation", "renders": "every landed slice + its landing SHA, the SCHEMA version, and the remaining ladder"}
+    {
+      "id": "plan-landed-roll-up",
+      "file": "dev/plans/plan-0.8.21.md",
+      "location": "Landed foundation",
+      "renders": "every landed slice + its landing SHA, the SCHEMA version, and the remaining ladder"
+    }
   ]
 }
