@@ -21,6 +21,55 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # 0.8.21 Slice 35 (SHELL-LINT-CI) — the shell gate, EARLY and INDEPENDENT.
+  # Design of record: dev/design/ci-verify-robustness-review.md R2.1.
+  #
+  # THE MEASURED CASE. On the 2026-08-04 run the shell defect's verdict was in
+  # the `verify` log at 00:45:39 and the job exited at 01:15:26 — 29m47s after
+  # the answer was known. Slice 30 put the shell gate FIRST inside
+  # agent-verify.sh (line 22), which moves this bug class from `step=test` to
+  # `step=lint`, but `verify` still burns ~3 minutes of job setup (checkout,
+  # python, node, the rust toolchain, rust-cache, a full bootstrap) before lint
+  # begins — and `verify` is SKIPPED ENTIRELY on a docs-only PR. This job
+  # reports the same verdict in about a minute, on every PR, as its own check.
+  #
+  # ALWAYS-ON: no `if:`, no `needs:`, NOT on the docs_only fast path. Same
+  # reasoning as ledger-integrity / plan-anchors / release-state-views below, and
+  # `scripts/tests/test_shell_lint_ci_job.sh` ENFORCES it rather than trusting
+  # this comment. Two concrete reasons, not boilerplate: (1) a `needs: changes`
+  # would make this gate CONTINGENT on another job — a `changes` failure, or a
+  # paths-filter misread, would make the shell gate silently ABSENT rather than
+  # red; (2) the gate is enforced over EVERY tracked `*.sh` plus two ratchet
+  # files, so it can go red on a diff that touches no shell file at all (a
+  # rename, or a listed file that has become clean and must leave its ratchet).
+  # Running unconditionally also costs about a minute, which is cheaper than
+  # reasoning about when it may be skipped.
+  #
+  # MINIMAL SETUP, on purpose: checkout + the pinned shellcheck, and nothing
+  # else. No rust toolchain, no node, no python venv — the gate is bash, git and
+  # shellcheck. Installing those would reintroduce the ~3 minutes this job
+  # exists to avoid.
+  #
+  # ⛔ THIS GATES. No `continue-on-error`, no rc captured and discarded, no
+  # advisory `exit 0`. (The `rust-workspace-race-report` job below IS
+  # deliberately report-only; that is not the model here.)
+  shell-lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      # The ubuntu-latest image ships its OWN shellcheck, at whatever version
+      # GitHub picked; it will not match the pin and would hard-fail the repo's
+      # version preflight. Handled by installing the pinned binary into
+      # ~/.local/bin, which find_shellcheck_bin prefers over PATH — NOT by
+      # relaxing the pin. This is the same installer scripts/bootstrap.sh runs.
+      - name: Install the pinned shellcheck (bootstrap's shellcheck leg only)
+        run: bash scripts/install-shellcheck.sh
+      - name: Shell lint (0.8.21 Slice 30 gate — the same script agent-verify runs)
+        run: bash scripts/agent-lint-shell.sh
+      - name: Recurrence guard for the job itself (fixture arms)
+        run: bash scripts/tests/test_shell_lint_ci_job.sh
+
   # Docs-only fast-path detector. Computes whether the diff touches ANY
   # non-markdown file. A markdown/docs-only change then runs ONLY the lightweight
   # `markdownlint` job (plus the always-on `docs` mkdocs gate) and skips the heavy

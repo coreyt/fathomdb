@@ -286,6 +286,13 @@ run_suite test-ci-run-hygiene-ci-env bash scripts/tests/test_ci_run_hygiene_ci_e
 run_suite test-agent-lint-shellcheck-version bash scripts/tests/test_agent_lint_shellcheck_version.sh
 run_suite test-agent-lint-shellcheck-gate bash scripts/tests/test_agent_lint_shellcheck_gate.sh
 
+# Shell lint in CI (0.8.21 Slice 35). Pins the `shell-lint` job's ALWAYS-ON shape
+# (no if:/needs:), its minimal setup, that it GATES rather than advises, and the
+# workflow concurrency group's `main` carve-out — plus the behavioural half: the
+# job's ACTUAL command rejects the Slice 25 `cmd | head` shape, mutant-proven
+# against a stub gate that accepts the same fixture.
+run_suite test-shell-lint-ci-job bash scripts/tests/test_shell_lint_ci_job.sh
+
 # TC-37 recurrence guard: agent-lint-md.sh must HARD-fail (not skip_notice/exit 0)
 # when markdownlint-cli2 is genuinely unresolvable. Builds its own throwaway
 # fixture repo under mktemp -d; never touches this checkout's node_modules.

@@ -25,12 +25,17 @@
 # the detector cannot make, and a per-file list is reviewable while a regex
 # carve-out is not. Closing them is follow-up FUP-SHELLCHECK-3.
 #
-# Two entries are DELIBERATE FIXTURES, not debt:
+# THREE entries are DELIBERATE FIXTURES, not debt:
 #   scripts/tests/test_shell_pipefail_guards.sh — the detector's own POSITIVE
 #     CONTROL; it holds the five pre-fix idioms verbatim, on purpose.
 #   scripts/tests/test_agent_lint_shellcheck_gate.sh — holds the defect script
 #     the gate is asserted to REJECT, in a heredoc.
-# Both must keep containing the idiom; neither will ever leave this list.
+#   scripts/tests/test_shell_lint_ci_job.sh — added 0.8.21 Slice 35. Holds the
+#     Slice 25 shape in a heredoc so the CI job's ACTUAL command can be shown to
+#     reject it (arm G), plus the words `cmd | head` in an assertion message.
+# All three must keep containing the idiom; none will ever leave this list.
+# ⚠ These three are the ONLY sanctioned reason to ADD a line here. Every other
+# addition is debt and needs the finding fixed instead.
 dev/release/tests/cargo_skew.sh
 dev/release/tests/pip_skew.sh
 dev/tools/mermaid/test-render-mermaid.sh
@@ -64,6 +69,7 @@ scripts/tests/test_removal_detect.sh
 scripts/tests/test_runtime_release_alignment.sh
 scripts/tests/test_seat_path_guard.sh
 scripts/tests/test_set_version.sh
+scripts/tests/test_shell_lint_ci_job.sh
 scripts/tests/test_shell_pipefail_guards.sh
 scripts/tests/test_smoke_scripts.sh
 scripts/tests/test_verify_embedder_api_no_drift.sh

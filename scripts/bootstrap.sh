@@ -8,8 +8,6 @@ _repo_toplevel="$(git rev-parse --show-toplevel)" || exit 1
 cd "$_repo_toplevel" || exit 1
 # shellcheck source=lib/actionlint-version.sh
 . "$SCRIPT_DIR/lib/actionlint-version.sh"
-# shellcheck source=lib/shellcheck-version.sh
-. "$SCRIPT_DIR/lib/shellcheck-version.sh"
 
 echo "FathomDB scaffold bootstrap"
 echo "Public docs live in docs/ and build with MkDocs."
@@ -107,86 +105,25 @@ fi
 
 # ShellCheck — the shell linter. Pinned for the same reason actionlint and ruff
 # are: shellcheck's finding set changes between releases, so an unpinned linter
-# silently redefines what "green" means. Installed from the upstream static
-# release tarball, verified against a recorded SHA-256 (we are fetching an
-# executable over the network; a checksum is not optional), into ~/.local/bin so
-# no sudo is needed and so it wins over whatever the host or the CI image put on
-# PATH.
+# silently redefines what "green" means.
 #
-# ⛔ NO SILENT SKIP. If shellcheck cannot be installed this exits non-zero. A
-# bootstrap that "succeeds" without the linter produces a lint run that cannot
-# fail, which is the TC-37 vacuous-green trap that hid a red `main` for three
-# weeks.
-shellcheck_bin="$(find_shellcheck_bin || true)"
-shellcheck_found_version=""
-if [ -n "$shellcheck_bin" ]; then
-  shellcheck_found_version="$(read_shellcheck_version "$shellcheck_bin")"
-fi
-
-if [ "$shellcheck_found_version" != "$SHELLCHECK_VERSION" ]; then
-  echo "Installing shellcheck v$SHELLCHECK_VERSION into $HOME/.local/bin ..."
-  shellcheck_os="$(uname -s)"
-  shellcheck_arch="$(uname -m)"
-  case "$shellcheck_os/$shellcheck_arch" in
-    Linux/x86_64)
-      shellcheck_slug="linux.x86_64"
-      shellcheck_sha256="8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198"
-      ;;
-    Linux/aarch64 | Linux/arm64)
-      shellcheck_slug="linux.aarch64"
-      shellcheck_sha256="12b331c1d2db6b9eb13cfca64306b1b157a86eb69db83023e261eaa7e7c14588"
-      ;;
-    Darwin/x86_64)
-      shellcheck_slug="darwin.x86_64"
-      shellcheck_sha256="3c89db4edcab7cf1c27bff178882e0f6f27f7afdf54e859fa041fca10febe4c6"
-      ;;
-    Darwin/arm64)
-      shellcheck_slug="darwin.aarch64"
-      shellcheck_sha256="56affdd8de5527894dca6dc3d7e0a99a873b0f004d7aabc30ae407d3f48b0a79"
-      ;;
-    *)
-      echo "shellcheck $SHELLCHECK_VERSION is required but no release tarball is recorded for $shellcheck_os/$shellcheck_arch" >&2
-      echo "  install it manually from https://github.com/koalaman/shellcheck/releases (pin v$SHELLCHECK_VERSION)" >&2
-      echo "  and record its checksum in scripts/bootstrap.sh" >&2
-      exit 1
-      ;;
-  esac
-
-  shellcheck_url="https://github.com/koalaman/shellcheck/releases/download/v$SHELLCHECK_VERSION/shellcheck-v$SHELLCHECK_VERSION.$shellcheck_slug.tar.xz"
-  shellcheck_tmp="$(mktemp -d)"
-  if ! curl -fsSL --retry 3 -o "$shellcheck_tmp/shellcheck.tar.xz" "$shellcheck_url"; then
-    rm -rf "$shellcheck_tmp"
-    echo "shellcheck $SHELLCHECK_VERSION download failed: $shellcheck_url" >&2
-    exit 1
-  fi
-  if ! printf '%s  %s\n' "$shellcheck_sha256" "$shellcheck_tmp/shellcheck.tar.xz" | sha256sum -c - >/dev/null 2>&1; then
-    rm -rf "$shellcheck_tmp"
-    echo "shellcheck $SHELLCHECK_VERSION download failed its SHA-256 check ($shellcheck_url)" >&2
-    exit 1
-  fi
-  tar -xJf "$shellcheck_tmp/shellcheck.tar.xz" -C "$shellcheck_tmp"
-  mkdir -p "$HOME/.local/bin"
-  install -m 0755 "$shellcheck_tmp/shellcheck-v$SHELLCHECK_VERSION/shellcheck" "$HOME/.local/bin/shellcheck"
-  rm -rf "$shellcheck_tmp"
-
-  shellcheck_bin="$(find_shellcheck_bin || true)"
-  shellcheck_found_version=""
-  if [ -n "$shellcheck_bin" ]; then
-    shellcheck_found_version="$(read_shellcheck_version "$shellcheck_bin")"
-  fi
-  if [ "$shellcheck_found_version" != "$SHELLCHECK_VERSION" ]; then
-    echo "shellcheck v$SHELLCHECK_VERSION installation did not produce the required binary" >&2
-    echo "  resolved: '${shellcheck_bin:-<none>}' reporting '${shellcheck_found_version:-<none>}'" >&2
-    exit 1
-  fi
-  echo "shellcheck v$SHELLCHECK_VERSION is installed at $shellcheck_bin"
-fi
+# The installer itself lives in scripts/install-shellcheck.sh — ONE file, so
+# that the 0.8.21 Slice 35 `shell-lint` CI job can install the exact same pinned
+# linter WITHOUT paying for the rest of this bootstrap (rust, node, the python
+# venv, `cargo install lychee`), and so a pin bump cannot leave that job and this
+# script on different linters. That file also owns the "the runner image ships
+# its own shellcheck" handling and persists its directory to $GITHUB_PATH.
+#
+# ⛔ NO SILENT SKIP. install-shellcheck.sh exits non-zero on every failure path,
+# and `set -e` here propagates it. A bootstrap that "succeeds" without the
+# linter produces a lint run that cannot fail, which is the TC-37 vacuous-green
+# trap that hid a red `main` for three weeks.
+bash "$SCRIPT_DIR/install-shellcheck.sh"
 
 # GitHub Actions applies GITHUB_PATH only to later steps. Persist the resolved
-# directories so `agent-verify` can invoke the exact bootstrap-installed
-# binaries.
+# actionlint directory so `agent-verify` can invoke the exact bootstrap-installed
+# binary. (install-shellcheck.sh persists shellcheck's own directory.)
 if [ -n "${GITHUB_PATH:-}" ]; then
   actionlint_dir="$(dirname "$actionlint_bin")"
-  shellcheck_dir="$(dirname "$shellcheck_bin")"
-  printf '%s\n%s\n' "$actionlint_dir" "$shellcheck_dir" >>"$GITHUB_PATH"
+  printf '%s\n' "$actionlint_dir" >>"$GITHUB_PATH"
 fi
