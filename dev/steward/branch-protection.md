@@ -1,50 +1,64 @@
-# Branch protection — intended state and how to apply it
+# Branch protection — live state
 
-> **STATUS 2026-08-04: STAGED, NOT APPLIED.** The `main` ruleset still carries
-> **only** the `pull_request` rule. `required_status_checks` is **not** in force,
-> so **a red PR can still be merged today.** Do not read the checked-in JSON as a
-> description of live configuration — it is the *target*, not the *state*.
+> **STATUS 2026-08-04: APPLIED AND VERIFIED.** The HITL applied the ruleset
+> through the web UI. `required_status_checks` is in force on `main`, and the
+> HITL additionally enabled `non_fast_forward` and `deletion`, which were not in
+> the original proposal.
 
-## Why it is not applied
+## Verification (the evidence, not an assertion)
 
-Applying it needs repository **Administration: Read and write**. The available
-credential is a fine-grained PAT without that permission, so the `PUT` returns:
-
-```text
-HTTP 403: Resource not accessible by personal access token
+```console
+$ gh api repos/coreyt/fathomdb/rulesets/20166133 -q '[.rules[].type]'
+["pull_request","required_status_checks","non_fast_forward","deletion"]
 ```
 
-The failed call changed nothing; the ruleset was re-read afterwards and still
-lists exactly `["pull_request"]`.
+Re-read from the live ruleset and diffed against the intended set:
 
-## How to apply
+| property | live | intended |
+|---|---|---|
+| required checks | **16** | 16 |
+| missing vs intended | **none** | — |
+| extra vs intended | **none** | — |
+| `strict_required_status_checks_policy` | `false` | `false` |
+| `allowed_merge_methods` | `[merge, squash, rebase]` | unchanged |
+| `required_approving_review_count` | `0` | unchanged |
+| `bypass_actors` | `[]` | `[]` |
+| `enforcement` | `active` | `active` |
 
-Either grant the PAT **Administration: Read and write** and run:
+`allowed_merge_methods` retaining **`merge`** is load-bearing: the 0.8.21 slice
+SHAs cited by `release-state-0.8.21.json` and the steward ledger only survive if
+merges are not squashed.
+
+`branch-protection-ruleset.json` is now a **snapshot of the live object**,
+refreshed after the change. It is the restore/audit reference.
+
+## The two rules the HITL added beyond the proposal
+
+- **`non_fast_forward`** — blocks force-pushes to `main`.
+- **`deletion`** — blocks deleting `main`.
+
+Both were flagged as off during the 2026-08-04 review. A force-pushable trunk
+undercuts every claim the release record makes about what landed, so these close
+a real hole rather than a theoretical one.
+
+## Re-applying from the checked-in JSON
+
+A `PUT` **replaces the whole ruleset**, so always build the payload from the live
+object rather than hand-writing one:
 
 ```bash
 gh api -X PUT repos/coreyt/fathomdb/rulesets/20166133 \
   --input dev/steward/branch-protection-ruleset.json
 ```
 
-…or set the same 16 checks through the web UI at
-**Settings → Rules → `default_ruleset` → Require status checks to pass**.
+This needs repository **Administration: Read and write**. The steward's
+fine-grained PAT does **not** have it — the attempt on 2026-08-04 returned
+`HTTP 403: Resource not accessible by personal access token`, which is why the
+change was made through the UI. Expect to do UI edits or grant that permission.
 
-Afterwards, verify it took:
-
-```bash
-gh api repos/coreyt/fathomdb/rulesets/20166133 -q '[.rules[].type]'
-# expected: ["pull_request","required_status_checks"]
-```
-
-## What the payload contains
-
-The `PUT` **replaces** the whole ruleset, so `branch-protection-ruleset.json`
-was built from the live object rather than hand-written. It preserves `name`,
-`target`, `enforcement`, `conditions`, empty `bypass_actors`, and — importantly
-— the existing `pull_request` parameters including
-`allowed_merge_methods: [merge, squash, rebase]` and `required_reviewers: []`.
-An earlier hand-drafted payload omitted those two; a `PUT` with it would have
-silently reset the repository's permitted merge methods.
+An earlier hand-drafted payload omitted `allowed_merge_methods` and
+`required_reviewers`; applying it would have silently reset the repository's
+permitted merge methods. Hence the build-from-live rule above.
 
 ### The 16 required checks
 

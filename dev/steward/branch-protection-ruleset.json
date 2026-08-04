@@ -35,55 +35,77 @@
         "do_not_enforce_on_create": false,
         "required_status_checks": [
           {
-            "context": "verify"
+            "context": "verify",
+            "integration_id": 15368
           },
           {
-            "context": "security"
+            "context": "security",
+            "integration_id": 15368
           },
           {
-            "context": "default-embedder-tests"
+            "context": "default-embedder-tests",
+            "integration_id": 15368
           },
           {
-            "context": "rust-workspace-race-report"
+            "context": "rust-workspace-race-report",
+            "integration_id": 15368
           },
           {
-            "context": "board-currency"
+            "context": "board-currency",
+            "integration_id": 15368
           },
           {
-            "context": "c1-contract-conformance"
+            "context": "c1-contract-conformance",
+            "integration_id": 15368
           },
           {
-            "context": "commission-manifest"
+            "context": "commission-manifest",
+            "integration_id": 15368
           },
           {
-            "context": "design-status"
+            "context": "design-status",
+            "integration_id": 15368
           },
           {
-            "context": "docs"
+            "context": "docs",
+            "integration_id": 15368
           },
           {
-            "context": "governed-surface-pin"
+            "context": "governed-surface-pin",
+            "integration_id": 15368
           },
           {
-            "context": "ledger-integrity"
+            "context": "ledger-integrity",
+            "integration_id": 15368
           },
           {
-            "context": "plan-anchors"
+            "context": "plan-anchors",
+            "integration_id": 15368
           },
           {
-            "context": "release-state-views"
+            "context": "release-state-views",
+            "integration_id": 15368
           },
           {
-            "context": "steward-orient"
+            "context": "steward-orient",
+            "integration_id": 15368
           },
           {
-            "context": "transcript-hygiene"
+            "context": "transcript-hygiene",
+            "integration_id": 15368
           },
           {
-            "context": "CodeQL"
+            "context": "CodeQL",
+            "integration_id": 57789
           }
         ]
       }
+    },
+    {
+      "type": "non_fast_forward"
+    },
+    {
+      "type": "deletion"
     }
   ]
 }
