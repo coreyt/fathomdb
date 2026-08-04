@@ -79,8 +79,8 @@
       "depends_on": [
         25
       ],
-      "status": "UNBLOCKED",
-      "sha": null,
+      "status": "LANDED",
+      "sha": "e0c5dfd3",
       "design_refs": [
         "dev/design/ci-verify-robustness-review.md"
       ]
@@ -92,8 +92,8 @@
       "depends_on": [
         30
       ],
-      "status": "NOT_STARTED",
-      "sha": null,
+      "status": "LANDED",
+      "sha": "e0c5dfd3",
       "design_refs": [
         "dev/design/ci-verify-robustness-review.md"
       ]
@@ -118,8 +118,8 @@
       "depends_on": [
         35
       ],
-      "status": "NOT_STARTED",
-      "sha": null,
+      "status": "LANDED",
+      "sha": "e0c5dfd3",
       "design_refs": [
         "dev/design/ci-verify-robustness-review.md"
       ]
@@ -131,8 +131,8 @@
       "depends_on": [
         20
       ],
-      "status": "UNBLOCKED",
-      "sha": null,
+      "status": "LANDED",
+      "sha": "60e43ff9",
       "design_refs": [
         "dev/design/ci-verify-robustness-review.md"
       ]
@@ -144,8 +144,8 @@
       "depends_on": [
         45
       ],
-      "status": "NOT_STARTED",
-      "sha": null,
+      "status": "LANDED",
+      "sha": "e0c5dfd3",
       "design_refs": [
         "dev/design/ci-verify-robustness-review.md"
       ]
@@ -158,40 +158,21 @@
     15,
     20,
     25,
-    40
-  ],
-  "next_slice": 30,
-  "remaining_ladder": [
     30,
     35,
+    40,
     45,
     50,
     55
   ],
+  "next_slice": null,
+  "remaining_ladder": [],
   "generated_views": [
     {
       "id": "plan-landed-roll-up",
       "file": "dev/plans/plan-0.8.21.md",
       "location": "Landed foundation",
       "renders": "every landed slice + its landing SHA, the SCHEMA version, and the remaining ladder"
-    },
-    {
-      "id": "plan-immediate-next",
-      "file": "dev/plans/plan-0.8.21.md",
-      "location": "Immediate next slice",
-      "renders": "next_slice, its ladder entry, and the remaining ladder"
-    },
-    {
-      "id": "status-current-state",
-      "file": "dev/plans/runs/STATUS-0.8.21.md",
-      "location": "Current state table's Next slice row",
-      "renders": "next_slice, its status, and every landed slice with its landing SHA"
-    },
-    {
-      "id": "status-next-action",
-      "file": "dev/plans/runs/STATUS-0.8.21.md",
-      "location": "Current state table's Immediate next action row",
-      "renders": "next_slice, its ladder entry, and the remaining ladder"
     }
   ]
 }
