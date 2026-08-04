@@ -1339,6 +1339,11 @@ if printf '%s' "$CI_JOB_BLOCK" | grep -qE '^\s*(if|needs):'; then
 else
   pass "the release-state-views job is always-on (no if:, no needs:, not docs_only-gated)"
 fi
+if printf '%s\n' "$CI_JOB_BLOCK" | grep -qE '^[[:space:]]+fetch-depth:[[:space:]]*0([[:space:]]|$)'; then
+  pass "the release-state-views job checks out full history for origin/main ancestry"
+else
+  fail "the release-state-views job must set checkout fetch-depth: 0; block: $CI_JOB_BLOCK"
+fi
 
 # --- Arm R (remote-landing guard) ------------------------------------------
 # THE DEFECT THIS PINS. Both `render_master_ladder_progress` and
@@ -1358,6 +1363,10 @@ remote_fixture() {
   (
     cd "$FIX"
     git branch -M main
+    # rm first: `git init --bare` on an EXISTING bare repo is a no-op that keeps
+    # its refs, so a second remote_fixture call would push against the previous
+    # call's `main` and be rejected non-fast-forward.
+    rm -rf "$TMPROOT/remote.git"
     git init -q --bare "$TMPROOT/remote.git"
     git remote add origin "$TMPROOT/remote.git"
     git push -q origin main
@@ -1449,6 +1458,118 @@ if printf '%s' "$OUT" | grep -q '9.9.9 claims'; then
   pass "arm R4: the guard actually executes and names the release (not a no-op)"
 else
   fail "arm R4 (guard must not be vacuous): out=$OUT"
+fi
+
+# --- Arm R5: a SHALLOW clone is UNVERIFIABLE, never FALSE ---------------------
+# THE DEFECT THIS PINS. `actions/checkout` defaults to `--depth=1`. In that clone
+# `origin/main` EXISTS but holds only the tip commit, so every historical landed
+# SHA is absent from the object store and `merge-base --is-ancestor` cannot
+# resolve it. The first version of this guard read that as "not reachable from
+# origin/main" and HARD-FAILED on `main`: on 2026-08-04 it red-lined four
+# consecutive `main` runs while claiming 15 of 0.8.20's and 5 of 0.8.21's slices
+# were unpushed. All twenty were genuinely on the remote.
+#
+# A permanently-red gate is worse than no gate — it trains readers to discount
+# red, which is how a real failure survives. Absent history means UNVERIFIABLE.
+# Reuse the remote arms R–R3 already built and pushed, rather than rebuilding the
+# fixture. A second `remote_fixture` call is avoidable state: in CI it aborted the
+# whole suite under `set -e` before arm R5 printed anything, and a fixture that
+# can kill the run is a worse hazard than the one being tested.
+if ! git -C "$TMPROOT/remote.git" rev-parse --verify --quiet main >/dev/null 2>&1; then
+  fail "arm R5 setup: the shared fixture remote has no main; arms R-R3 must run first"
+fi
+
+SHALLOW="$TMPROOT/shallow"
+SHALLOW_PROBE="$TMPROOT/shallow-default-branch"
+rm -rf "$SHALLOW"
+# `--depth` is ignored for a plain local path, so the remote MUST be a file://
+# URL. GitHub Actions runners set `protocol.file.allow=never` (the
+# CVE-2022-39253 mitigation), which rejects that with
+# `fatal: transport 'file' not allowed` — so the fixture opts back in for this
+# one clone. That is a fixture-local override against a bare repo this test just
+# created; it changes nothing about the repository's own protocol policy.
+#
+# Do NOT redirect this to /dev/null. The first version did, so when the clone
+# failed in CI `set -e` aborted the suite with NO arm R5 output at all and the
+# job reported a bare `exit 1` — the same silent-abort class this suite exists to
+# catch, reproduced inside the suite itself.
+#
+# The bare remote deliberately advertises an unborn default branch. This is the
+# exact pre-fix failure: a branchless clone can exit 0 but has no working tree,
+# hence no `scripts/` directory for the copied gate. Keep a probe for that
+# failure so the fixture is deterministic, then explicitly request `main` for
+# the clone the arm runs against.
+set +e
+SHALLOW_DEFAULT_HEAD_ERR="$(git -C "$TMPROOT/remote.git" symbolic-ref HEAD refs/heads/unborn-default 2>&1)"
+SHALLOW_DEFAULT_HEAD_RC=$?
+set -e
+if [ "$SHALLOW_DEFAULT_HEAD_RC" -ne 0 ]; then
+  fail "arm R5 setup: could not advertise an unborn default branch (rc=$SHALLOW_DEFAULT_HEAD_RC): $SHALLOW_DEFAULT_HEAD_ERR"
+fi
+rm -rf "$SHALLOW_PROBE"
+set +e
+SHALLOW_PROBE_ERR="$(git -c protocol.file.allow=always clone -q --depth=1 \
+  "file://$TMPROOT/remote.git" "$SHALLOW_PROBE" 2>&1)"
+SHALLOW_PROBE_RC=$?
+set -e
+if [ "$SHALLOW_PROBE_RC" -eq 0 ] \
+   && [ ! -f "$SHALLOW_PROBE/scripts/check-release-state-views.sh" ]; then
+  pass "arm R5 setup: a branchless shallow clone reproduces the missing scripts/ failure"
+else
+  fail "arm R5 setup: expected the branchless shallow-clone probe to lack scripts/ (rc=$SHALLOW_PROBE_RC): $SHALLOW_PROBE_ERR"
+fi
+
+set +e
+SHALLOW_CLONE_ERR="$(git -c protocol.file.allow=always clone -q --depth=1 --branch main \
+  "file://$TMPROOT/remote.git" "$SHALLOW" 2>&1)"
+SHALLOW_CLONE_RC=$?
+set -e
+if [ "$SHALLOW_CLONE_RC" -ne 0 ]; then
+  fail "arm R5 setup: could not build the shallow fixture (rc=$SHALLOW_CLONE_RC): $SHALLOW_CLONE_ERR"
+elif [ ! -f "$SHALLOW/scripts/check-release-state-views.sh" ]; then
+  fail "arm R5 setup: shallow main checkout lacks scripts/check-release-state-views.sh: $SHALLOW_CLONE_ERR"
+else
+  set +e
+  SHALLOW_GATE_COPY_ERR="$({ cp "$GATE" "$SHALLOW/scripts/check-release-state-views.sh" \
+    && chmod +x "$SHALLOW/scripts/check-release-state-views.sh"; } 2>&1)"
+  SHALLOW_GATE_COPY_RC=$?
+  set -e
+  if [ "$SHALLOW_GATE_COPY_RC" -ne 0 ]; then
+    fail "arm R5 setup: could not install the gate in the shallow fixture (rc=$SHALLOW_GATE_COPY_RC): $SHALLOW_GATE_COPY_ERR"
+  fi
+fi
+if [ -d "$SHALLOW/.git" ] \
+   && [ "$(git -C "$SHALLOW" rev-parse --is-shallow-repository 2>/dev/null)" = "true" ]; then
+  pass "arm R5 setup: the fixture clone really is shallow"
+else
+  fail "arm R5 setup: clone is not shallow, the arm would prove nothing"
+fi
+
+# Make a landed SHA unresolvable in the shallow clone the same way CI does: the
+# state file names commits the depth=1 clone never fetched.
+if [ -x "$SHALLOW/scripts/check-release-state-views.sh" ]; then
+  set +e
+  SHALLOW_OUT="$(cd "$SHALLOW" && ./scripts/check-release-state-views.sh 2>&1)"
+  SHALLOW_RC=$?
+  set -e
+
+  if [ "$SHALLOW_RC" -eq 0 ]; then
+    pass "arm R5: a shallow clone does not hard-fail the landing claim"
+  else
+    fail "arm R5 (shallow must not hard-fail): rc=$SHALLOW_RC out=$SHALLOW_OUT"
+  fi
+
+  # Assert on the VERDICT LINE, not on one of its two possible reasons. In a
+  # shallow clone the absent SHA reports as "not a commit in this repository"
+  # rather than "not reachable from origin/main", so grepping the latter alone
+  # passes whether or not the fix is present — a non-discriminating arm.
+  if printf '%s' "$SHALLOW_OUT" | grep -qE 'claims [0-9]+ slice\(s\) LANDED'; then
+    fail "arm R5: shallow clone emitted a FALSE unpushed verdict: $SHALLOW_OUT"
+  else
+    pass "arm R5: shallow clone emits no unpushed verdict at all"
+  fi
+else
+  fail "arm R5: gate was not runnable after shallow-fixture setup; see prior R5 setup failures"
 fi
 
 if [ "$FAILED" -gt 0 ]; then
