@@ -12,6 +12,14 @@ on:
 permissions:
   contents: read
 
+# A newer pull-request commit supersedes its older run, so those runs share a
+# group and cancel promptly. GitHub cancels an older pending run in a shared
+# group even when `cancel-in-progress` is false, so every non-PR run receives a
+# unique group and must finish with an unambiguous result.
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('{0}-{1}', github.workflow, github.ref) || format('{0}-{1}', github.workflow, github.run_id) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   # Docs-only fast-path detector. Computes whether the diff touches ANY
   # non-markdown file. A markdown/docs-only change then runs ONLY the lightweight
