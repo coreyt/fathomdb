@@ -8551,9 +8551,8 @@ impl Engine {
             .map_err(|_| EngineError::Storage)?;
             if matches!(to_state, LifecycleState::Active) {
                 project_node_attributes(&tx, cursor, body).map_err(|_| EngineError::Storage)?;
-                if let Ok(dimension) = default_profile_dimension(&tx) {
-                    refresh_vector_attr_values(&tx, dimension).map_err(|_| EngineError::Storage)?;
-                }
+                refresh_vector_attr_values_for_row(&tx, cursor, body)
+                    .map_err(|_| EngineError::Storage)?;
             }
         }
         tx.commit().map_err(|_| EngineError::Storage)?;
@@ -15353,6 +15352,39 @@ fn refresh_vector_attr_values(conn: &Connection, dimension: u32) -> rusqlite::Re
     if desired != actual || !desired.is_empty() {
         reshape_vector_partition_nondestructive(conn, dimension, &desired, &actual, true)?;
     }
+    Ok(())
+}
+
+/// Refresh one reactivated node's vec0 metadata without reshaping the corpus.
+///
+/// Activation re-projects this node's canonical attributes after a source change
+/// that could have happened while it was deleted. vec0 accepts metadata `UPDATE`s,
+/// so only this row needs to be refreshed; a full partition reshape belongs to
+/// registry shape/source reconciliation, not the ordinary lifecycle path.
+fn refresh_vector_attr_values_for_row(
+    conn: &Connection,
+    rowid: i64,
+    body: &str,
+) -> rusqlite::Result<()> {
+    let (cols_sql, _, mut values) = vector_attr_insert_fragments(conn, body, 1)?;
+    if cols_sql.is_empty() {
+        return Ok(());
+    }
+    let assignments = cols_sql
+        .trim_start_matches(", ")
+        .split(", ")
+        .enumerate()
+        .map(|(index, col)| format!("{col} = ?{}", index + 1))
+        .collect::<Vec<_>>()
+        .join(", ");
+    values.push(rusqlite::types::Value::Integer(rowid));
+    let rowid_index = values.len();
+    conn.execute(
+        &format!(
+            "UPDATE {DEFAULT_VECTOR_PARTITION} SET {assignments} WHERE rowid = ?{rowid_index}"
+        ),
+        rusqlite::params_from_iter(values.iter()),
+    )?;
     Ok(())
 }
 

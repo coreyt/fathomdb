@@ -122,7 +122,7 @@ vacuous-green hazard that the 0.8.20 collect-all harness was built to remove.
 ## Landed foundation
 
 <!-- BEGIN GENERATED release-state:0.8.21:plan-landed-roll-up -->
-**LANDED on `origin/main`, in full:** Slices 0 (`2ea2c884`) · 5 (`a6cf2bbe`) · 10 (`f94275e1`) · 15 (`19d8f072`) · 20 (`354ee9b4`). SCHEMA is 25; remaining ladder = 25 → 30 → 35 → 40.<!-- END GENERATED release-state:0.8.21:plan-landed-roll-up -->
+**LANDED on `origin/main`, in full:** Slices 0 (`2ea2c884`) · 5 (`a6cf2bbe`) · 10 (`f94275e1`) · 15 (`19d8f072`) · 20 (`354ee9b4`) · 25 (`11766d8b`). SCHEMA is 25; remaining ladder = 60 → 30 → 35 → 40.<!-- END GENERATED release-state:0.8.21:plan-landed-roll-up -->
 
 ## Reserved-gap policy
 
