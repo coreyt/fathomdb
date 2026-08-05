@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 import math
+from collections.abc import Sequence
 from typing import Any, cast
 
 from fathomdb._fathomdb import ConsolidateReceipt
@@ -79,6 +80,17 @@ def _validate_id_list(name: str, value: object) -> list[int]:
         if item < 0:
             raise ValueError(f"{name} must contain only non-negative ints, got {item!r}")
     return value
+
+
+def _projection_source_segments(source: object) -> list[str] | None:
+    """Validate and normalize a nested projection's literal member path."""
+    if source is None:
+        return None
+    if isinstance(source, str) or not isinstance(source, Sequence):
+        raise TypeError("ProjectionSpec.source must be a non-string sequence of strings")
+    if not all(isinstance(segment, str) for segment in source):
+        raise TypeError("ProjectionSpec.source must be a non-string sequence of strings")
+    return list(source)
 
 
 def _map_per_hit_explain(p: Any) -> PerHitExplain:
@@ -302,7 +314,7 @@ class Engine:
                 # Its VALUE is inert engine-side, which is what keeps
                 # ``read.projections`` output re-appliable as a no-op.
                 s.vector_dense_readiness,
-                list(s.source) if s.source is not None else None,
+                _projection_source_segments(s.source),
             )
             for s in specs
         ]
