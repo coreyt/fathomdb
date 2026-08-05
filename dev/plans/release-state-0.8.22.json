@@ -1,0 +1,23 @@
+{
+  "release": "0.8.22",
+  "release_kind": "even, stable publish candidate",
+  "board": "dev/plans/runs/STATUS-0.8.22.md",
+  "plan": "dev/plans/plan-0.8.22.md",
+  "master": "dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md",
+  "schema_version": 25,
+  "schema_version_source": "pub const SCHEMA_VERSION in src/rust/crates/fathomdb-schema/src/lib.rs",
+  "ladder": [
+    {"slice": 0, "short": "CONTRACT", "title": "release contract, platform acceptance, and trusted-publishing runbook", "depends_on": [], "status": "IN_PROGRESS"},
+    {"slice": 5, "short": "SQLITE", "title": "rusqlite/sqlite-vec security migration and TC-76 regression proof", "depends_on": [0], "status": "NOT_STARTED"},
+    {"slice": 10, "short": "TOPOLOGY", "title": "five-target npm platform-package topology", "depends_on": [5], "status": "NOT_STARTED"},
+    {"slice": 15, "short": "NATIVE-CI", "title": "native build, validation, and wheel-size matrix", "depends_on": [10], "status": "NOT_STARTED"},
+    {"slice": 20, "short": "PUBLISH", "title": "ordered platform publication and registry smokes", "depends_on": [15], "status": "NOT_STARTED"},
+    {"slice": 25, "short": "PROMOTE", "title": "next-to-latest promotion after every smoke", "depends_on": [20], "status": "NOT_STARTED"}
+  ],
+  "landed": [],
+  "next_slice": 0,
+  "remaining_ladder": [0, 5, 10, 15, 20, 25],
+  "generated_views": [
+    {"id": "plan-landed-roll-up", "file": "dev/plans/plan-0.8.22.md", "location": "Landed release state", "renders": "every landed slice + its landing SHA, the SCHEMA version, and the remaining ladder"}
+  ]
+}
