@@ -6,9 +6,9 @@ target_release: 0.8.21
 
 # FathomDB 0.8.21 — reliability and platform foundation
 
-0.8.21 is a label-only foundation release. It starts from the published
-v0.8.20 release and establishes reliable local verification before expanding
-native-platform delivery. It does not publish artifacts.
+0.8.21 is a registry release by explicit HITL exception (`seq-243`). It starts
+from the published v0.8.20 release, establishes reliable local verification,
+and expands native-platform delivery before its tag is published.
 
 The former free-threaded-Python and benchmark ladder is **SUPERSEDED as this
 release plan**. Its research remains in
@@ -183,11 +183,10 @@ vacuous-green hazard that the 0.8.20 collect-all harness was built to remove.
 
 ### Slice 60 — nested-source projections (remapped 2026-08-04)
 
-HITL ruling `seq-242` remaps the retained local candidate
+HITL ruling `seq-242` remapped the retained local candidate
 `impl-0.8.21-slice-45-nested-projections-local` to Slice 60. Slice 45 remains
-the landed CI-observability work. Slice 60 may begin with a fresh rebase of the
-candidate onto current `origin/main`; its implementation, governed-surface
-change, independent review, and merge remain separate gates.
+the landed CI-observability work. Slice 60 landed through PR #195 at `11f3fbf4`
+after independent review and a green GitHub preflight.
 
 The design of record is [Nested-Source Projections](../design/nested-source-projections.md)
 and its accepted [ADR](../adr/ADR-0.8.21-nested-source-projections.md). These
@@ -196,7 +195,7 @@ documents commission the work; they do not authorize implementation merge.
 ## Landed foundation
 
 <!-- BEGIN GENERATED release-state:0.8.21:plan-landed-roll-up -->
-**LANDED on `origin/main`, in full:** Slices 0 (`2ea2c884`) · 5 (`a6cf2bbe`) · 10 (`f94275e1`) · 15 (`19d8f072`) · 20 (`354ee9b4`) · 25 (`11766d8b`) · 30 (`e0c5dfd3`) · 35 (`e0c5dfd3`) · 40 (`895d7cec`) · 45 (`e0c5dfd3`) · 50 (`60e43ff9`) · 55 (`e0c5dfd3`). SCHEMA is 25; remaining ladder = 60.<!-- END GENERATED release-state:0.8.21:plan-landed-roll-up -->
+**LANDED on `origin/main`, in full:** Slices 0 (`2ea2c884`) · 5 (`a6cf2bbe`) · 10 (`f94275e1`) · 15 (`19d8f072`) · 20 (`354ee9b4`) · 25 (`11766d8b`) · 30 (`e0c5dfd3`) · 35 (`e0c5dfd3`) · 40 (`895d7cec`) · 45 (`e0c5dfd3`) · 50 (`60e43ff9`) · 55 (`e0c5dfd3`) · 60 (`11f3fbf4`). SCHEMA is 25; remaining ladder = none.<!-- END GENERATED release-state:0.8.21:plan-landed-roll-up -->
 
 ## Reserved-gap policy
 
@@ -218,9 +217,13 @@ current architecture/contract baselines, link validation, and bounded module
 extractions demonstrated by TC-91 and platform work. Historical records are
 retained in place; current indexes must identify current authority.
 
+## Release gate
+
+All planned implementation slices are landed. The remaining work is the
+versioned registry-release gate authorized by HITL ruling `seq-243`.
+
 ## Immediate next slice
 
-<!-- BEGIN GENERATED release-state:0.8.21:plan-immediate-next -->
-**IMMEDIATE NEXT: Slice 60** (`NESTED-PROJECTIONS`) — nested-source canonical-body projections and public attribute query surface
-
-**Remaining ladder:** 60.<!-- END GENERATED release-state:0.8.21:plan-immediate-next -->
+No implementation slice remains. The immediate release action is to merge the
+0.8.21 registry-promotion change, pass GitHub preflight and the release dry
+run, then publish the immutable `v0.8.21` tag under the HITL authorization.

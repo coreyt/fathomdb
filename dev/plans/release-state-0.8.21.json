@@ -1,6 +1,6 @@
 {
   "release": "0.8.21",
-  "release_kind": "odd, label-only foundation",
+  "release_kind": "odd, registry publish by HITL exception (seq-243)",
   "board": "dev/plans/runs/STATUS-0.8.21.md",
   "plan": "dev/plans/plan-0.8.21.md",
   "master": "dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md",
@@ -157,8 +157,8 @@
       "depends_on": [
         20
       ],
-      "status": "UNBLOCKED",
-      "sha": null,
+      "status": "LANDED",
+      "sha": "11f3fbf4",
       "design_refs": [
         "dev/adr/ADR-0.8.21-nested-source-projections.md",
         "dev/design/nested-source-projections.md"
@@ -177,36 +177,29 @@
     40,
     45,
     50,
-    55
-  ],
-  "next_slice": 60,
-  "remaining_ladder": [
+    55,
     60
   ],
+  "next_slice": null,
+  "remaining_ladder": [],
+  "decisions": {
+    "_comment": "The 0.8.21 registry-release exception is a HITL decision. Its durable ruling is the steward-ledger source; this single writer records its current state.",
+    "unruled": [],
+    "ruled": [
+      {
+        "id": "publish",
+        "title": "Publish 0.8.21 to registries after GitHub preflight",
+        "halts_run": false,
+        "source": "seq-243"
+      }
+    ]
+  },
   "generated_views": [
     {
       "id": "plan-landed-roll-up",
       "file": "dev/plans/plan-0.8.21.md",
       "location": "Landed foundation",
       "renders": "every landed slice + its landing SHA, the SCHEMA version, and the remaining ladder"
-    },
-    {
-      "id": "plan-immediate-next",
-      "file": "dev/plans/plan-0.8.21.md",
-      "location": "Immediate next slice",
-      "renders": "next_slice, its ladder entry, and the remaining ladder"
-    },
-    {
-      "id": "status-current-state",
-      "file": "dev/plans/runs/STATUS-0.8.21.md",
-      "location": "Current state table's Next slice row",
-      "renders": "next_slice, its status, and every landed slice with its landing SHA"
-    },
-    {
-      "id": "status-next-action",
-      "file": "dev/plans/runs/STATUS-0.8.21.md",
-      "location": "Current state table's Immediate next action row",
-      "renders": "next_slice, its ladder entry, and the remaining ladder"
     }
   ]
 }

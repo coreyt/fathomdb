@@ -1,15 +1,15 @@
 ---
 title: CLI Public Interface
 date: 2026-07-29
-target_release: 0.8.20
-desc: Public CLI surface for 0.8.20
+target_release: 0.8.21
+desc: Public CLI surface for 0.8.21
 blast_radius: src/rust/crates/fathomdb-cli/src/lib.rs; design/recovery.md; design/errors.md
 status: locked
 ---
 
 # CLI Interface
 
-Public CLI surface for the 0.8.20 operator binary. The canonical verb table and
+Public CLI surface for the 0.8.21 operator binary. The canonical verb table and
 recovery semantics are owned by `design/recovery.md`; this file owns concrete
 flag spelling, root command paths, and exit-code classes.
 

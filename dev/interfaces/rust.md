@@ -1,8 +1,8 @@
 ---
 title: Rust Public Interface
 date: 2026-07-29
-target_release: 0.8.20
-desc: Public Rust surface (traits, functions, types, errors) for 0.8.20
+target_release: 0.8.21
+desc: Public Rust surface (traits, functions, types, errors) for 0.8.21
 blast_radius: src/rust/crates/fathomdb; design/engine.md; design/bindings.md; design/errors.md; design/lifecycle.md
 status: locked
 ---

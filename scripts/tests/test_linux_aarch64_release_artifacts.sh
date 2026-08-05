@@ -143,7 +143,8 @@ trap 'rm -rf "$scratch"' EXIT
 cp "$REPO_ROOT/src/ts/package.json" "$scratch/package.json"
 bash "$REPO_ROOT/scripts/release/npm-inject-optional-deps.sh" "$scratch" "$REPO_ROOT/src/ts/npm" >/dev/null
 injected="$(node -e 'process.stdout.write(JSON.stringify(require(process.argv[1]).optionalDependencies))' "$scratch/package.json")"
-expected='{"fathomdb-linux-arm64-gnu":"0.8.20","fathomdb-linux-x64-gnu":"0.8.20"}'
+version="$(node -e 'process.stdout.write(require(process.argv[1]).version)' "$REPO_ROOT/src/ts/package.json")"
+expected="{\"fathomdb-linux-arm64-gnu\":\"$version\",\"fathomdb-linux-x64-gnu\":\"$version\"}"
 if [ "$injected" != "$expected" ]; then
   printf 'FAIL  main npm package must inject both Linux platform dependencies, got: %s\n' "$injected" >&2
   exit 1

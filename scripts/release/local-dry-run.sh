@@ -39,7 +39,27 @@ LEAVES=(fathomdb-embedder-api fathomdb-schema fathomdb-query)
 
 log() { printf '\n=== %s ===\n' "$*"; }
 
+workspace_version="$(awk '
+  /^\[workspace\.package\]/ { in_block = 1; next }
+  /^\[/ { in_block = 0 }
+  in_block && /^version[[:space:]]*=/ {
+    n = split($0, fields, "\"")
+    if (n >= 3) { print fields[2] }
+    exit
+  }
+' Cargo.toml)"
+if [ -z "$workspace_version" ]; then
+  printf 'local-dry-run: cannot read Cargo.toml workspace version\n' >&2
+  exit 1
+fi
+
 log "Step 1/5: scripts/verify-release-gates.sh"
+GITHUB_EVENT_NAME=workflow_dispatch \
+DRY_RUN=true \
+RELEASE_DISPATCH_VERSION="$workspace_version" \
+RELEASE_GATES_TAG="v$workspace_version" \
+RELEASE_GATES_REQUIRE_TAG_CHECKOUT=0 \
+RELEASE_GATES_HEAD_REF=refs/remotes/origin/main \
 bash scripts/verify-release-gates.sh
 
 log "Step 2/5: scripts/release/verify-embedder-api-no-drift.sh"
@@ -51,13 +71,13 @@ cargo build --release --workspace
 log "Step 4/5: cargo package --no-verify (leaves)"
 for crate in "${LEAVES[@]}"; do
   printf -- '--- cargo package -p %s ---\n' "$crate"
-  cargo package --no-verify -p "$crate"
+  cargo package --allow-dirty --no-verify -p "$crate"
 done
 
 log "Step 5/5: cargo publish --dry-run --no-verify (leaves)"
 for crate in "${LEAVES[@]}"; do
   printf -- '--- cargo publish --dry-run -p %s ---\n' "$crate"
-  cargo publish --dry-run --no-verify -p "$crate"
+  cargo publish --allow-dirty --dry-run --no-verify -p "$crate"
 done
 
 log "GREEN: local release dry-run passed"

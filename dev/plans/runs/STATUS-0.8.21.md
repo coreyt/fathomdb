@@ -8,10 +8,10 @@
 
 | | |
 |---|---|
-| **Next slice** | <!-- BEGIN GENERATED release-state:0.8.21:status-current-state -->**Next is Slice 60 (NESTED-PROJECTIONS), UNBLOCKED.** Landed on `origin/main`: 0 (`2ea2c884`) · 5 (`a6cf2bbe`) · 10 (`f94275e1`) · 15 (`19d8f072`) · 20 (`354ee9b4`) · 25 (`11766d8b`) · 30 (`e0c5dfd3`) · 35 (`e0c5dfd3`) · 40 (`895d7cec`) · 45 (`e0c5dfd3`) · 50 (`60e43ff9`) · 55 (`e0c5dfd3`) — verified reachable, not asserted.<!-- END GENERATED release-state:0.8.21:status-current-state --> |
-| **Status** | The foundation ladder (0–20) is complete. **The ladder was extended again by HITL ruling `seq-242`**: Slice 60 is the remapped nested-source-projections candidate; landed CI-observability Slice 45 is unchanged. |
-| **Release boundary** | 0.8.21 remains label-only. It must not advertise or publish an artifact without the evidence required by `dev/platform-capabilities.json`. Release closure and opening 0.8.22 remain explicit state transitions. |
+| **Next slice** | No implementation slice remains. Slices 0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, and 60 are landed; Slice 60 merged at `11f3fbf4`. |
+| **Status** | The full reliability/platform/nested-projections ladder is complete. Slice 60 was remapped by HITL ruling `seq-242`, then landed through PR #195 after a green GitHub preflight. |
+| **Release boundary** | HITL ruling `seq-243` upgrades 0.8.21 from label-only to a registry release. Tag and publish remain conditional on the promotion preflight and release dry run. |
 | **Repository hygiene** | Verified-safe stale worktrees, superseded branches, and clean temporary verification clones have been retired. Remaining non-primary worktrees are retained because they have unique commits, untracked evidence, or a Claude lock; they require explicit disposition. |
 | **Build outputs** | About 12.9 GiB of ignored, reproducible `target/` output remains: 1.3 GiB in the primary checkout and about 11.6 GiB across retained worktrees. It has been measured, not deleted. |
-| **Immediate next action** | <!-- BEGIN GENERATED release-state:0.8.21:status-next-action -->**Commission Slice 60 (NESTED-PROJECTIONS)** — nested-source canonical-body projections and public attribute query surface. **Remaining ladder:** 60.<!-- END GENERATED release-state:0.8.21:status-next-action --> |
+| **Immediate next action** | Merge the 0.8.21 release-promotion change, then run its GitHub and release dry-run gates. |
 | **Branch protection** | **APPLIED AND VERIFIED 2026-08-04.** `main` now enforces `pull_request` + `required_status_checks` (16 checks, verified live-vs-intended: 0 missing, 0 extra) + `non_fast_forward` + `deletion`. A red PR can no longer be merged, and `main` can no longer be force-pushed or deleted. Snapshot: `dev/steward/branch-protection-ruleset.json`. See `dev/steward/branch-protection.md`, steward ledger seq-240/241. |
