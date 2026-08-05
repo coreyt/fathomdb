@@ -15350,9 +15350,7 @@ fn reconcile_vector_attr_columns(conn: &Connection, dimension: u32) -> rusqlite:
 fn refresh_vector_attr_values(conn: &Connection, dimension: u32) -> rusqlite::Result<()> {
     let desired = desired_vector_attr_columns(conn)?;
     let actual = actual_vector_attr_columns(conn)?;
-    if desired != actual {
-        reshape_vector_partition_nondestructive(conn, dimension, &desired, &actual, true)?;
-    } else if !desired.is_empty() {
+    if desired != actual || !desired.is_empty() {
         reshape_vector_partition_nondestructive(conn, dimension, &desired, &actual, true)?;
     }
     Ok(())
