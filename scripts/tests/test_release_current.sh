@@ -92,6 +92,26 @@ else
   fail "zero: rc=$RC out=$OUT"
 fi
 
+# A fully published schedule has no active release by design. That is a valid
+# terminal state, distinct from an accidentally closed but unpublished board.
+COMPLETE="$TMPROOT/complete"
+make_repo "$COMPLETE"
+write_pair "$COMPLETE" 0.8.21 'CLOSED — historical record'
+python3 - "$COMPLETE/dev/plans/release-state-0.8.21.json" <<'PY'
+import json, sys
+p = sys.argv[1]
+d = json.load(open(p))
+d['published'] = {'tag': 'v0.8.21'}
+open(p, 'w').write(json.dumps(d))
+PY
+(cd "$COMPLETE" && git add -A && git commit -qm fixture)
+run "$COMPLETE"
+if [ "$RC" -eq 0 ] && [ -z "$OUT" ]; then
+  pass 'all-published schedule resolves successfully with no active release tuple'
+else
+  fail "complete: rc=$RC out=$OUT"
+fi
+
 MULTI="$TMPROOT/multiple"
 make_repo "$MULTI"
 write_pair "$MULTI" 0.8.20 LIVE
