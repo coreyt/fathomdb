@@ -634,6 +634,7 @@ struct PyQueryTrace {
     vector_hits: u32,
     text_hits: u32,
     graph_hits: u32,
+    dropped_edge_hits: u32,
 }
 
 impl PyQueryTrace {
@@ -651,6 +652,7 @@ impl PyQueryTrace {
             vector_hits: t.vector_hits,
             text_hits: t.text_hits,
             graph_hits: t.graph_hits,
+            dropped_edge_hits: t.dropped_edge_hits,
         }
     }
 }
@@ -776,6 +778,7 @@ struct PyReadView {
 #[pymethods]
 impl PyReadView {
     #[new]
+    #[allow(clippy::too_many_arguments)]
     #[pyo3(signature = (
         include_superseded = false,
         include_inactive = false,
@@ -852,12 +855,14 @@ struct PyProjectionSpec {
     /// caller-authored spec. Inert on the way IN (the engine reports the derived
     /// truth), so `read.projections` output still re-applies as a no-op.
     vector_dense_readiness: Option<String>,
+    source: Option<Vec<String>>,
 }
 
 #[pymethods]
 impl PyProjectionSpec {
     #[new]
-    #[pyo3(signature = (name, roles, fts = false, fts_tokenizer = None, vector = false, vector_embedder = None, vector_dense_readiness = None))]
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (name, roles, fts = false, fts_tokenizer = None, vector = false, vector_embedder = None, vector_dense_readiness = None, source = None))]
     fn new(
         name: String,
         roles: Vec<String>,
@@ -866,8 +871,18 @@ impl PyProjectionSpec {
         vector: bool,
         vector_embedder: Option<String>,
         vector_dense_readiness: Option<String>,
+        source: Option<Vec<String>>,
     ) -> Self {
-        Self { name, roles, fts, fts_tokenizer, vector, vector_embedder, vector_dense_readiness }
+        Self {
+            name,
+            roles,
+            fts,
+            fts_tokenizer,
+            vector,
+            vector_embedder,
+            vector_dense_readiness,
+            source,
+        }
     }
 }
 
@@ -885,6 +900,7 @@ impl PyProjectionSpec {
                 .as_ref()
                 .and_then(|v| v.dense_readiness)
                 .map(|r| r.as_str().to_string()),
+            source: s.source.clone(),
         }
     }
 
@@ -898,6 +914,11 @@ impl PyProjectionSpec {
         }
         if let Some(embedder) = &self.vector_embedder {
             validate_ffi_string_py(embedder)?;
+        }
+        if let Some(source) = &self.source {
+            for segment in source {
+                validate_ffi_string_py(segment)?;
+            }
         }
         // 0.8.20 keystone closeout fix-4 — ROUND-TRIP CONSISTENCY GATE. A spec
         // the binding ACCEPTS must round-trip through `read.projections`
@@ -998,6 +1019,7 @@ impl PyProjectionSpec {
                     .as_deref()
                     .and_then(RustDenseReadiness::from_str_opt),
             }),
+            source: self.source.clone(),
         })
     }
 }
@@ -1285,7 +1307,7 @@ impl PyEngine {
     #[pyo3(
         signature = (query, source_type=None, kind=None, created_after=None,
                      status=None, rerank_depth=0, use_graph_arm=false,
-                     alpha=None, pool_n=None, explain=false, view=None)
+                     alpha=None, pool_n=None, explain=false, attributes=None, view=None)
     )]
     fn search(
         &self,
@@ -1310,6 +1332,7 @@ impl PyEngine {
         // with per-hit provenance + score breakdown + query trace. Default False
         // returns `explanation=None` and a byte-identical result (R-OBS-2 zero-cost).
         explain: bool,
+        attributes: Option<Vec<(String, String)>>,
         // 0.8.20 Slice 15b fix-2 (R-20-NV / R-20-RV) — optional validity view,
         // the same kwarg the five read verbs take. `None` (the default) is the
         // strict view: active-only, non-superseded, and valid AT QUERY TIME.
@@ -1329,12 +1352,18 @@ impl PyEngine {
         let source_type = extract_opt_validated_str(source_type.as_ref())?;
         let kind = extract_opt_validated_str(kind.as_ref())?;
         let status = extract_opt_validated_str(status.as_ref())?;
+        let attributes = attributes.unwrap_or_default();
+        for (name, value) in &attributes {
+            validate_ffi_string_py(name)?;
+            validate_ffi_string_py(value)?;
+        }
         let engine = Arc::clone(&self.inner);
         let query = query.to_string();
         let filter = if source_type.is_some()
             || kind.is_some()
             || created_after.is_some()
             || status.is_some()
+            || !attributes.is_empty()
         {
             // `RustSearchFilter` is `#[non_exhaustive]` (0.8.20 Slice 15e fix-2),
             // so an out-of-defining-crate struct literal — even with
@@ -1346,6 +1375,7 @@ impl PyEngine {
             f.kind = kind;
             f.created_after = created_after;
             f.status = status;
+            f.attributes = attributes;
             Some(f)
         } else {
             None
@@ -1377,6 +1407,56 @@ impl PyEngine {
                 &view,
             )
         })?;
+        Ok(PySearchResult::from_rust(result))
+    }
+
+    /// Lexically search exactly one declared `searchable→FTS` projection.
+    #[pyo3(signature = (query, name, source_type=None, kind=None, created_after=None, status=None, attributes=None, view=None))]
+    #[allow(clippy::too_many_arguments)]
+    fn search_projected_text(
+        &self,
+        py: Python<'_>,
+        query: &str,
+        name: &str,
+        source_type: Option<Bound<'_, PyAny>>,
+        kind: Option<Bound<'_, PyAny>>,
+        created_after: Option<i64>,
+        status: Option<Bound<'_, PyAny>>,
+        attributes: Option<Vec<(String, String)>>,
+        view: Option<&PyReadView>,
+    ) -> PyResult<PySearchResult> {
+        validate_ffi_string_py(query)?;
+        validate_ffi_string_py(name)?;
+        let source_type = extract_opt_validated_str(source_type.as_ref())?;
+        let kind = extract_opt_validated_str(kind.as_ref())?;
+        let status = extract_opt_validated_str(status.as_ref())?;
+        let attributes = attributes.unwrap_or_default();
+        for (attribute, value) in &attributes {
+            validate_ffi_string_py(attribute)?;
+            validate_ffi_string_py(value)?;
+        }
+        let filter = if source_type.is_some()
+            || kind.is_some()
+            || created_after.is_some()
+            || status.is_some()
+            || !attributes.is_empty()
+        {
+            let mut filter = RustSearchFilter::default();
+            filter.source_type = source_type;
+            filter.kind = kind;
+            filter.created_after = created_after;
+            filter.status = status;
+            filter.attributes = attributes;
+            Some(filter)
+        } else {
+            None
+        };
+        let view = read_view_or_default(view);
+        let engine = Arc::clone(&self.inner);
+        let query = query.to_string();
+        let name = name.to_string();
+        let result =
+            call_engine(py, move || engine.search_projected_text(&query, &name, filter, &view))?;
         Ok(PySearchResult::from_rust(result))
     }
 

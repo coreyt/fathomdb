@@ -695,6 +695,28 @@ enumerate history.
 These are ARGUMENTS, not new verbs — the governed command surface
 (`src/conformance/governed-surface-allowlist.json`) is unchanged.
 
+## Nested-source projections (0.8.21 Slice 60)
+
+`ProjectionSpec.source?: string[] | null` is a literal canonical-body member
+path; omission keeps legacy top-level lookup. Missing/null terminals create no
+row. Object/array terminals reject configuration backfill and writes atomically
+with `WriteValidationError`.
+
+`SearchFilter.attributes?: [string, string][]` is ordered AND equality over
+declared `"filterable"` projections. Canonical text is intentional: projected
+string `"1"` and number `1` both match `"1"`. `searchFilterToFilter` throws
+`InvalidFilterError` for a non-empty attribute list rather than dropping it.
+
+For a search invoked with its `explain` argument set to `true` and attribute predicates,
+`result.explanation.trace.droppedEdgeHits` reports edge-FTS candidates rejected
+solely by the node-scoped attribute rule. The default non-explain path does not
+collect this count.
+
+`engine.searchProjectedText(query, name, filter?, view?)` searches only the
+named declared `"searchable"` property-FTS projection, applying metadata,
+validity, and attribute filters. It does not body-scan, invoke vectors, or fuse;
+hits are text branch with no soft fallback or explanation.
+
 ## Non-presence
 
 TypeScript does not expose recovery verbs or doctor-only flags. In particular,

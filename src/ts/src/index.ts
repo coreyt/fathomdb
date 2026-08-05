@@ -137,6 +137,8 @@ export interface ProjectionSpec {
   vector: boolean;
   /** Optional embedder override; omitted = engine default (only with `vector`). */
   vectorEmbedder?: string | null;
+  /** Literal canonical-body member path; omitted retains top-level `name`. */
+  source?: string[] | null;
   /**
    * 0.8.20 Slice 20 (R-20-DR) — **READ METADATA, engine-set.** `"ready"` or
    * `"embedding"` when returned by `read.projections` for a spec with
@@ -308,6 +310,8 @@ export interface SearchFilter {
   kind?: string;
   createdAfter?: number;
   status?: string;
+  /** Ordered AND equality predicates over declared `filterable` projections. */
+  attributes?: [string, string][];
 }
 
 /**
@@ -376,6 +380,11 @@ export function filterToSearchFilter(filter: Filter): SearchFilter {
 
 /** D4 sugar: re-express a shipped `SearchFilter` as the unified `Filter`. */
 export function searchFilterToFilter(sf: SearchFilter): Filter {
+  if (sf.attributes !== undefined && sf.attributes.length > 0) {
+    throw new InvalidFilterError(
+      "projected attribute predicates are not supported by the unified Filter grammar",
+    );
+  }
   const terms: FilterTerm[] = [];
   if (sf.sourceType !== undefined) terms.push({ term: "source_type", value: sf.sourceType });
   if (sf.kind !== undefined) terms.push({ term: "kind", value: sf.kind });
@@ -404,6 +413,8 @@ export interface QueryTrace {
   vectorHits: number;
   textHits: number;
   graphHits: number;
+  /** Edge-FTS candidates excluded only by a node-scoped attribute predicate. */
+  droppedEdgeHits: number;
 }
 
 /**
@@ -885,6 +896,7 @@ export class Engine {
       ftsTokenizer: s.ftsTokenizer ?? undefined,
       vectorEmbedder: s.vectorEmbedder ?? undefined,
       vectorDenseReadiness: s.vectorDenseReadiness ?? undefined,
+      source: s.source ?? undefined,
     }));
     return intercept(() =>
       this.#native.configureProjections(nativeSpecs, drop ?? null),
@@ -928,6 +940,15 @@ export class Engine {
       if (filter.sourceType !== undefined) validateFfiString(filter.sourceType);
       if (filter.kind !== undefined) validateFfiString(filter.kind);
       if (filter.status !== undefined) validateFfiString(filter.status);
+      if (filter.attributes !== undefined) {
+        for (const pair of filter.attributes) {
+          if (!Array.isArray(pair) || pair.length !== 2) {
+            throw new InvalidFilterError("attribute predicates must be [name, canonicalText] pairs");
+          }
+          validateFfiString(pair[0]);
+          validateFfiString(pair[1]);
+        }
+      }
     }
     // 0.8.1 R1: rerankDepth validation (must be a non-negative integer <= u32::MAX).
     // FIX-5: changed TypeError → RangeError for non-integer (consistency with
@@ -999,6 +1020,7 @@ export class Engine {
             vectorHits: e.trace.vectorHits,
             textHits: e.trace.textHits,
             graphHits: e.trace.graphHits,
+            droppedEdgeHits: e.trace.droppedEdgeHits,
           },
           perHit: e.perHit.map(mapPerHitExplain),
         }
@@ -1049,6 +1071,44 @@ export class Engine {
         branch: (h.branch === "vector" || h.branch === "text_edge" || h.branch === "graph_arm")
           ? (h.branch as SoftFallbackBranch)
           : "text",
+        sourceId: h.sourceId ?? null,
+        ceScore: h.ceScore ?? null,
+      })),
+      explanation: null,
+    };
+  }
+
+  /** Search exactly one declared `searchable` property-FTS projection. */
+  async searchProjectedText(
+    query: string,
+    name: string,
+    filter?: SearchFilter,
+    view?: ReadView,
+  ): Promise<SearchResult> {
+    validateFfiString(query);
+    validateFfiString(name);
+    if (filter?.sourceType !== undefined) validateFfiString(filter.sourceType);
+    if (filter?.kind !== undefined) validateFfiString(filter.kind);
+    if (filter?.status !== undefined) validateFfiString(filter.status);
+    if (filter?.attributes !== undefined) {
+      for (const pair of filter.attributes) {
+        if (!Array.isArray(pair) || pair.length !== 2) {
+          throw new InvalidFilterError("attribute predicates must be [name, canonicalText] pairs");
+        }
+        validateFfiString(pair[0]);
+        validateFfiString(pair[1]);
+      }
+    }
+    const r = await intercept(() => this.#native.searchProjectedText(query, name, filter, view));
+    return {
+      projectionCursor: r.projectionCursor,
+      softFallback: null,
+      results: r.results.map((h) => ({
+        id: { space: h.id.space, value: h.id.value },
+        kind: h.kind,
+        body: h.body,
+        score: h.score,
+        branch: "text" as SoftFallbackBranch,
         sourceId: h.sourceId ?? null,
         ceScore: h.ceScore ?? null,
       })),

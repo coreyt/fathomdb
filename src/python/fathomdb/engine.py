@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 import math
+from collections.abc import Sequence
 from typing import Any, cast
 
 from fathomdb._fathomdb import ConsolidateReceipt
@@ -79,6 +80,17 @@ def _validate_id_list(name: str, value: object) -> list[int]:
         if item < 0:
             raise ValueError(f"{name} must contain only non-negative ints, got {item!r}")
     return value
+
+
+def _projection_source_segments(source: object) -> list[str] | None:
+    """Validate and normalize a nested projection's literal member path."""
+    if source is None:
+        return None
+    if isinstance(source, str) or not isinstance(source, Sequence):
+        raise TypeError("ProjectionSpec.source must be a non-string sequence of strings")
+    if not all(isinstance(segment, str) for segment in source):
+        raise TypeError("ProjectionSpec.source must be a non-string sequence of strings")
+    return list(source)
 
 
 def _map_per_hit_explain(p: Any) -> PerHitExplain:
@@ -302,6 +314,7 @@ class Engine:
                 # Its VALUE is inert engine-side, which is what keeps
                 # ``read.projections`` output re-appliable as a no-op.
                 s.vector_dense_readiness,
+                _projection_source_segments(s.source),
             )
             for s in specs
         ]
@@ -443,6 +456,7 @@ class Engine:
                 kind=filter.kind,
                 created_after=filter.created_after,
                 status=filter.status,
+                attributes=list(filter.attributes),
                 rerank_depth=rerank_depth,
                 use_graph_arm=use_graph_arm,
                 alpha=alpha,
@@ -474,6 +488,7 @@ class Engine:
                     vector_hits=native_exp.trace.vector_hits,
                     text_hits=native_exp.trace.text_hits,
                     graph_hits=native_exp.trace.graph_hits,
+                    dropped_edge_hits=native_exp.trace.dropped_edge_hits,
                 ),
                 per_hit=[_map_per_hit_explain(p) for p in native_exp.per_hit],
             )
@@ -496,6 +511,52 @@ class Engine:
                 for hit in result.results
             ],
             explanation=explanation,
+        )
+
+    def search_projected_text(
+        self,
+        query: str,
+        name: str,
+        filter: SearchFilter | None = None,
+        *,
+        view: ReadView | None = None,
+    ) -> SearchResult:
+        """Search one declared ``searchable`` property-FTS projection.
+
+        The projection ``name`` is the public query key; its nested source path
+        is never accepted from a query caller. This path does not body-scan,
+        invoke vector search, or fuse scores.
+        """
+        if not isinstance(filter, (SearchFilter, type(None))):
+            raise TypeError(f"filter must be a SearchFilter or None, got {type(filter).__name__!r}")
+        if not isinstance(view, (ReadView, type(None))):
+            raise TypeError(f"view must be a ReadView or None, got {type(view).__name__!r}")
+        kwargs: dict[str, Any] = {"view": _to_native_view(view)}
+        if filter is not None:
+            kwargs.update(
+                source_type=filter.source_type,
+                kind=filter.kind,
+                created_after=filter.created_after,
+                status=filter.status,
+                attributes=list(filter.attributes),
+            )
+        result = self._native.search_projected_text(query, name, **kwargs)
+        return SearchResult(
+            projection_cursor=result.projection_cursor,
+            soft_fallback=None,
+            results=[
+                SearchHit(
+                    id=IdSpace(space=hit.id.space, value=hit.id.value),
+                    kind=hit.kind,
+                    body=hit.body,
+                    score=hit.score,
+                    branch=cast(SoftFallbackBranch, hit.branch),
+                    source_id=hit.source_id,
+                    ce_score=hit.ce_score,
+                )
+                for hit in result.results
+            ],
+            explanation=None,
         )
 
     def search_text_only(

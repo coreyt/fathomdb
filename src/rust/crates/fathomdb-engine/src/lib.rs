@@ -671,6 +671,17 @@ impl std::fmt::Debug for ReaderWorkerPool {
 /// returned through a fresh oneshot channel so requests cannot be
 /// routed to or duplicated across workers.
 enum ReaderRequest {
+    /// Slice 60 — property-FTS search stays on a reader-owned connection, never
+    /// the writer connection. It shares the snapshot-local filter validation of
+    /// the hybrid search path.
+    SearchProjectedText {
+        query: String,
+        name: String,
+        filter: Option<Box<SearchFilter>>,
+        limit: usize,
+        view: ReadView,
+        respond: SyncSender<ProjectedTextReaderResponse>,
+    },
     Search {
         compiled: fathomdb_query::CompiledQuery,
         /// Un-centered f32 query vector serialized for `vec_f32`. Phase 2
@@ -848,6 +859,8 @@ type ReaderResponse = Result<
     (u64, Option<SoftFallback>, Vec<SearchHit>, GraphFrontierStats, Option<Explanation>),
     SearchReaderError,
 >;
+
+type ProjectedTextReaderResponse = Result<SearchResult, SearchReaderError>;
 
 /// 0.8.20 keystone closeout fix-3 (codex §9 [P2], TOCTOU) — the error a Search
 /// reader worker can return. Two arms:
@@ -1069,6 +1082,17 @@ fn reader_worker_loop(
     while let Ok(request) = rx.recv() {
         match request {
             ReaderRequest::Shutdown => break,
+            ReaderRequest::SearchProjectedText { query, name, filter, limit, view, respond } => {
+                let result = read_projected_text_in_tx(
+                    &mut connection,
+                    &query,
+                    &name,
+                    filter.as_deref(),
+                    limit,
+                    view,
+                );
+                let _ = respond.send(result);
+            }
             ReaderRequest::Search {
                 compiled,
                 query_vector,
@@ -2482,6 +2506,10 @@ pub struct QueryTrace {
     pub vector_hits: u32,
     pub text_hits: u32,
     pub graph_hits: u32,
+    /// Edge-FTS candidates rejected only because an attribute predicate is
+    /// node-scoped. Present on the opt-in explanation so this deliberate
+    /// filtering never looks like an absent corpus.
+    pub dropped_edge_hits: u32,
 }
 
 /// 0.8.8 EXP-OBS (Slice 5) — per-hit provenance + score breakdown. One entry per
@@ -2832,12 +2860,22 @@ pub struct Filter {
     pub terms: Vec<FilterTerm>,
 }
 
-impl From<&SearchFilter> for Filter {
+impl TryFrom<&SearchFilter> for Filter {
+    type Error = EngineError;
+
     /// D4 sugar lowering — the shipped G10 [`SearchFilter`] re-expressed as the
-    /// unified [`Filter`]. Field → term in the **canonical** order
-    /// (`source_type`, `kind`, `created_after`, `status`) so the round-trip back
-    /// to a `SearchFilter` (and thus the produced vec0 SQL) is byte-identical.
-    fn from(sf: &SearchFilter) -> Self {
+    /// unified [`Filter`]. Attribute equality is intentionally not part of the
+    /// unified grammar, so it is refused rather than silently discarded. Field
+    /// → term uses canonical order (`source_type`, `kind`, `created_after`,
+    /// `status`) so an attribute-free round-trip stays byte-identical.
+    fn try_from(sf: &SearchFilter) -> Result<Self, Self::Error> {
+        if !sf.attributes.is_empty() {
+            return Err(EngineError::InvalidFilter {
+                reason:
+                    "projected attribute predicates are not supported by the unified Filter grammar"
+                        .to_string(),
+            });
+        }
         let mut terms = Vec::new();
         if let Some(s) = &sf.source_type {
             terms.push(FilterTerm::SourceType(s.clone()));
@@ -2851,7 +2889,7 @@ impl From<&SearchFilter> for Filter {
         if let Some(s) = &sf.status {
             terms.push(FilterTerm::Status(s.clone()));
         }
-        Filter { terms }
+        Ok(Filter { terms })
     }
 }
 
@@ -4150,6 +4188,9 @@ pub struct ProjectionSpec {
     pub roles: BTreeSet<ProjectionRole>,
     pub fts: Option<ProjectionFts>,
     pub vector: Option<ProjectionVector>,
+    /// Optional ordered literal object-member path in the canonical node body.
+    /// `None` preserves the legacy direct top-level lookup by `name`.
+    pub source: Option<Vec<String>>,
 }
 
 /// 0.8.20 Slice 15d (R-20-PR) — the diff [`Engine::configure_projections`]
@@ -5188,6 +5229,7 @@ impl Engine {
         let mut connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
         let connection = connection.as_mut().ok_or(EngineError::Closing)?;
         let plans = validate_batch(connection, batch)?;
+        validate_nested_projection_sources_for_write(connection, batch)?;
         // 0.8.20 Slice 20c (R-20-DR remainder) — LATE ENROLMENT, before
         // `collect_projection_jobs` reads the vector-kind registry to decide
         // whether the dispatcher needs waking. See
@@ -6184,11 +6226,18 @@ impl Engine {
         // the round-trip would drop `SearchFilter.attributes`. Carry them across
         // explicitly: they already route pre-KNN through `vector_filter_clause`.
         let lowered = filter
-            .map(|sf| {
+            .map(|mut sf| {
                 let attributes = sf.attributes.clone();
-                Filter::from(&sf).to_search_filter().map(|mut lo| {
-                    lo.attributes = attributes;
-                    lo
+                // Attribute predicates are intentionally absent from the unified
+                // grammar, but this legacy/hybrid entry point owns their existing
+                // pre-KNN lowering. Remove them only for the metadata round-trip,
+                // then restore them on its `SearchFilter` output.
+                sf.attributes.clear();
+                Filter::try_from(&sf).and_then(|filter| {
+                    filter.to_search_filter().map(|mut lo| {
+                        lo.attributes = attributes;
+                        lo
+                    })
                 })
             })
             .transpose()?;
@@ -6356,6 +6405,53 @@ impl Engine {
             }
         };
         Ok(SearchResult { projection_cursor: cursor, soft_fallback, results, explanation })
+    }
+
+    /// Search one declared `searchable→FTS` projection without invoking body
+    /// search, vector search, score fusion, or a fallback arm. Results carry the
+    /// ordinary text branch shape and are ordered by property-FTS bm25 ascending
+    /// then write cursor ascending.
+    pub fn search_projected_text(
+        &self,
+        query: &str,
+        name: &str,
+        filter: Option<SearchFilter>,
+        view: &ReadView,
+    ) -> Result<SearchResult, EngineError> {
+        self.ensure_open()?;
+        view.reject_existence_relaxation_on_search()?;
+        if query.trim().is_empty() {
+            return Err(EngineError::WriteValidation);
+        }
+
+        let limit = self
+            .projection_runtime
+            .shared
+            .search_limit_override
+            .load(Ordering::SeqCst)
+            .max(SEARCH_RERANK_LIMIT);
+        let (response_tx, response_rx) = mpsc::sync_channel(1);
+        let request = ReaderRequest::SearchProjectedText {
+            query: query.to_string(),
+            name: name.to_string(),
+            filter: filter.map(Box::new),
+            limit,
+            view: *view,
+            respond: response_tx,
+        };
+        if self.reader_pool.dispatch(request).is_err() {
+            return Err(EngineError::Closing);
+        }
+        match response_rx.recv().map_err(|_| EngineError::Storage)? {
+            Ok(result) => Ok(result),
+            Err(SearchReaderError::InvalidFilter(reason)) => {
+                Err(EngineError::InvalidFilter { reason })
+            }
+            Err(SearchReaderError::Sqlite(err)) => {
+                self.emit_sqlite_internal_error(&err);
+                Err(EngineError::Storage)
+            }
+        }
     }
 
     /// 0.8.18 Slice 5 (R-VEQ-6) — degraded-open observability accessor. `true` iff
@@ -8416,6 +8512,12 @@ impl Engine {
             });
         }
 
+        if matches!(to_state, LifecycleState::Active) {
+            if let Some((_, _, body)) = &current {
+                validate_nested_projection_sources_for_body(&tx, body)?;
+            }
+        }
+
         // Admit (promote/undelete) → clear reason; exclude (reject/soft-delete) →
         // set the supplied reason. `to_state` is Active or Deleted here.
         let new_reason: Option<String> = match to_state {
@@ -8453,6 +8555,8 @@ impl Engine {
             .map_err(|_| EngineError::Storage)?;
             if matches!(to_state, LifecycleState::Active) {
                 project_node_attributes(&tx, cursor, body).map_err(|_| EngineError::Storage)?;
+                refresh_vector_attr_values_for_row(&tx, cursor, body)
+                    .map_err(|_| EngineError::Storage)?;
             }
         }
         tx.commit().map_err(|_| EngineError::Storage)?;
@@ -10974,7 +11078,97 @@ fn edge_fts_hit_passes_filter(
     Ok(true)
 }
 
+/// Apply every edge filter except declared projection attributes. This isolates
+/// the explanatory count from edge candidates rejected for an independent
+/// source-type, relation-kind, or vec-metadata predicate.
+fn edge_fts_hit_passes_non_attribute_filter(
+    tx: &rusqlite::Transaction<'_>,
+    write_cursor: u64,
+    row_kind: &str,
+    filter: Option<&SearchFilter>,
+) -> rusqlite::Result<bool> {
+    let Some(filter) = filter else {
+        return Ok(true);
+    };
+    let mut non_attribute_filter = filter.clone();
+    non_attribute_filter.attributes.clear();
+    edge_fts_hit_passes_filter(tx, write_cursor, row_kind, Some(&non_attribute_filter))
+}
+
 /// Read projection cursor and matching body rows inside one read tx.
+fn read_projected_text_in_tx(
+    reader: &mut Connection,
+    query: &str,
+    name: &str,
+    filter: Option<&SearchFilter>,
+    limit: usize,
+    view: ReadView,
+) -> ProjectedTextReaderResponse {
+    let compiled = compile_text_query(query);
+    let frozen = view.freeze();
+    let tx = reader.transaction_with_behavior(rusqlite::TransactionBehavior::Deferred)?;
+    let registry = load_projection_registry(&tx)?;
+    let declared = registry.get(name).ok_or_else(|| {
+        SearchReaderError::InvalidFilter(format!("projected text field {name:?} is not declared"))
+    })?;
+    if !declared.wants_property_fts() {
+        return Err(SearchReaderError::InvalidFilter(format!(
+            "projected text field {name:?} is not a declared `searchable` projection with property FTS"
+        )));
+    }
+    if let Some(filter) = filter {
+        validate_filter_attributes_on_snapshot(&tx, filter)?;
+    }
+    let validity = frozen.validity_sql("n", 3);
+    let sql = format!(
+        "SELECT p.write_cursor, bm25(property_search_index), n.kind, n.body, n.logical_id, n.source_id
+         FROM property_search_index p JOIN canonical_nodes n ON n.write_cursor = p.write_cursor
+         WHERE p.attr_name = ?1 AND property_search_index MATCH ?2
+           AND n.superseded_at IS NULL AND n.state = 'active'{validity}
+         ORDER BY bm25(property_search_index) ASC, p.write_cursor ASC"
+    );
+    let mut params = vec![
+        rusqlite::types::Value::Text(name.to_string()),
+        rusqlite::types::Value::Text(compiled.match_expression),
+    ];
+    if let Some(now) = frozen.now_param() {
+        params.push(rusqlite::types::Value::Integer(now));
+    }
+    let mut stmt = tx.prepare(&sql)?;
+    let rows = stmt.query_map(rusqlite::params_from_iter(params.iter()), |row| {
+        Ok((
+            row.get::<_, i64>(0)?,
+            row.get::<_, f64>(1)?,
+            row.get::<_, String>(2)?,
+            row.get::<_, String>(3)?,
+            row.get::<_, Option<String>>(4)?,
+            row.get::<_, Option<String>>(5)?,
+        ))
+    })?;
+    let mut results = Vec::new();
+    for row in rows {
+        let (cursor, bm25, kind, body, logical_id, source_id) = row?;
+        if !text_hit_passes_filter(&tx, cursor as u64, &kind, filter)? {
+            continue;
+        }
+        results.push(SearchHit {
+            id: derive_stable_id(logical_id.as_deref(), &body),
+            write_cursor: cursor as u64,
+            kind,
+            body,
+            score: -bm25,
+            branch: SoftFallbackBranch::Text,
+            source_id,
+            ce_score: None,
+        });
+        if results.len() >= limit {
+            break;
+        }
+    }
+    let projection_cursor = load_projection_cursor(&tx)?;
+    Ok(SearchResult { projection_cursor, soft_fallback: None, results, explanation: None })
+}
+
 // The 8th parameter (`vector_stage_only`) is the additive GA-2 / ◆ B-1
 // measurement seam; the reader-worker call site threads each field through
 // explicitly (mirroring the existing `recency_enabled` plumbing), so a wrapper
@@ -11508,9 +11702,18 @@ fn read_search_in_tx(
             Vec::new()
         }
     };
+    // Attribute predicates intentionally apply only to node projections. Count
+    // edge-FTS candidates that would otherwise pass when the caller requested
+    // the opt-in explanation, without adding work to the default search path.
+    let mut dropped_edge_hits = 0_u32;
     for row in edge_candidates {
         if edge_fts_hit_passes_filter(&tx, row.write_cursor, &row.kind, filter)? {
             text_results.push(row);
+        } else if explain
+            && filter.is_some_and(|active_filter| !active_filter.attributes.is_empty())
+            && edge_fts_hit_passes_non_attribute_filter(&tx, row.write_cursor, &row.kind, filter)?
+        {
+            dropped_edge_hits = dropped_edge_hits.saturating_add(1);
         }
     }
     tx.commit()?;
@@ -11685,6 +11888,7 @@ fn read_search_in_tx(
                 vector_hits: exp_vector_n,
                 text_hits: exp_text_n,
                 graph_hits: exp_graph_n,
+                dropped_edge_hits,
             },
             per_hit,
         })
@@ -13513,8 +13717,9 @@ fn connection_has_pending_projection_work(connection: &Connection) -> rusqlite::
 }
 
 /// 0.8.20 Slice 20 (R-20-DR) — the `dense_readiness` of the `searchable→vector`
-/// projection, DERIVED. There is no stored flag, no schema step
-/// (`SCHEMA_VERSION` stays 24) and no `MIGRATIONS` change.
+/// projection, DERIVED. There is no stored flag and this feature adds no schema
+/// step or `MIGRATIONS` entry; later unrelated migrations do not affect that
+/// property.
 ///
 /// **Why derived is the design, not a shortcut.** §4.1 invariant 1 requires
 /// `{ vector-insert ∧ dense_readiness := ready }` to be ONE transaction, with a
@@ -15165,8 +15370,53 @@ fn reconcile_vector_attr_columns(conn: &Connection, dimension: u32) -> rusqlite:
     if desired == actual {
         return Ok(false);
     }
-    reshape_vector_partition_nondestructive(conn, dimension, &desired, &actual)?;
+    reshape_vector_partition_nondestructive(conn, dimension, &desired, &actual, false)?;
     Ok(true)
+}
+
+/// Rebuild vec0 attribute metadata from the canonical EAV projection while
+/// preserving the existing column set. A changed nested source can leave the
+/// `attr_<hex>` schema untouched while changing every value behind that column.
+fn refresh_vector_attr_values(conn: &Connection, dimension: u32) -> rusqlite::Result<()> {
+    let desired = desired_vector_attr_columns(conn)?;
+    let actual = actual_vector_attr_columns(conn)?;
+    if desired != actual || !desired.is_empty() {
+        reshape_vector_partition_nondestructive(conn, dimension, &desired, &actual, true)?;
+    }
+    Ok(())
+}
+
+/// Refresh one reactivated node's vec0 metadata without reshaping the corpus.
+///
+/// Activation re-projects this node's canonical attributes after a source change
+/// that could have happened while it was deleted. vec0 accepts metadata `UPDATE`s,
+/// so only this row needs to be refreshed; a full partition reshape belongs to
+/// registry shape/source reconciliation, not the ordinary lifecycle path.
+fn refresh_vector_attr_values_for_row(
+    conn: &Connection,
+    rowid: i64,
+    body: &str,
+) -> rusqlite::Result<()> {
+    let (cols_sql, _, mut values) = vector_attr_insert_fragments(conn, body, 1)?;
+    if cols_sql.is_empty() {
+        return Ok(());
+    }
+    let assignments = cols_sql
+        .trim_start_matches(", ")
+        .split(", ")
+        .enumerate()
+        .map(|(index, col)| format!("{col} = ?{}", index + 1))
+        .collect::<Vec<_>>()
+        .join(", ");
+    values.push(rusqlite::types::Value::Integer(rowid));
+    let rowid_index = values.len();
+    conn.execute(
+        &format!(
+            "UPDATE {DEFAULT_VECTOR_PARTITION} SET {assignments} WHERE rowid = ?{rowid_index}"
+        ),
+        rusqlite::params_from_iter(values.iter()),
+    )?;
+    Ok(())
 }
 
 /// 0.8.20 Slice 15e — the NON-DESTRUCTIVE reshape itself. Stages every live row
@@ -15198,6 +15448,7 @@ fn reshape_vector_partition_nondestructive(
     dimension: u32,
     desired_cols: &[String],
     actual_cols: &[String],
+    refresh_values: bool,
 ) -> rusqlite::Result<()> {
     // Stage: base columns + every ACTUAL attribute column (so no at-rest value is
     // lost, even for a column being dropped).
@@ -15238,7 +15489,7 @@ fn reshape_vector_partition_nondestructive(
     );
     for col in desired_cols {
         insert_cols.push_str(&format!(", {col}"));
-        if actual_cols.iter().any(|a| a == col) {
+        if actual_cols.iter().any(|a| a == col) && !refresh_values {
             // Surviving column — carry its value forward (never NULL: vec0 TEXT
             // metadata is `''`-sentinelled, but COALESCE defends the stage table).
             select_exprs.push_str(&format!(", COALESCE({col}, '')"));
@@ -17087,6 +17338,7 @@ struct StoredProjection {
     fts_tokenizer: Option<String>,
     vector_declared: bool,
     vector_embedder: Option<String>,
+    source: Option<Vec<String>>,
 }
 
 impl StoredProjection {
@@ -17168,6 +17420,7 @@ impl StoredProjection {
                 .as_ref()
                 .and_then(|v| v.embedder.clone())
                 .filter(|e| !e.is_empty()),
+            source: spec.source.clone(),
         }
     }
 
@@ -17194,6 +17447,7 @@ impl StoredProjection {
             } else {
                 None
             },
+            source: self.source.clone(),
         }
     }
 
@@ -17242,6 +17496,126 @@ fn attribute_json_path(name: &str) -> String {
     format!("$.\"{name}\"")
 }
 
+/// SQLite JSON path for one declared projection. A declared source is an ordered
+/// list of literal object-member names; it is never a caller-provided JSONPath.
+/// Every segment is validated before persistence, and the resulting path is
+/// always bound as a parameter rather than interpolated into SQL.
+fn projection_json_path(name: &str, stored: &StoredProjection) -> String {
+    match &stored.source {
+        None => attribute_json_path(name),
+        Some(segments) => {
+            let mut path = String::from("$");
+            for segment in segments {
+                path.push_str(".\"");
+                path.push_str(segment);
+                path.push('"');
+            }
+            path
+        }
+    }
+}
+
+/// Refuse a source path that cannot be safely represented as SQLite quoted
+/// member selectors. Empty paths would select the whole body rather than one
+/// member and therefore do not meet the scalar-projection contract.
+fn is_valid_projection_source(source: &[String]) -> bool {
+    !source.is_empty() && source.iter().all(|segment| is_valid_attribute_name(segment))
+}
+
+/// Reject only nested-source object/array terminals. Legacy top-level
+/// projections retain their shipped skip-composite behaviour for compatibility.
+fn nested_projection_terminal_is_composite(
+    conn: &Connection,
+    body: &str,
+    name: &str,
+    stored: &StoredProjection,
+) -> rusqlite::Result<bool> {
+    if stored.source.is_none() {
+        return Ok(false);
+    }
+    let path = projection_json_path(name, stored);
+    let terminal: Option<String> = conn.query_row(
+        "SELECT CASE WHEN json_valid(?1) THEN json_type(?1, ?2) END",
+        params![body, path],
+        |row| row.get(0),
+    )?;
+    Ok(matches!(terminal.as_deref(), Some("object") | Some("array")))
+}
+
+/// Validate nested source terminals across the active rows a declaration would
+/// backfill. The caller owns the transaction, so `WriteValidation` aborts it
+/// rather than leaving a partly reconfigured registry.
+fn validate_projection_source_backfill(
+    conn: &Connection,
+    name: &str,
+    stored: &StoredProjection,
+) -> Result<(), EngineError> {
+    if stored.source.is_none() {
+        return Ok(());
+    }
+    let mut stmt = conn
+        .prepare(
+            "SELECT body FROM canonical_nodes
+             WHERE superseded_at IS NULL AND state = 'active'",
+        )
+        .map_err(|_| EngineError::Storage)?;
+    let bodies =
+        stmt.query_map([], |row| row.get::<_, String>(0)).map_err(|_| EngineError::Storage)?;
+    for body in bodies {
+        let body = body.map_err(|_| EngineError::Storage)?;
+        if nested_projection_terminal_is_composite(conn, &body, name, stored)
+            .map_err(|_| EngineError::Storage)?
+        {
+            return Err(EngineError::WriteValidation);
+        }
+    }
+    Ok(())
+}
+
+/// Validate every nested source present in a normal node write before the write
+/// transaction starts. This keeps an object/array terminal in the existing
+/// `WriteValidation` family and guarantees the whole batch is rejected.
+fn validate_nested_projection_sources_for_write(
+    conn: &Connection,
+    batch: &[PreparedWrite],
+) -> Result<(), EngineError> {
+    let registry = load_projection_registry(conn).map_err(|_| EngineError::Storage)?;
+    if registry.values().all(|stored| stored.source.is_none()) {
+        return Ok(());
+    }
+    for write in batch {
+        let PreparedWrite::Node { body, .. } = write else { continue };
+        validate_nested_projection_sources_for_body_in_registry(conn, body, &registry)?;
+    }
+    Ok(())
+}
+
+fn validate_nested_projection_sources_for_body(
+    conn: &Connection,
+    body: &str,
+) -> Result<(), EngineError> {
+    let registry = load_projection_registry(conn).map_err(|_| EngineError::Storage)?;
+    validate_nested_projection_sources_for_body_in_registry(conn, body, &registry)
+}
+
+/// Validate one body against a registry snapshot owned by the caller. Batch
+/// writes load this snapshot once, keeping validation proportional to bodies
+/// plus declarations rather than repeating registry I/O for every row.
+fn validate_nested_projection_sources_for_body_in_registry(
+    conn: &Connection,
+    body: &str,
+    registry: &BTreeMap<String, StoredProjection>,
+) -> Result<(), EngineError> {
+    for (name, stored) in registry {
+        if nested_projection_terminal_is_composite(conn, body, name, stored)
+            .map_err(|_| EngineError::Storage)?
+        {
+            return Err(EngineError::WriteValidation);
+        }
+    }
+    Ok(())
+}
+
 /// 0.8.20 Slice 15d (R-20-PR) — load the durable projection registry
 /// (`_fathomdb_projection_registry`) into a name→[`StoredProjection`] map. This
 /// is the derived-cache source (Q5) that boot re-derive and every
@@ -17267,7 +17641,7 @@ fn load_projection_registry(
         return Ok(out);
     }
     let mut stmt = conn.prepare(
-        "SELECT name, roles, fts_tokenizer, vector_embedder, vector_declared
+        "SELECT name, roles, fts_tokenizer, vector_embedder, vector_declared, source
          FROM _fathomdb_projection_registry",
     )?;
     let rows = stmt.query_map([], |row| {
@@ -17276,13 +17650,24 @@ fn load_projection_registry(
         let fts_tokenizer: Option<String> = row.get(2)?;
         let vector_embedder: Option<String> = row.get(3)?;
         let vector_declared: i64 = row.get(4)?;
-        Ok((name, roles_json, fts_tokenizer, vector_embedder, vector_declared))
+        let source_json: Option<String> = row.get(5)?;
+        Ok((name, roles_json, fts_tokenizer, vector_embedder, vector_declared, source_json))
     })?;
     for row in rows {
-        let (name, roles_json, fts_col, vector_embedder, vector_declared) = row?;
+        let (name, roles_json, fts_col, vector_embedder, vector_declared, source_json) = row?;
         let roles: BTreeSet<ProjectionRole> = parse_roles_json(&roles_json);
         let fts_present = fts_col.is_some();
         let fts_tokenizer = fts_col.filter(|t| !t.is_empty());
+        let source = source_json
+            .map(|encoded| serde_json::from_str::<Vec<String>>(&encoded))
+            .transpose()
+            .map_err(|err| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    5,
+                    rusqlite::types::Type::Text,
+                    Box::new(err),
+                )
+            })?;
         out.insert(
             name,
             StoredProjection {
@@ -17291,6 +17676,7 @@ fn load_projection_registry(
                 fts_tokenizer,
                 vector_declared: vector_declared != 0,
                 vector_embedder,
+                source,
             },
         );
     }
@@ -17313,21 +17699,29 @@ fn persist_projection_row(
     name: &str,
     stored: &StoredProjection,
 ) -> rusqlite::Result<()> {
+    let source = stored
+        .source
+        .as_ref()
+        .map(serde_json::to_string)
+        .transpose()
+        .map_err(|err| rusqlite::Error::ToSqlConversionFailure(Box::new(err)))?;
     tx.execute(
         "INSERT INTO _fathomdb_projection_registry
-             (name, roles, fts_tokenizer, vector_embedder, vector_declared)
-         VALUES(?1, ?2, ?3, ?4, ?5)
+             (name, roles, fts_tokenizer, vector_embedder, vector_declared, source)
+         VALUES(?1, ?2, ?3, ?4, ?5, ?6)
          ON CONFLICT(name) DO UPDATE SET
              roles = excluded.roles,
              fts_tokenizer = excluded.fts_tokenizer,
              vector_embedder = excluded.vector_embedder,
-             vector_declared = excluded.vector_declared",
+             vector_declared = excluded.vector_declared,
+             source = excluded.source",
         params![
             name,
             roles_to_storage(&stored.roles),
             stored.fts_column(),
             stored.vector_embedder,
             i64::from(stored.vector_declared),
+            source,
         ],
     )?;
     Ok(())
@@ -17392,7 +17786,7 @@ fn project_one_attribute(
     //                raw JSON text would be a footgun (nested-field filtering is the
     //                >=0.9.x multi-field work). Skipping is deliberate, not an
     //                accidental type-conversion drop — no scalar type is dropped.
-    let Some(value) = extract_scalar_attribute(tx, body, name)? else {
+    let Some(value) = extract_scalar_attribute(tx, body, name, stored)? else {
         return Ok(());
     };
     tx.execute(
@@ -17451,8 +17845,9 @@ fn extract_scalar_attribute(
     conn: &Connection,
     body: &str,
     name: &str,
+    stored: &StoredProjection,
 ) -> rusqlite::Result<Option<String>> {
-    let path = attribute_json_path(name);
+    let path = projection_json_path(name, stored);
     let value: Option<String> = conn
         .query_row(
             "SELECT CASE WHEN json_valid(?1) THEN
@@ -17486,6 +17881,7 @@ fn vector_attr_insert_fragments(
     start_idx: usize,
 ) -> rusqlite::Result<(String, String, Vec<rusqlite::types::Value>)> {
     let cols = actual_vector_attr_columns(conn)?;
+    let registry = load_projection_registry(conn)?;
     let mut col_sql = String::new();
     let mut ph_sql = String::new();
     let mut values: Vec<rusqlite::types::Value> = Vec::new();
@@ -17494,7 +17890,11 @@ fn vector_attr_insert_fragments(
         // fix-3 [P2] — a PRESENT scalar value is encoded `\x01 || V` so it is
         // DISJOINT from the `''`-absent sentinel (present-empty ⇒ the bare marker,
         // never `''`). Absent stays the bare `''` sentinel.
-        let value = match extract_scalar_attribute(conn, body, &name)? {
+        let scalar = match registry.get(&name) {
+            Some(stored) => extract_scalar_attribute(conn, body, &name, stored)?,
+            None => None,
+        };
+        let value = match scalar {
             Some(v) => encode_attr_vec0_present(&v),
             None => String::new(),
         };
@@ -17570,6 +17970,9 @@ fn is_destructive_projection_change(
     {
         return true;
     }
+    if existing.source != desired.source {
+        return true;
+    }
     false
 }
 
@@ -17591,6 +17994,9 @@ fn describe_projection_delta(existing: &StoredProjection, desired: &StoredProjec
         parts.push("vector sub-target removed".to_string());
     } else if existing.vector_declared && existing.vector_embedder != desired.vector_embedder {
         parts.push("vector embedder changed".to_string());
+    }
+    if existing.source != desired.source {
+        parts.push("source path changed".to_string());
     }
     if parts.is_empty() {
         "incompatible change".to_string()
@@ -17659,6 +18065,13 @@ fn apply_projection_config(
                 msg: format!("projection '{}' declares no roles", spec.name),
             });
         }
+        if let Some(source) = &spec.source {
+            if !is_valid_projection_source(source) {
+                return Err(EngineError::InvalidArgument {
+                    msg: format!("invalid projection source path for {:?}", spec.name),
+                });
+            }
+        }
         if !seen_spec_names.insert(spec.name.as_str()) {
             return Err(EngineError::InvalidArgument {
                 msg: format!("duplicate projection name in one request: '{}'", spec.name),
@@ -17717,6 +18130,38 @@ fn apply_projection_config(
         if spec.fts.is_some() || spec.vector.is_some() {
             return Err(EngineError::WriteValidation);
         }
+    }
+
+    // A destructive source change retains the normal drop-first error precedence.
+    // Check the pre-drop registry before inspecting a proposed source's backfill
+    // rows; otherwise a composite at that source could mask ProjectionDestructive.
+    let pre_drop = load_projection_registry(tx).map_err(|_| EngineError::Storage)?;
+    let mut refresh_vector_attributes = false;
+    for spec in specs {
+        let desired = StoredProjection::from_spec(spec);
+        if let Some(existing) = pre_drop.get(&spec.name) {
+            let replacing = drop.iter().any(|name| name == &spec.name);
+            if !replacing && is_destructive_projection_change(existing, &desired) {
+                return Err(EngineError::ProjectionDestructive {
+                    name: spec.name.clone(),
+                    delta: describe_projection_delta(existing, &desired),
+                });
+            }
+            if replacing
+                && existing.source != desired.source
+                && desired.roles.contains(&ProjectionRole::Filterable)
+            {
+                refresh_vector_attributes = true;
+            }
+        }
+    }
+
+    // A declared nested source is scalar-only. Validate the complete backfill
+    // set before any registry mutation so a composite terminal rolls the whole
+    // configuration request back with the existing write-validation family.
+    for spec in specs {
+        let desired = StoredProjection::from_spec(spec);
+        validate_projection_source_backfill(tx, &spec.name, &desired)?;
     }
 
     let mut delta = ProjectionDelta::default();
@@ -17804,7 +18249,11 @@ fn apply_projection_config(
     // no-op (vec0 untouched) and `delta.unchanged` above is unaffected. Skipped
     // when there is no embedder profile (⇒ no `vector_default` to reshape).
     if let Ok(dimension) = default_profile_dimension(tx) {
-        reconcile_vector_attr_columns(tx, dimension).map_err(|_| EngineError::Storage)?;
+        if refresh_vector_attributes {
+            refresh_vector_attr_values(tx, dimension).map_err(|_| EngineError::Storage)?;
+        } else {
+            reconcile_vector_attr_columns(tx, dimension).map_err(|_| EngineError::Storage)?;
+        }
     }
 
     delta.unchanged =
@@ -18064,8 +18513,8 @@ fn registry_governs_an_inert_dense_arm(conn: &Connection) -> rusqlite::Result<bo
 /// # Not a data migration
 ///
 /// It removes a registration row inside ONE live database to match that
-/// database's own declarations. It converts no row across a version step, and
-/// `SCHEMA_VERSION` stays 24.
+/// database's own declarations. It converts no row across a version step; the
+/// reconciliation itself introduces no migration.
 fn reconcile_inert_vector_enrolments_on_boot(conn: &Connection) -> rusqlite::Result<bool> {
     if !registry_governs_an_inert_dense_arm(conn)? {
         return Ok(false);
@@ -18228,8 +18677,8 @@ fn register_vector_kind(tx: &Connection, kind: &str) -> rusqlite::Result<()> {
 /// # Not a data migration
 ///
 /// This re-enqueues embed work inside ONE live database at the caller's request.
-/// It converts no rows across a version step, and `SCHEMA_VERSION` stays 24
-/// (HITL 2026-07-21; cf. TC-46's in-place vec0 reshape).
+/// It converts no rows across a version step and introduces no migration (HITL
+/// 2026-07-21; cf. TC-46's in-place vec0 reshape).
 /// 0.8.20 Slice 22 (R-20-VC / **TC-67**) — the ONE scan of "which node kinds in
 /// this corpus are candidates for the dense arm?".
 ///

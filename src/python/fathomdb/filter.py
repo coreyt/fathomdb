@@ -144,7 +144,15 @@ class Filter:
 
 def from_search_filter(sf: SearchFilter) -> Filter:
     """D4 sugar: re-express a shipped :class:`~fathomdb.types.SearchFilter` as
-    the unified :class:`Filter` (canonical field order)."""
+    the unified :class:`Filter` (canonical field order).
+
+    Projected-attribute predicates deliberately have no unified grammar term;
+    reject them rather than dropping a caller constraint.
+    """
+    if sf.attributes:
+        raise InvalidFilterError(
+            "projected attribute predicates are not supported by the unified Filter grammar"
+        )
     terms: list[FilterTerm] = []
     if sf.source_type is not None:
         terms.append(SourceType(sf.source_type))

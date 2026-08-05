@@ -22,8 +22,8 @@ use std::sync::Arc;
 
 use fathomdb_embedder_api::{Embedder, EmbedderError, EmbedderIdentity, Vector};
 use fathomdb_engine::{
-    vector_phase1_sql_for_test, Engine, InitialState, PreparedWrite, ProjectionRole,
-    ProjectionSpec, SearchFilter, SourceId,
+    vector_phase1_sql_for_test, Engine, InitialState, LifecycleState, PreparedWrite,
+    ProjectionRole, ProjectionSpec, ProjectionVector, SearchFilter, SourceId,
 };
 use fathomdb_schema::SQLITE_SUFFIX;
 use rusqlite::Connection;
@@ -112,7 +112,20 @@ fn edge(logical: &str, from: &str, to: &str, body_json: &str) -> PreparedWrite {
 fn filterable_spec(name: &str) -> ProjectionSpec {
     let mut roles = BTreeSet::new();
     roles.insert(ProjectionRole::Filterable);
-    ProjectionSpec { name: name.to_string(), roles, fts: None, vector: None }
+    ProjectionSpec { name: name.to_string(), roles, fts: None, vector: None, source: None }
+}
+
+fn nested_filterable_vector_spec(name: &str, source: &[&str]) -> ProjectionSpec {
+    let mut roles = BTreeSet::new();
+    roles.insert(ProjectionRole::Filterable);
+    roles.insert(ProjectionRole::Searchable);
+    ProjectionSpec {
+        name: name.to_string(),
+        roles,
+        fts: None,
+        vector: Some(ProjectionVector::default()),
+        source: Some(source.iter().map(|segment| (*segment).to_string()).collect()),
+    }
 }
 
 fn table_sql(path: &std::path::Path) -> String {
@@ -180,6 +193,54 @@ fn filterable_predicate_compiles_into_prekn_match_clause() {
 // ===========================================================================
 // (2) ALIGNMENT + COHERENCE: reshape preserves rowids + bits; sentinel skips.
 // ===========================================================================
+
+#[test]
+fn source_change_refreshes_existing_vec0_attribute_metadata() {
+    let (_dir, path) = fixture("s60_source_refresh");
+    let opened = open(&path);
+    let engine = &opened.engine;
+    let old = nested_filterable_vector_spec("priority", &["old"]);
+    engine.configure_projections(std::slice::from_ref(&old), &[]).expect("configure old source");
+    engine.write(&[node("N1", r#"{"old":"stale","new":"fresh"}"#)]).expect("write");
+    engine.drain(10_000).expect("drain");
+
+    let new = nested_filterable_vector_spec("priority", &["new"]);
+    let extra = filterable_spec("extra");
+    engine
+        .configure_projections(&[new, extra], &["priority".to_string()])
+        .expect("drop and redeclare changed source");
+
+    let column = attr_col("priority");
+    let conn = Connection::open(&path).expect("open raw");
+    let value: String = conn
+        .query_row(&format!("SELECT {column} FROM vector_default LIMIT 1"), [], |row| row.get(0))
+        .expect("read refreshed vec0 metadata");
+    assert_eq!(value, "\u{1}fresh", "vec0 metadata must follow the replacement source path");
+}
+
+#[test]
+fn reactivation_refreshes_vec0_metadata_after_a_source_change() {
+    let (_dir, path) = fixture("s60_reactivate_refresh");
+    let opened = open(&path);
+    let engine = &opened.engine;
+    let old = nested_filterable_vector_spec("priority", &["old"]);
+    engine.configure_projections(std::slice::from_ref(&old), &[]).expect("configure old source");
+    engine.write(&[node("N1", r#"{"old":"stale","new":"fresh"}"#)]).expect("write");
+    engine.drain(10_000).expect("drain");
+    engine.transition("N1", LifecycleState::Deleted, None).expect("delete");
+    let new = nested_filterable_vector_spec("priority", &["new"]);
+    engine
+        .configure_projections(&[new], &["priority".to_string()])
+        .expect("replace source while deleted");
+    engine.transition("N1", LifecycleState::Active, None).expect("reactivate");
+
+    let column = attr_col("priority");
+    let conn = Connection::open(&path).expect("open raw");
+    let value: String = conn
+        .query_row(&format!("SELECT {column} FROM vector_default LIMIT 1"), [], |row| row.get(0))
+        .expect("read refreshed vec0 metadata");
+    assert_eq!(value, "\u{1}fresh", "reactivation must refresh vec0 metadata from the new source");
+}
 
 #[test]
 fn reshape_is_nondestructive_preserves_bits_rowids_and_sentinel() {
@@ -653,6 +714,21 @@ fn attribute_filter_excludes_edge_hits_on_both_arms() {
         !fb.iter().any(|b| b.contains("edgefact")),
         "(A) edges are EXCLUDED: an attribute filter is node-scoped, so the edge hit must NOT \
          appear via the edge-FTS arm NOR the edge-vector arm: {fb:?}"
+    );
+
+    // The public filter deliberately excludes edge bodies, but that exclusion
+    // must not look like an empty corpus. The opt-in explanation reports the
+    // edge-FTS candidates that would otherwise have passed and were rejected by
+    // the node-scoped attribute predicate.
+    let mut explained_filter = SearchFilter::default();
+    explained_filter.attributes = vec![("priority".to_string(), "high".to_string())];
+    let explained = engine
+        .search_explained("sharedtoken", Some(explained_filter), 0, false, 0.3, 0)
+        .expect("explained filtered search");
+    assert_eq!(
+        explained.explanation.expect("explanation sidecar").trace.dropped_edge_hits,
+        1,
+        "the excluded edge-FTS candidate is observable to the caller"
     );
 
     engine.close().unwrap();

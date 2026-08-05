@@ -69,6 +69,7 @@ fn spec(name: &str, rs: &[ProjectionRole], fts: bool, vector: bool) -> Projectio
         roles: roles(rs),
         fts: fts.then_some(ProjectionFts { tokenizer: None }),
         vector: vector.then_some(ProjectionVector { embedder: None, dense_readiness: None }),
+        source: None,
     }
 }
 

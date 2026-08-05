@@ -125,6 +125,7 @@ fn vector_spec(name: &str) -> ProjectionSpec {
         roles: roles(&[ProjectionRole::Searchable]),
         fts: None,
         vector: Some(ProjectionVector { embedder: None, dense_readiness: None }),
+        source: None,
     }
 }
 
@@ -135,6 +136,7 @@ fn filterable_only_spec(name: &str) -> ProjectionSpec {
         roles: roles(&[ProjectionRole::Filterable]),
         fts: None,
         vector: None,
+        source: None,
     }
 }
 
@@ -312,7 +314,7 @@ fn an_uncommittable_kind_is_reported_not_silently_dropped() {
     );
 
     // The report is additive READ metadata; nothing about it needs a schema step.
-    assert_eq!(SCHEMA_VERSION, 24, "TC-67 adds no migration step");
+    assert_eq!(SCHEMA_VERSION, 25, "Slice 45 adds the nested-source registry migration");
 
     opened.engine.close().unwrap();
 }

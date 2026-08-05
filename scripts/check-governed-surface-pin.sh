@@ -10,11 +10,11 @@
 # cannot diverge between the two homes.
 #
 # WHAT THIS ENFORCES
-#   The HITL PRE-SIGNED the accumulated governed-surface delta of 0.8.20 Slices
-#   5d + 10b + 15b + 15d (AC-079) — but pinned to the EXACT CONTENT of
-#   src/conformance/governed-surface-allowlist.json at the commit recorded in
-#   scripts/governed-surface-pin.json:
-#   30 allowlist members, 5 core, and recovery_denylist unchanged at the five
+#   The HITL signed the accumulated governed-surface delta of 0.8.20 Slices
+#   5d + 10b + 15b + 15d (AC-079), then 0.8.21 Slice 60's projected-text search
+#   delta — pinned to the EXACT CONTENT of src/conformance/governed-surface-
+#   allowlist.json at the commit recorded in scripts/governed-surface-pin.json:
+#   32 allowlist members, 5 core, and recovery_denylist unchanged at the five
 #   REQ-054 names. A pre-sign keyed to specific content is worth exactly as much
 #   as the mechanism that notices when that content moves. This is that
 #   mechanism: the signed content is recorded in scripts/governed-surface-pin.json
@@ -56,7 +56,7 @@
 #       element-by-element against the copies stored in the pin, so the failure
 #       can name WHICH member appeared or vanished — and so that updating only
 #       the hash in the pin (a lazy re-pin, to silence the gate) still fails.
-#   (c) COUNTS: 30 / 5 / 5, asserted separately from (b) against the pin's own
+#   (c) COUNTS: 32 / 5 / 5, asserted separately from (b) against the pin's own
 #       `counts` block, so a pin whose lists and counts disagree is caught as an
 #       internally inconsistent (botched) re-pin rather than being trusted.
 #       EVERY one of the three counts must be PRESENT and an integer: a count the

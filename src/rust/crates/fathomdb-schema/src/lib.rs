@@ -21,7 +21,7 @@ use std::time::Instant;
 
 use rusqlite::Connection;
 
-pub const SCHEMA_VERSION: u32 = 24;
+pub const SCHEMA_VERSION: u32 = 25;
 
 /// SQLite `PRAGMA` name carrying the on-disk schema-version sentinel.
 ///
@@ -885,6 +885,16 @@ pub const MIGRATIONS: &[Migration] = &[
                   write_cursor UNINDEXED,
                   tokenize = 'porter unicode61 remove_diacritics 2'
               );",
+    },
+    // 0.8.21 Slice 45 — an additive durable encoding of the optional literal
+    // nested-member source path for a projection declaration. `NULL` preserves
+    // the legacy direct top-level lookup by projection name; a JSON array stores
+    // every path segment exactly. Shape only: no canonical body rewrite and no
+    // projection backfill happens during migration.
+    Migration {
+        step_id: 25,
+        sql: "-- MIGRATION-ACCRETION-EXEMPTION: Slice-45 nested projection source declaration; additive registry column only, no data migration or canonical-body rewrite.
+              ALTER TABLE _fathomdb_projection_registry ADD COLUMN source TEXT;",
     },
 ];
 

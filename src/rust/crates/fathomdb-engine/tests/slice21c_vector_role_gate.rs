@@ -151,6 +151,7 @@ fn filterable_vector_spec(name: &str) -> ProjectionSpec {
         roles: roles(&[ProjectionRole::Filterable]),
         fts: None,
         vector: Some(ProjectionVector { embedder: None, dense_readiness: None }),
+        source: None,
     }
 }
 
@@ -163,6 +164,7 @@ fn filterable_only_spec(name: &str) -> ProjectionSpec {
         roles: roles(&[ProjectionRole::Filterable]),
         fts: None,
         vector: None,
+        source: None,
     }
 }
 
@@ -234,6 +236,7 @@ fn searchable_vector_spec(name: &str) -> ProjectionSpec {
         roles: roles(&[ProjectionRole::Searchable]),
         fts: None,
         vector: Some(ProjectionVector { embedder: None, dense_readiness: None }),
+        source: None,
     }
 }
 

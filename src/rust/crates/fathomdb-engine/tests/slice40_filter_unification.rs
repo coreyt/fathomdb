@@ -92,7 +92,7 @@ fn searchfilter_sugar_lowers_and_round_trips() {
     sf.kind = Some("todo".to_string());
     sf.created_after = Some(1000);
     sf.status = Some("open".to_string());
-    let unified = Filter::from(&sf);
+    let unified = Filter::try_from(&sf).expect("attribute-free SearchFilter lowers");
     assert_eq!(
         unified.terms,
         vec![
@@ -103,14 +103,21 @@ fn searchfilter_sugar_lowers_and_round_trips() {
         ],
         "canonical order: source_type, kind, created_after, status"
     );
-    // Lossless round-trip (D4): Filter::from(&sf).to_search_filter() == sf.
+    // Lossless round-trip (D4): Filter::try_from(&sf).to_search_filter() == sf.
     let back = unified.to_search_filter().expect("metadata-only never rejects");
     assert_eq!(back, sf, "round-trip must be identity");
 
     // An all-None SearchFilter lowers to an empty unified Filter (unfiltered).
-    let empty = Filter::from(&SearchFilter::default());
+    let empty = Filter::try_from(&SearchFilter::default()).unwrap();
     assert!(empty.terms.is_empty(), "all-None SearchFilter -> empty terms");
     assert_eq!(empty.to_search_filter().unwrap(), SearchFilter::default());
+}
+
+#[test]
+fn searchfilter_attributes_do_not_silently_lower_to_unified_filter() {
+    let mut sf = SearchFilter::default();
+    sf.attributes.push(("priority".to_string(), "1".to_string()));
+    assert!(matches!(Filter::try_from(&sf), Err(EngineError::InvalidFilter { .. })));
 }
 
 // ===== D3: search_filter typed-rejects an arbitrary Json term =============

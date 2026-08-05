@@ -7,7 +7,7 @@ cross-binding contract the TypeScript harness
 
   1. Carrier gating — explain=False ⇒ `explanation is None` AND results are
      byte-identical to the same query without explain; explain=True ⇒ present.
-  2. QueryTrace — all 12 fields present + correctly typed; `alpha` exact (0.3
+  2. QueryTrace — all 13 fields present + correctly typed; `alpha` exact (0.3
      default); `embedder_id` is a str ("" sentinel when no embedder).
   3. per_hit ↔ results alignment — same length, same order; correlate by
      position (post-C-2 `PerHitExplain.id` is the positional write_cursor int,
@@ -82,7 +82,7 @@ def test_exp_obs_trace_and_per_hit_fidelity(db_path: str) -> None:
         exp = result.explanation
         assert exp is not None
 
-        # (2) QueryTrace — 12 fields, typed; alpha exact; embedder_id is a str.
+        # (2) QueryTrace — 13 fields, typed; alpha exact; embedder_id is a str.
         t: QueryTrace = exp.trace
         assert isinstance(t.query_chars, int) and t.query_chars == len("hybrid")
         assert isinstance(t.k, int)
@@ -96,6 +96,7 @@ def test_exp_obs_trace_and_per_hit_fidelity(db_path: str) -> None:
         assert isinstance(t.vector_hits, int)
         assert isinstance(t.text_hits, int)
         assert isinstance(t.graph_hits, int)
+        assert isinstance(t.dropped_edge_hits, int) and t.dropped_edge_hits == 0
 
         # (3) per_hit ↔ results alignment + (4) the three identities.
         assert len(exp.per_hit) == len(result.results)

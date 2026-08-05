@@ -51,6 +51,7 @@ class QueryTrace:
     vector_hits: int
     text_hits: int
     graph_hits: int
+    dropped_edge_hits: int
 
 class PerHitExplain:
     # 0.8.8 EXP-OBS (Slice 10) — per-hit provenance + score breakdown.
@@ -210,11 +211,23 @@ class Engine:
         alpha: float | None = ...,
         pool_n: int | None = ...,
         explain: bool = ...,
+        attributes: list[tuple[str, str]] | None = ...,
         # 0.8.20 Slice 15b fix-2 (R-20-NV / R-20-RV) — optional VALIDITY view.
         # `None` (default) is the strict view: active-only, non-superseded, and
         # valid AT QUERY TIME. The EXISTENCE flags (`include_superseded` /
         # `include_inactive`) raise `InvalidArgumentError` on this path rather
         # than being silently ignored. See `fathomdb.engine.Engine.search`.
+        view: ReadView | None = ...,
+    ) -> SearchResult: ...
+    def search_projected_text(
+        self,
+        query: str,
+        name: str,
+        source_type: str | None = ...,
+        kind: str | None = ...,
+        created_after: int | None = ...,
+        status: str | None = ...,
+        attributes: list[tuple[str, str]] | None = ...,
         view: ReadView | None = ...,
     ) -> SearchResult: ...
     # 0.8.18 Slice 5 (R-VEQ-4) — text-only / FTS-only path; takes the same
@@ -320,6 +333,7 @@ class ProjectionSpec:
     vector_embedder: str | None
     # 0.8.20 Slice 20 (R-20-DR) — engine-set READ METADATA ("ready"/"embedding").
     vector_dense_readiness: str | None
+    source: list[str] | None
     def __init__(
         self,
         name: str,
@@ -329,6 +343,7 @@ class ProjectionSpec:
         vector: bool = ...,
         vector_embedder: str | None = ...,
         vector_dense_readiness: str | None = ...,
+        source: list[str] | None = ...,
     ) -> None: ...
 
 class ProjectionDelta:

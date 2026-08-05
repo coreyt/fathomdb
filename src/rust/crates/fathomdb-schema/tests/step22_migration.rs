@@ -318,13 +318,13 @@ fn s22_is_head_and_schema_version_is_22() {
 
     assert_eq!(user_version(&conn), SCHEMA_VERSION);
     assert_eq!(
-        SCHEMA_VERSION, 24,
-        "SCHEMA_VERSION must be 24 (step-24 projection-registry EAV + property-FTS, Slice 15d)"
+        SCHEMA_VERSION, 25,
+        "SCHEMA_VERSION must be 25 (step-25 nested-source projection registry column, Slice 45)"
     );
     assert_eq!(
         MIGRATIONS.last().expect("at least one migration").step_id,
-        24,
-        "step-24 (projection-registry EAV + property-FTS, Slice 15d) must be the last (head) migration"
+        25,
+        "step-25 (nested-source projection registry column, Slice 45) must be the last (head) migration"
     );
 }
 

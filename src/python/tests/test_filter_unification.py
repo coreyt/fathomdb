@@ -72,6 +72,11 @@ def test_searchfilter_round_trips_through_unified_filter() -> None:
     assert from_search_filter(SearchFilter()).terms == ()
 
 
+def test_attribute_search_filter_refuses_lossy_unified_lowering() -> None:
+    with pytest.raises(InvalidFilterError):
+        from_search_filter(SearchFilter(attributes=(("priority", "1"),)))
+
+
 # ----- D3 typed rejection (vec0 / search backend) ---------------------------
 
 

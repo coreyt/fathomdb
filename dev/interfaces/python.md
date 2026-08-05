@@ -656,6 +656,28 @@ alpha / `pool_n` guards.
 These are ARGUMENTS, not new verbs — the governed command surface
 (`src/conformance/governed-surface-allowlist.json`) is unchanged.
 
+## Nested-source projections (0.8.21 Slice 60)
+
+`ProjectionSpec.source: tuple[str, ...] | None` is a literal canonical-body
+member path; `None` keeps legacy top-level lookup. Missing/null terminals produce
+no row. Object/array terminals reject configuration backfill and writes atomically
+with `WriteValidationError`.
+
+`SearchFilter.attributes: tuple[tuple[str, str], ...]` is ordered AND equality
+over declared `FILTERABLE` projections. Canonical text is intentional: projected
+string `"1"` and number `1` both match `"1"`. `from_search_filter` rejects a
+non-empty attribute list with `InvalidFilterError` rather than losing predicates.
+
+For `engine.search(..., explain=True)` with attribute predicates,
+`result.explanation.trace.dropped_edge_hits` reports edge-FTS candidates rejected
+solely by the node-scoped attribute rule. The default non-explain path does not
+collect this count.
+
+`engine.search_projected_text(query, name, filter=None, *, view=None)` searches
+only the named declared `SEARCHABLE` property-FTS projection, applying metadata,
+validity, and attribute filters. It does not body-scan, use vectors, or fuse;
+hits are text branch with no soft fallback or explanation.
+
 ## Non-presence
 
 Python does not expose recovery verbs or doctor-only flags. In particular,
