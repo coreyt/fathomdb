@@ -6,7 +6,7 @@
 # WHAT IS BEING PROTECTED: the HITL PRE-SIGNED the accumulated governed-surface
 # delta of 0.8.20 Slices 5d+10b+15b+15d (AC-079) — pinned to the exact content of
 # src/conformance/governed-surface-allowlist.json at the provenance commit
-# recorded in the pin (30 allowlist members, 5 core, recovery_denylist unchanged
+# recorded in the pin (32 allowlist members, 5 core, recovery_denylist unchanged
 # at the five REQ-054 names). A pre-sign keyed to specific content is worth
 # exactly as much as the mechanism that notices when that content moves.
 #
@@ -143,7 +143,7 @@ expect_routes_to_hitl() {
 run_checker
 expect_rc 0 "the real repo's governed surface matches the pin (default args)"
 expect_out 'ok +governed-surface-pin' "the passing run says ok"
-expect_out '30 allowlist / 5 core / 5 recovery_denylist' \
+expect_out '32 allowlist / 5 core / 5 recovery_denylist' \
   "the passing run states the pinned counts it verified"
 
 PIN_SHA="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["sha256"])' "$REAL_PIN")"
@@ -199,10 +199,10 @@ expect_rc 0 "an unmodified COPY of the allowlist passes"
 F="$(copy_file added-member)"
 mutate "$F" 'd["allowlist"].append("shiny.new_verb")'
 check_fixture "$F"
-expect_rc 1 "an ADDED allowlist member (31) HARD-fails"
+expect_rc 1 "an ADDED allowlist member (33) HARD-fails"
 expect_out "'allowlist' diverges from the pin" "added-member names the diverging key"
 expect_out 'ADDED shiny.new_verb' "added-member NAMES the member that appeared"
-expect_out 'Pinned 30 member\(s\), on disk 31' "added-member states pinned-vs-on-disk counts"
+expect_out 'Pinned 32 member\(s\), on disk 33' "added-member states pinned-vs-on-disk counts"
 expect_out 'content differs from the pin' "added-member reports the content-hash divergence too"
 expect_routes_to_hitl "added-member"
 
@@ -210,9 +210,9 @@ expect_routes_to_hitl "added-member"
 F="$(copy_file removed-member)"
 mutate "$F" 'd["allowlist"].remove("purge")'
 check_fixture "$F"
-expect_rc 1 "a REMOVED allowlist member (29) HARD-fails"
+expect_rc 1 "a REMOVED allowlist member (31) HARD-fails"
 expect_out 'REMOVED purge' "removed-member NAMES the member that vanished"
-expect_out 'Pinned 30 member\(s\), on disk 29' "removed-member states pinned-vs-on-disk counts"
+expect_out 'Pinned 32 member\(s\), on disk 31' "removed-member states pinned-vs-on-disk counts"
 expect_routes_to_hitl "removed-member"
 
 # =================== Arm 3 (RED): recovery_denylist widened ===================
@@ -297,7 +297,7 @@ PY
 check_fixture "$F" "$LAZY_PIN"
 expect_rc 1 "a LAZY RE-PIN (hashes updated, signed member list untouched) still HARD-fails"
 expect_out 'ADDED smuggled.verb' "lazy-repin names the smuggled member"
-expect_out 'counts block says 30' "lazy-repin is also caught by the counts assertion"
+expect_out 'counts block says 32' "lazy-repin is also caught by the counts assertion"
 if printf '%s' "$OUT" | grep -q 'content differs from the pin'; then
   fail "lazy-repin's hashes DO match by construction; a hash complaint means the arm is not testing what it claims: $OUT"
 else
@@ -378,7 +378,7 @@ expect_out 'not an integer' "bool-count says the count is not an integer"
 # The full defeat of the backstop, and the reason 8b is P2 and not cosmetic: a
 # re-pin that adds a member to the surface, updates the signed member list AND
 # the hashes to match, and DELETES counts.allowlist. Every surviving check then
-# agreed with the pin, and the one check that still knew the signed size was 30
+# agreed with the pin, and the one check that still knew the signed size was 32
 # had been quietly switched off. Pre-fix this exited 0 and printed
 #   "ok ... (None allowlist / 5 core / 5 recovery_denylist)"
 # for a 31-member surface carrying smuggled.verb.

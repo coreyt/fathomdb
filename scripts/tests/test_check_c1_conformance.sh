@@ -955,13 +955,9 @@ p = sys.argv[1]
 text = open(p, encoding="utf-8").read()
 old = """                  write_cursor UNINDEXED,
                   tokenize = 'porter unicode61 remove_diacritics 2'
-              );",
-    },
-];"""
+              );"""
 new = """                  write_cursor UNINDEXED
-              );",
-    },
-];"""
+              );"""
 assert old in text
 open(p, "w", encoding="utf-8").write(text.replace(old, new, 1))
 PY
