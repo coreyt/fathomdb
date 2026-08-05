@@ -1,6 +1,6 @@
 {
   "name": "fathomdb-linux-arm64-gnu",
-  "version": "0.8.20",
+  "version": "0.8.21",
   "description": "Prebuilt FathomDB native binding for linux-arm64-gnu (napi-rs). Installed automatically as an optionalDependency of the `fathomdb` package on matching hosts.",
   "license": "MIT",
   "repository": {

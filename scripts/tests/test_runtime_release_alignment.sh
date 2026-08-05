@@ -61,18 +61,35 @@ else
   fail "release dispatch must derive preflight, smokes, co-tagging, and GitHub Release from RELEASE_TAG"
 fi
 
-# A manual dispatch defaults to the UI-selected branch unless every checkout
-# explicitly switches to the canonical release tag. Count both the checkout
-# actions and their guarded tag refs so adding a new publish job cannot escape
-# the recovery-path safety boundary.
+# A dry-run dispatch must exercise the UI-selected immutable commit before the
+# release tag exists. A non-dry-run recovery dispatch must instead use the
+# canonical tag. Count every checkout so a new release job cannot escape either
+# side of that boundary.
 checkout_total="$(grep -c 'uses: actions/checkout@' "$release" || true)"
-canonical_checkout_ref='ref: ${{ github.event_name == '\''workflow_dispatch'\'' && format('\''refs/tags/{0}'\'', env.RELEASE_TAG) || github.ref }}'
-canonical_ref_total="$(grep -Fc "$canonical_checkout_ref" "$release" || true)"
-if [ "$checkout_total" -gt 0 ] && [ "$checkout_total" -eq "$canonical_ref_total" ] \
-  && grep -q 'RELEASE_GATES_REQUIRE_TAG_CHECKOUT: "1"' "$release"; then
-  pass "dispatch checks out and verifies the canonical tag in every release job"
+release_checkout_ref='ref: ${{ env.RELEASE_CHECKOUT_REF }}'
+release_checkout_total="$(grep -Fc "$release_checkout_ref" "$release" || true)"
+if [ "$checkout_total" -gt 0 ] && [ "$checkout_total" -eq "$release_checkout_total" ] \
+  && grep -Fq "RELEASE_CHECKOUT_REF: \${{ github.event_name == 'workflow_dispatch' && inputs.dry_run == true && github.sha || github.event_name == 'workflow_dispatch' && format('refs/tags/v{0}', inputs.release_version) || github.ref }}" "$release" \
+  && grep -Fq "RELEASE_GATES_REQUIRE_TAG_CHECKOUT: \${{ (github.event_name != 'workflow_dispatch' || inputs.dry_run != true) && '1' || '0' }}" "$release"; then
+  pass "dry-run dispatch uses its selected commit while publish/recovery dispatch verifies the canonical tag"
 else
-  fail "manual dispatch must not build the UI-selected ref; every release checkout needs the canonical tag"
+  fail "release checkout must use the selected commit only for dry-runs and the canonical tag for publish/recovery"
+fi
+
+local_dry_run="$REPO_ROOT/scripts/release/local-dry-run.sh"
+if grep -Fq 'GITHUB_EVENT_NAME=workflow_dispatch' "$local_dry_run" \
+  && grep -Fq 'DRY_RUN=true' "$local_dry_run" \
+  && grep -Fq 'RELEASE_GATES_REQUIRE_TAG_CHECKOUT=0' "$local_dry_run" \
+  && grep -Fq 'RELEASE_GATES_HEAD_REF=refs/remotes/origin/main' "$local_dry_run"; then
+  pass "local release rehearsal uses the pre-tag dry-run gate against origin/main"
+else
+  fail "local release rehearsal must not require an uncreated tag"
+fi
+
+if [ "$(grep -c -- '--allow-dirty' "$local_dry_run" || true)" -eq 2 ]; then
+  pass "local release rehearsal can package the uncommitted version-bump candidate"
+else
+  fail "local release rehearsal must use --allow-dirty for its local package and publish dry-runs"
 fi
 
 # v0.8.20 registry recovery is deliberately partial: a dispatch may republish

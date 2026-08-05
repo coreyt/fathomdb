@@ -8,7 +8,29 @@ AC-050c) gates merges against this invariant.
 
 ## [Unreleased]
 
-(rolls into the next cut after 0.8.20.)
+(rolls into the next cut after 0.8.21.)
+
+## 0.8.21 — 2026-08-05
+
+Schema version **24 → 25**.
+
+### Added
+
+- Nested-source projections can declare a canonical-body source path, including
+  projected full-text search over the declared source.
+- Python and TypeScript expose attribute filters on search, and explanations
+  report candidates dropped by node-scoped attribute filtering.
+- CI now separates fast and heavy verifier tiers, runs early shell and governance
+  gates independently, and retains redacted verifier spill logs for diagnosis.
+
+### Changed
+
+- Release dry-run dispatches rehearse the selected commit before a release tag
+  exists; tag pushes and recovery publishes remain tag-bound.
+
+### Removed
+
+None.
 
 ## 0.8.20 — 2026-07-30
 

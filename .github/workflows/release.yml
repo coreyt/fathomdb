@@ -32,6 +32,11 @@ env:
   RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && format('v{0}', inputs.release_version) || github.ref_name }}
   RELEASE_DISPATCH_VERSION: ${{ inputs.release_version || '' }}
   RELEASE_CONFIRM_VERSION: ${{ inputs.confirm_release_version || '' }}
+  # Before its tag exists, a dry-run dispatch must exercise the commit selected
+  # in the UI. Real tag pushes and non-dry-run recovery dispatches must use the
+  # immutable canonical tag instead.
+  RELEASE_CHECKOUT_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run == true && github.sha || github.event_name == 'workflow_dispatch' && format('refs/tags/v{0}', inputs.release_version) || github.ref }}
+  RELEASE_GATES_REQUIRE_TAG_CHECKOUT: ${{ (github.event_name != 'workflow_dispatch' || inputs.dry_run != true) && '1' || '0' }}
   # Linux-first platform coverage is partial: x64 and AArch64 glibc are
   # supported, while macOS, Windows, and musl remain deferred.
   # Publishing under `latest` would serve unsupported users an
@@ -56,9 +61,7 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0, canonical release tag
         with:
-          # workflow_dispatch normally checks out the UI-selected ref. Every
-          # release job must instead use the canonical tag derived above.
-          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', env.RELEASE_TAG) || github.ref }}
+          ref: ${{ env.RELEASE_CHECKOUT_REF }}
           fetch-depth: 0  # need refs/heads/main for HEAD-reach check
       - name: Print resolved dry-run mode
         run: echo "DRY_RUN=${DRY_RUN}"
@@ -81,19 +84,15 @@ jobs:
         # workflow_dispatch (tag check skipped, all other gates enforced;
         # dry_run=false also needs a matching typed confirmation).
         #
-        # RELEASE_GATES_HEAD_REF: actions/checkout fetches all refs under
-        # refs/remotes/origin/* but does NOT create a local refs/heads/main
-        # when checking out a tag, so the gate's default lookup of
-        # refs/heads/main fails on CI. Point the gate at the remote-tracking
-        # ref. Local dev environments leave this unset and use the local
-        # main branch as before.
+          # RELEASE_GATES_HEAD_REF points at the remote-tracking main ref,
+          # because checkout can be either the selected dry-run commit or a tag.
         run: bash scripts/verify-release-gates.sh
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_GATES_HEAD_REF: refs/remotes/origin/main
           RELEASE_GATES_TAG: ${{ env.RELEASE_TAG }}
           RELEASE_DISPATCH_VERSION: ${{ env.RELEASE_DISPATCH_VERSION }}
-          RELEASE_GATES_REQUIRE_TAG_CHECKOUT: "1"
+          RELEASE_GATES_REQUIRE_TAG_CHECKOUT: ${{ env.RELEASE_GATES_REQUIRE_TAG_CHECKOUT }}
       - name: Axis-E published-API drift guard
         # Catches the v0.8.9 partial-publish class BEFORE any tier uploads:
         # if fathomdb-embedder-api's pinned Axis-E version is already on
@@ -127,7 +126,7 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0, canonical release tag
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', env.RELEASE_TAG) || github.ref }}
+          ref: ${{ env.RELEASE_CHECKOUT_REF }}
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: "3.11"
@@ -180,7 +179,7 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0, canonical release tag
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', env.RELEASE_TAG) || github.ref }}
+          ref: ${{ env.RELEASE_CHECKOUT_REF }}
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: "25.9.0"
@@ -224,7 +223,7 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0, canonical release tag
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', env.RELEASE_TAG) || github.ref }}
+          ref: ${{ env.RELEASE_CHECKOUT_REF }}
       - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # stable
         with:
           toolchain: "1.95.0"
@@ -278,7 +277,7 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0, canonical release tag
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', env.RELEASE_TAG) || github.ref }}
+          ref: ${{ env.RELEASE_CHECKOUT_REF }}
       - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # stable
         with:
           toolchain: "1.95.0"
@@ -308,7 +307,7 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0, canonical release tag
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', env.RELEASE_TAG) || github.ref }}
+          ref: ${{ env.RELEASE_CHECKOUT_REF }}
       - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # stable
         with:
           toolchain: "1.95.0"
@@ -338,7 +337,7 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0, canonical release tag
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', env.RELEASE_TAG) || github.ref }}
+          ref: ${{ env.RELEASE_CHECKOUT_REF }}
       - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # stable
         with:
           toolchain: "1.95.0"
@@ -374,7 +373,7 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0, canonical release tag
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', env.RELEASE_TAG) || github.ref }}
+          ref: ${{ env.RELEASE_CHECKOUT_REF }}
       - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # stable
         with:
           toolchain: "1.95.0"
@@ -404,7 +403,7 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0, canonical release tag
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', env.RELEASE_TAG) || github.ref }}
+          ref: ${{ env.RELEASE_CHECKOUT_REF }}
       - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # stable
         with:
           toolchain: "1.95.0"
@@ -434,7 +433,7 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0, canonical release tag
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', env.RELEASE_TAG) || github.ref }}
+          ref: ${{ env.RELEASE_CHECKOUT_REF }}
       - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # stable
         with:
           toolchain: "1.95.0"
@@ -465,7 +464,7 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0, canonical release tag
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', env.RELEASE_TAG) || github.ref }}
+          ref: ${{ env.RELEASE_CHECKOUT_REF }}
       - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # stable
         with:
           toolchain: "1.95.0"
@@ -534,7 +533,7 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0, canonical release tag
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', env.RELEASE_TAG) || github.ref }}
+          ref: ${{ env.RELEASE_CHECKOUT_REF }}
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: "25.9.0"
@@ -579,7 +578,7 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0, canonical release tag
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', env.RELEASE_TAG) || github.ref }}
+          ref: ${{ env.RELEASE_CHECKOUT_REF }}
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: "25.9.0"
@@ -623,7 +622,7 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0, canonical release tag
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', env.RELEASE_TAG) || github.ref }}
+          ref: ${{ env.RELEASE_CHECKOUT_REF }}
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: "25.9.0"
@@ -670,7 +669,7 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0, canonical release tag
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', env.RELEASE_TAG) || github.ref }}
+          ref: ${{ env.RELEASE_CHECKOUT_REF }}
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         if: matrix.smoke == 'pypi-wheel'
         with:
@@ -703,7 +702,7 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0, canonical release tag
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', env.RELEASE_TAG) || github.ref }}
+          ref: ${{ env.RELEASE_CHECKOUT_REF }}
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: "3.12"
@@ -734,7 +733,7 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0, canonical release tag
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', env.RELEASE_TAG) || github.ref }}
+          ref: ${{ env.RELEASE_CHECKOUT_REF }}
       - name: Resolve tag version
         id: ver
         run: |
