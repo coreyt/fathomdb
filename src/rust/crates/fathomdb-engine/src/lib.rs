@@ -13639,8 +13639,9 @@ fn connection_has_pending_projection_work(connection: &Connection) -> rusqlite::
 }
 
 /// 0.8.20 Slice 20 (R-20-DR) — the `dense_readiness` of the `searchable→vector`
-/// projection, DERIVED. There is no stored flag, no schema step
-/// (`SCHEMA_VERSION` stays 24) and no `MIGRATIONS` change.
+/// projection, DERIVED. There is no stored flag and this feature adds no schema
+/// step or `MIGRATIONS` entry; later unrelated migrations do not affect that
+/// property.
 ///
 /// **Why derived is the design, not a shortcut.** §4.1 invariant 1 requires
 /// `{ vector-insert ∧ dense_readiness := ready }` to be ONE transaction, with a
@@ -18359,8 +18360,8 @@ fn registry_governs_an_inert_dense_arm(conn: &Connection) -> rusqlite::Result<bo
 /// # Not a data migration
 ///
 /// It removes a registration row inside ONE live database to match that
-/// database's own declarations. It converts no row across a version step, and
-/// `SCHEMA_VERSION` stays 24.
+/// database's own declarations. It converts no row across a version step; the
+/// reconciliation itself introduces no migration.
 fn reconcile_inert_vector_enrolments_on_boot(conn: &Connection) -> rusqlite::Result<bool> {
     if !registry_governs_an_inert_dense_arm(conn)? {
         return Ok(false);
@@ -18523,8 +18524,8 @@ fn register_vector_kind(tx: &Connection, kind: &str) -> rusqlite::Result<()> {
 /// # Not a data migration
 ///
 /// This re-enqueues embed work inside ONE live database at the caller's request.
-/// It converts no rows across a version step, and `SCHEMA_VERSION` stays 24
-/// (HITL 2026-07-21; cf. TC-46's in-place vec0 reshape).
+/// It converts no rows across a version step and introduces no migration (HITL
+/// 2026-07-21; cf. TC-46's in-place vec0 reshape).
 /// 0.8.20 Slice 22 (R-20-VC / **TC-67**) — the ONE scan of "which node kinds in
 /// this corpus are candidates for the dense arm?".
 ///
