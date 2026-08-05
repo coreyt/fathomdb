@@ -413,6 +413,8 @@ export interface QueryTrace {
   vectorHits: number;
   textHits: number;
   graphHits: number;
+  /** Edge-FTS candidates excluded only by a node-scoped attribute predicate. */
+  droppedEdgeHits: number;
 }
 
 /**
@@ -1018,6 +1020,7 @@ export class Engine {
             vectorHits: e.trace.vectorHits,
             textHits: e.trace.textHits,
             graphHits: e.trace.graphHits,
+            droppedEdgeHits: e.trace.droppedEdgeHits,
           },
           perHit: e.perHit.map(mapPerHitExplain),
         }

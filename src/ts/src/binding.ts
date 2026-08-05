@@ -139,6 +139,7 @@ interface NativeQueryTrace {
   vectorHits: number;
   textHits: number;
   graphHits: number;
+  droppedEdgeHits: number;
 }
 
 export interface NativePerHitExplain {

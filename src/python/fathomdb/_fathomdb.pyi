@@ -51,6 +51,7 @@ class QueryTrace:
     vector_hits: int
     text_hits: int
     graph_hits: int
+    dropped_edge_hits: int
 
 class PerHitExplain:
     # 0.8.8 EXP-OBS (Slice 10) — per-hit provenance + score breakdown.

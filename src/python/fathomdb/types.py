@@ -313,6 +313,9 @@ class QueryTrace:
     vector_hits: int
     text_hits: int
     graph_hits: int
+    #: Edge-FTS candidates excluded only by a node-scoped attribute predicate.
+    #: Present on the opt-in ``explain=True`` sidecar so the exclusion is visible.
+    dropped_edge_hits: int
 
 
 @dataclass(frozen=True)

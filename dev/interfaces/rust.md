@@ -708,9 +708,7 @@ an attribute filter EXCLUDES every edge hit on both retrieval arms (edges are ne
 attribute-projected), which is HITL ruling (A) — `(A)` is `(D)` endpoint-node
 filtering with an empty endpoint rule; (B)/(C)/(D) are reserved widenings, none
 implemented in 0.8.20. **This whole delta is PROPOSED, NOT SIGNED.** `attributes`
-stays engine-internal in 0.8.20 — there is NO Py/TS wire exposure (that is a later
-slice), so `SearchFilterInput` / the Python `SearchFilter` binding input are
-unchanged.
+was engine-internal in 0.8.20; Slice 60 exposes it through both SDK bindings.
 
 ## Nested-source projections (0.8.21 Slice 60)
 
@@ -727,6 +725,11 @@ existing canonical text representation, intentionally so string `"1"` and number
 `1` compare equal. `Filter::try_from(&SearchFilter)` rejects a non-empty
 attribute list with `EngineError::InvalidFilter`; reverse lowering has no
 attributes.
+
+On `search_explained` with attribute predicates, `Explanation.trace.dropped_edge_hits`
+reports edge-FTS candidates rejected solely by the
+node-scoped attribute rule. Default non-explained searches do not collect the
+counter or incur its extra comparison.
 
 - `Engine::search_projected_text(query, name, filter, &ReadView) ->
   Result<SearchResult, EngineError>` searches exactly one declared

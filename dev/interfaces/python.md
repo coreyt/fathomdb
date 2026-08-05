@@ -668,6 +668,11 @@ over declared `FILTERABLE` projections. Canonical text is intentional: projected
 string `"1"` and number `1` both match `"1"`. `from_search_filter` rejects a
 non-empty attribute list with `InvalidFilterError` rather than losing predicates.
 
+For `engine.search(..., explain=True)` with attribute predicates,
+`result.explanation.trace.dropped_edge_hits` reports edge-FTS candidates rejected
+solely by the node-scoped attribute rule. The default non-explain path does not
+collect this count.
+
 `engine.search_projected_text(query, name, filter=None, *, view=None)` searches
 only the named declared `SEARCHABLE` property-FTS projection, applying metadata,
 validity, and attribute filters. It does not body-scan, use vectors, or fuse;

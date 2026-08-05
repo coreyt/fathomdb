@@ -634,6 +634,7 @@ struct PyQueryTrace {
     vector_hits: u32,
     text_hits: u32,
     graph_hits: u32,
+    dropped_edge_hits: u32,
 }
 
 impl PyQueryTrace {
@@ -651,6 +652,7 @@ impl PyQueryTrace {
             vector_hits: t.vector_hits,
             text_hits: t.text_hits,
             graph_hits: t.graph_hits,
+            dropped_edge_hits: t.dropped_edge_hits,
         }
     }
 }

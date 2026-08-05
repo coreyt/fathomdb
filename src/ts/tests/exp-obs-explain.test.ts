@@ -8,7 +8,7 @@
 //
 //   1. Carrier gating — explain off ⇒ `explanation === null` + byte-identical
 //      results; explain on ⇒ present.
-//   2. QueryTrace — all 12 fields present + typed; `alpha` exact; `embedderId`
+//   2. QueryTrace — all 13 fields present + typed; `alpha` exact; `embedderId`
 //      is a string.
 //   3. per_hit ↔ results alignment (same length/order; correlate by ARRAY
 //      POSITION — post-C-2 `perHit[i].id` is the positional write_cursor int,
@@ -90,7 +90,7 @@ test("exp-obs trace + per-hit fidelity", async () => {
     const exp = result.explanation as Explanation;
     assert.notEqual(exp, null);
 
-    // (2) QueryTrace — 12 fields, typed; alpha exact; embedderId is a string.
+    // (2) QueryTrace — 13 fields, typed; alpha exact; embedderId is a string.
     const t = exp.trace;
     assert.equal(t.queryChars, "hybrid".length);
     assert.equal(typeof t.k, "number");
@@ -104,6 +104,7 @@ test("exp-obs trace + per-hit fidelity", async () => {
     assert.equal(typeof t.vectorHits, "number");
     assert.equal(typeof t.textHits, "number");
     assert.equal(typeof t.graphHits, "number");
+    assert.equal(t.droppedEdgeHits, 0);
 
     // (3) alignment + (4) the three identities.
     assert.equal(exp.perHit.length, result.results.length);

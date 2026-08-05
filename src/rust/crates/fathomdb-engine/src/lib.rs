@@ -2506,6 +2506,10 @@ pub struct QueryTrace {
     pub vector_hits: u32,
     pub text_hits: u32,
     pub graph_hits: u32,
+    /// Edge-FTS candidates rejected only because an attribute predicate is
+    /// node-scoped. Present on the opt-in explanation so this deliberate
+    /// filtering never looks like an absent corpus.
+    pub dropped_edge_hits: u32,
 }
 
 /// 0.8.8 EXP-OBS (Slice 5) — per-hit provenance + score breakdown. One entry per
@@ -11074,6 +11078,23 @@ fn edge_fts_hit_passes_filter(
     Ok(true)
 }
 
+/// Apply every edge filter except declared projection attributes. This isolates
+/// the explanatory count from edge candidates rejected for an independent
+/// source-type, relation-kind, or vec-metadata predicate.
+fn edge_fts_hit_passes_non_attribute_filter(
+    tx: &rusqlite::Transaction<'_>,
+    write_cursor: u64,
+    row_kind: &str,
+    filter: Option<&SearchFilter>,
+) -> rusqlite::Result<bool> {
+    let Some(filter) = filter else {
+        return Ok(true);
+    };
+    let mut non_attribute_filter = filter.clone();
+    non_attribute_filter.attributes.clear();
+    edge_fts_hit_passes_filter(tx, write_cursor, row_kind, Some(&non_attribute_filter))
+}
+
 /// Read projection cursor and matching body rows inside one read tx.
 fn read_projected_text_in_tx(
     reader: &mut Connection,
@@ -11681,9 +11702,18 @@ fn read_search_in_tx(
             Vec::new()
         }
     };
+    // Attribute predicates intentionally apply only to node projections. Count
+    // edge-FTS candidates that would otherwise pass when the caller requested
+    // the opt-in explanation, without adding work to the default search path.
+    let mut dropped_edge_hits = 0_u32;
     for row in edge_candidates {
         if edge_fts_hit_passes_filter(&tx, row.write_cursor, &row.kind, filter)? {
             text_results.push(row);
+        } else if explain
+            && filter.is_some_and(|active_filter| !active_filter.attributes.is_empty())
+            && edge_fts_hit_passes_non_attribute_filter(&tx, row.write_cursor, &row.kind, filter)?
+        {
+            dropped_edge_hits = dropped_edge_hits.saturating_add(1);
         }
     }
     tx.commit()?;
@@ -11858,6 +11888,7 @@ fn read_search_in_tx(
                 vector_hits: exp_vector_n,
                 text_hits: exp_text_n,
                 graph_hits: exp_graph_n,
+                dropped_edge_hits,
             },
             per_hit,
         })
@@ -17548,9 +17579,13 @@ fn validate_nested_projection_sources_for_write(
     conn: &Connection,
     batch: &[PreparedWrite],
 ) -> Result<(), EngineError> {
+    let registry = load_projection_registry(conn).map_err(|_| EngineError::Storage)?;
+    if registry.values().all(|stored| stored.source.is_none()) {
+        return Ok(());
+    }
     for write in batch {
         let PreparedWrite::Node { body, .. } = write else { continue };
-        validate_nested_projection_sources_for_body(conn, body)?;
+        validate_nested_projection_sources_for_body_in_registry(conn, body, &registry)?;
     }
     Ok(())
 }
@@ -17560,7 +17595,18 @@ fn validate_nested_projection_sources_for_body(
     body: &str,
 ) -> Result<(), EngineError> {
     let registry = load_projection_registry(conn).map_err(|_| EngineError::Storage)?;
-    for (name, stored) in &registry {
+    validate_nested_projection_sources_for_body_in_registry(conn, body, &registry)
+}
+
+/// Validate one body against a registry snapshot owned by the caller. Batch
+/// writes load this snapshot once, keeping validation proportional to bodies
+/// plus declarations rather than repeating registry I/O for every row.
+fn validate_nested_projection_sources_for_body_in_registry(
+    conn: &Connection,
+    body: &str,
+    registry: &BTreeMap<String, StoredProjection>,
+) -> Result<(), EngineError> {
+    for (name, stored) in registry {
         if nested_projection_terminal_is_composite(conn, body, name, stored)
             .map_err(|_| EngineError::Storage)?
         {

@@ -716,6 +716,21 @@ fn attribute_filter_excludes_edge_hits_on_both_arms() {
          appear via the edge-FTS arm NOR the edge-vector arm: {fb:?}"
     );
 
+    // The public filter deliberately excludes edge bodies, but that exclusion
+    // must not look like an empty corpus. The opt-in explanation reports the
+    // edge-FTS candidates that would otherwise have passed and were rejected by
+    // the node-scoped attribute predicate.
+    let mut explained_filter = SearchFilter::default();
+    explained_filter.attributes = vec![("priority".to_string(), "high".to_string())];
+    let explained = engine
+        .search_explained("sharedtoken", Some(explained_filter), 0, false, 0.3, 0)
+        .expect("explained filtered search");
+    assert_eq!(
+        explained.explanation.expect("explanation sidecar").trace.dropped_edge_hits,
+        1,
+        "the excluded edge-FTS candidate is observable to the caller"
+    );
+
     engine.close().unwrap();
 }
 

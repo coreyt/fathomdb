@@ -1020,6 +1020,7 @@ pub struct QueryTrace {
     pub vector_hits: u32,
     pub text_hits: u32,
     pub graph_hits: u32,
+    pub dropped_edge_hits: u32,
 }
 
 impl QueryTrace {
@@ -1037,6 +1038,7 @@ impl QueryTrace {
             vector_hits: t.vector_hits,
             text_hits: t.text_hits,
             graph_hits: t.graph_hits,
+            dropped_edge_hits: t.dropped_edge_hits,
         }
     }
 }

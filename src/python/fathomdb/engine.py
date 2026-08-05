@@ -476,6 +476,7 @@ class Engine:
                     vector_hits=native_exp.trace.vector_hits,
                     text_hits=native_exp.trace.text_hits,
                     graph_hits=native_exp.trace.graph_hits,
+                    dropped_edge_hits=native_exp.trace.dropped_edge_hits,
                 ),
                 per_hit=[_map_per_hit_explain(p) for p in native_exp.per_hit],
             )
