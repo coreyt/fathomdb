@@ -1,6 +1,6 @@
 {
   "name": "fathomdb-darwin-arm64",
-  "version": "0.8.21",
+  "version": "0.8.22",
   "description": "Prebuilt FathomDB native binding for darwin-arm64 (napi-rs). Installed automatically as an optionalDependency of the `fathomdb` package on matching hosts.",
   "license": "MIT",
   "repository": {
