@@ -57,7 +57,7 @@ if [ -z "$DIST_TAG" ]; then
   exit 2
 fi
 if [ ! -f package.json ]; then
-  printf 'npm-publish-if-new: no package.json in %s\n' "$(pwd)" >&2
+  printf 'npm-publish-if-new: no package.json in %s\n' "$PWD" >&2
   exit 1
 fi
 

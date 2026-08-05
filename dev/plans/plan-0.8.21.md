@@ -35,6 +35,13 @@ experiment needs its own proposal and evidence gate.
    25–35, added 2026-08-04.
 7. Stop a dependency pin from silently becoming the vulnerability it was added
    to fix. Slice 40, added 2026-08-04.
+8. Make CI **observable**: a failure legible without log-diving, and suite
+   execution visible on a green run. Slice 45, added 2026-08-04.
+9. Stop paying for avoidable runs and floating linters. Slice 50, added
+   2026-08-04.
+10. Add declared nested-source projections without duplicating canonical-body
+    attributes, with matching portable exact-attribute and property-text query
+    surfaces. Slice 60, remapped by HITL ruling `seq-242` on 2026-08-04.
 
 ## Requirements and acceptance criteria
 
@@ -54,6 +61,18 @@ experiment needs its own proposal and evidence gate.
 - No suite is silently skipped, retried, or quarantined to achieve any of this.
   A remediation that converts a real failure into a pass is out of scope by
   construction.
+- A failed CI run names its failing suites **on the run's front page**, and the
+  evidence needed to diagnose it survives the runner. "The log was truncated and
+  the spill file is gone" is not an acceptable outcome.
+- A **green** run states which suites ran. A summary that cannot distinguish
+  "passed" from "never executed" is a vacuous pass at the harness level, which
+  is the same defect as TC-37 one layer up.
+- Linters are **pinned and version-checked**, so a finding set changes only when
+  the repository decides it does.
+- Nested projections read one declared scalar from the canonical body in the
+  node-write transaction; missing/null produces no row and composite terminals
+  reject atomically. The public Rust, Python, and TypeScript surfaces ship
+  together, with no consumer-owned attribute index or raw-path query API.
 
 ## Slice ladder
 
@@ -65,9 +84,52 @@ experiment needs its own proposal and evidence gate.
 | 15 | Linux aarch64 package/build/smoke proof | 10 |
 | 20 | Current-documentation and platform-drift checks | 15 |
 | 25 | Remediate the audited SIGPIPE / fail-open shell sites | 20 |
-| 30 | `shellcheck` in `agent-lint.sh` (+ `.shellcheckrc`, masked-return checks) | 25 |
+| 30 | `shellcheck` in `scripts/agent-lint.sh` (+ `.shellcheckrc`, masked-return checks) | 25 |
 | 35 | Always-on `shell-lint` CI job ahead of the `verify` gate | 30 |
 | 40 | Guard that a dependency pin is still a fix, not the vulnerability | 20 |
+| 45 | Make a CI failure legible without log-diving; make suite execution visible on success | 35 |
+| 50 | Pin `pyright` with a drift test; stop superseded runs | 20 |
+| 55 | Mechanically total fast and heavy verifier tiers | 45 |
+| 60 | Nested-source projections and public attribute query surface | 20 |
+
+### Slices 45 and 50 — observability and run hygiene (added 2026-08-04)
+
+Added because the release goal is a CI that is robust, **observable**, and fails
+early. Slices 25–35 deliver robustness and early failure; nothing so far
+delivers observability. Design of record:
+`dev/design/ci-verify-robustness-review.md` (R3.7, R2.3, R2.7 for Slice 45;
+R2.9, R2.4 for Slice 50).
+
+**Slice 45 — the failure you cannot read.** `verify` uploads **nothing** on
+failure; only the `rust-workspace-race-report` job in
+`.github/workflows/ci.yml` does. `run_capped`
+truncates to 200 lines and writes the remainder to a `/tmp` file that **dies
+with the runner**, so two `test-ts` failures in the review's sample are **not
+root-causable at all**. Failure artifacts, a `$GITHUB_STEP_SUMMARY` naming the
+failing suites, and `::error` annotations fix that.
+
+There is a second, quieter half. `run_capped` is **silent on success**, so a
+green run cannot tell you which suites ran — the Steward ran the full suite on
+2026-08-04, saw `55/55 suites passed`, and could not confirm from the log that
+any specific suite had executed. Per-suite timing on success is also the only
+way any future performance claim about this gate can be *measured* rather than
+asserted.
+
+A related live case for the same requirement: `scripts/tests/test_check_design_refs.sh`
+exists but is **registered in nothing**, so it runs never and its red gates
+nothing. An orphan suite is dead verification that reads as coverage. Whatever
+Slice 45 builds should make that visible.
+
+**Slice 50 — run hygiene.** `pyright` is unpinned at `>=1.1.380`
+(`src/python/pyproject.toml:36,46`) while `ruff==0.15.17` on the adjacent line is
+pinned exactly and enforced with a loud version check. That asymmetry is the
+mechanism behind the review's largest failure bucket — 46 of 77 failures at
+~4 minutes were `pyright`, and a floating typechecker red-lined `main` for about
+two days. The pinning discipline exists; it was simply not applied here.
+
+`ci.yml` also has **zero** `concurrency` groups, so a superseded push burns
+another full ~35-minute run rather than cancelling. Runs on `main` must **not**
+be cancelled — a cancelled post-merge run leaves `main`'s status ambiguous.
 
 ### Slices 25–35 — CI reliability (added 2026-08-04)
 
@@ -119,10 +181,22 @@ each can mask a real failure. Splitting `verify` into fast and heavy tiers is
 deferred: it needs a mechanical totality guard first, or it reintroduces the
 vacuous-green hazard that the 0.8.20 collect-all harness was built to remove.
 
+### Slice 60 — nested-source projections (remapped 2026-08-04)
+
+HITL ruling `seq-242` remaps the retained local candidate
+`impl-0.8.21-slice-45-nested-projections-local` to Slice 60. Slice 45 remains
+the landed CI-observability work. Slice 60 may begin with a fresh rebase of the
+candidate onto current `origin/main`; its implementation, governed-surface
+change, independent review, and merge remain separate gates.
+
+The design of record is [Nested-Source Projections](../design/nested-source-projections.md)
+and its accepted [ADR](../adr/ADR-0.8.21-nested-source-projections.md). These
+documents commission the work; they do not authorize implementation merge.
+
 ## Landed foundation
 
 <!-- BEGIN GENERATED release-state:0.8.21:plan-landed-roll-up -->
-**LANDED on `origin/main`, in full:** Slices 0 (`2ea2c884`) · 5 (`a6cf2bbe`) · 10 (`f94275e1`) · 15 (`19d8f072`) · 20 (`354ee9b4`) · 25 (`11766d8b`). SCHEMA is 25; remaining ladder = 60 → 30 → 35 → 40.<!-- END GENERATED release-state:0.8.21:plan-landed-roll-up -->
+**LANDED on `origin/main`, in full:** Slices 0 (`2ea2c884`) · 5 (`a6cf2bbe`) · 10 (`f94275e1`) · 15 (`19d8f072`) · 20 (`354ee9b4`) · 25 (`11766d8b`) · 30 (`e0c5dfd3`) · 35 (`e0c5dfd3`) · 40 (`895d7cec`) · 45 (`e0c5dfd3`) · 50 (`60e43ff9`) · 55 (`e0c5dfd3`). SCHEMA is 25; remaining ladder = 60.<!-- END GENERATED release-state:0.8.21:plan-landed-roll-up -->
 
 ## Reserved-gap policy
 
@@ -146,10 +220,7 @@ retained in place; current indexes must identify current authority.
 
 ## Immediate next slice
 
-**Slice 25 (SHELL-FIX) — UNBLOCKED, and it is the next slice.** The foundation
-ladder 0–20 is complete; the ladder was extended on 2026-08-04 by HITL decision
-rather than closing the release. Slice 40 (PIN-ROT) is also UNBLOCKED and
-depends only on 20, so it may run in parallel with the 25 → 30 → 35 chain.
+<!-- BEGIN GENERATED release-state:0.8.21:plan-immediate-next -->
+**IMMEDIATE NEXT: Slice 60** (`NESTED-PROJECTIONS`) — nested-source canonical-body projections and public attribute query surface
 
-Release closure and the opening of 0.8.22 remain explicit state transitions and
-are not implied by this plan.
+**Remaining ladder:** 60.<!-- END GENERATED release-state:0.8.21:plan-immediate-next -->

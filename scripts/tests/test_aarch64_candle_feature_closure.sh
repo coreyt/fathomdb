@@ -4,7 +4,9 @@
 # baseline. Other targets retain Candle's upstream F16 selection.
 set -euo pipefail
 
-if [ "$(uname -s)" != "Linux" ] || [ "$(uname -m)" != "aarch64" ]; then
+host_os="$(uname -s)"
+host_arch="$(uname -m)"
+if [ "$host_os" != "Linux" ] || [ "$host_arch" != "aarch64" ]; then
   printf 'SKIP  Linux AArch64-only Candle feature-closure check\n'
   exit 0
 fi

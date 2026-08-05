@@ -20,7 +20,8 @@ fi
 
 cd "$FIXTURE"
 
-export CARGO_TARGET_DIR="$(mktemp -d)"
+CARGO_TARGET_DIR="$(mktemp -d)"
+export CARGO_TARGET_DIR
 trap 'rm -rf "$CARGO_TARGET_DIR"' EXIT
 
 if out="$(cargo update --offline 2>&1)"; then

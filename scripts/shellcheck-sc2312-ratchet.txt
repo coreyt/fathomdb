@@ -1,0 +1,62 @@
+# scripts/shellcheck-sc2312-ratchet.txt — files NOT YET covered by SC2312
+# (check-extra-masked-returns), the check for this repo's own historical bug
+# class (a command whose non-zero exit is swallowed by a command substitution
+# or by SIGPIPE upstream of a pipe under `set -o pipefail`).
+#
+# 0.8.21 Slice 30 (SHELLCHECK), design of record
+# dev/design/ci-verify-robustness-review.md R1.1, which authorises exactly this
+# shape: "If the finding volume is unmanageable, ratchet ... rather than by
+# suppressing the check. A per-directory ratchet is honest: it says 'not yet
+# covered'. A global disable says 'covered' while covering nothing."
+# This is the per-FILE form of that ratchet — strictly tighter than per-directory.
+#
+# RULES, enforced by scripts/agent-lint-shell.sh:
+#   * Every tracked *.sh NOT listed here has SC2312 enforced. New files are
+#     therefore covered by default; nothing has to be remembered.
+#   * The list may only SHRINK. A listed file that has become SC2312-clean makes
+#     the gate FAIL until its line is deleted, so an exemption cannot rot into a
+#     permanent hole.
+#   * A listed path that is not a tracked *.sh file also FAILS the gate (a
+#     rename must not silently carry its exemption with it).
+#   * Protected CI compares this list to the PR base (or main's parent) and
+#     rejects every added entry, even if it is still dirty. The only explicit
+#     bootstrap is the first commit that introduces this file, which has no
+#     predecessor to compare; current-finding and non-vacuity checks still run.
+#
+# At Slice 30 landing: 35 files listed, 105 tracked *.sh files covered, 344
+# SC2312 findings outstanding. Closing them is follow-up FUP-SHELLCHECK-2.
+dev/corpus-survey/enumerate-corpora.sh
+dev/tools/mermaid/test-render-mermaid.sh
+scripts/check-board-currency.sh
+scripts/check-ledgers.sh
+scripts/check-staged-ledger-sidecars.sh
+scripts/check-transcript-hygiene.sh
+scripts/lib/agent-state-paths.sh
+scripts/lint-design-status.sh
+scripts/lint-findings.sh
+scripts/lint-plan-anchors.sh
+scripts/md-safe-fix.sh
+scripts/preflight.sh
+scripts/release/verify-embedder-api-no-drift.sh
+scripts/repo-prune/bin/context-clarity.sh
+scripts/repo-prune/bin/memory-clarity.sh
+scripts/repo-prune/bin/memory-prune-verify.sh
+scripts/set-version.sh
+scripts/snapshot-tree.sh
+scripts/steward-orient.sh
+scripts/tests/test_cargo_publish_if_new.sh
+scripts/tests/test_check_design_refs.sh
+scripts/tests/test_check_governed_surface_pin.sh
+scripts/tests/test_check_transcript_hygiene.sh
+scripts/tests/test_ci_rust_workspace_gate.sh
+scripts/tests/test_commission_manifest.sh
+scripts/tests/test_idempotent_republish.sh
+scripts/tests/test_release_version_surfaces.sh
+scripts/tests/test_release_workflow_scope.sh
+scripts/tests/test_rust_workspace_gate.sh
+scripts/tests/test_seat_path_guard.sh
+scripts/tests/test_set_version.sh
+scripts/tests/test_shell_pipefail_guards.sh
+scripts/tests/test_steward_orient.sh
+scripts/tests/test_ts_cache_coverage_split.sh
+scripts/tests/test_verify_embedder_api_no_drift.sh

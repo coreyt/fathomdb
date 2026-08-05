@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "source": {
+    "name": "GitHub Advisory Database",
+    "retrieved_at": "2026-08-04",
+    "provenance": "Minimal reviewed snapshot for governed root npm overrides. Each immutable GHSA identifier is linked in its advisory record; the governing metadata pins this exact file's SHA-256 so the offline check never silently accepts altered or empty advisory content."
+  },
+  "advisories": [
+    {
+      "id": "GHSA-6v5v-wf23-fmfq",
+      "package": "markdown-it",
+      "vulnerable_range": "<=14.1.1",
+      "url": "https://github.com/advisories/GHSA-6v5v-wf23-fmfq"
+    },
+    {
+      "id": "GHSA-h67p-54hq-rp68",
+      "package": "js-yaml",
+      "vulnerable_range": ">=4.0.0, <=4.1.1",
+      "url": "https://github.com/advisories/GHSA-h67p-54hq-rp68"
+    },
+    {
+      "id": "GHSA-52cp-r559-cp3m",
+      "package": "js-yaml",
+      "vulnerable_range": ">=4.0.0, <4.3.0",
+      "url": "https://github.com/advisories/GHSA-52cp-r559-cp3m"
+    },
+    {
+      "id": "GHSA-v245-v573-v5vm",
+      "package": "linkify-it",
+      "vulnerable_range": "<=5.0.1",
+      "url": "https://github.com/advisories/GHSA-v245-v573-v5vm"
+    }
+  ]
+}

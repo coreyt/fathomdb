@@ -56,7 +56,7 @@ else
 fi
 
 # 5) The real repo fixture carries both supported Linux platform packages.
-present="$(ls -d "$REPO_ROOT"/src/ts/npm/*/ 2>/dev/null | xargs -n1 basename | sort | tr '\n' ',' )"
+present="$(find "$REPO_ROOT/src/ts/npm" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; 2>/dev/null | sort | tr '\n' ',' )"
 [ "$present" = "linux-arm64-gnu,linux-x64-gnu," ] \
   && pass "committed platform set carries Linux x64 and arm64" \
   || fail "unexpected committed platform set: $present"

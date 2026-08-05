@@ -170,7 +170,7 @@ normalize_path() {
     case "$seg" in
       ''|'.') ;;
       '..') if [ "$n" -gt 0 ]; then n=$((n - 1)); unset "parts[$n]"; fi ;;
-      *) parts[$n]="$seg"; n=$((n + 1)) ;;
+      *) parts[n]="$seg"; n=$((n + 1)) ;;
     esac
   done
   [ "$n" -gt 0 ] || return 0
@@ -312,12 +312,21 @@ absorb_quoted_word() {
     while [ "$idx" -lt "$len" ]; do
       c="${word:idx:1}"
       if [ -n "$q" ]; then
+        # '\' below is a literal single-character backslash (the shell escape
+        # char being scanned for), not an attempt to escape a quote; SC1003's
+        # suggested rewrite would change the string.
+        # shellcheck disable=SC1003
         if [ "$q" = '"' ] && [ "$c" = '\' ]; then
           idx=$((idx + 1))
         elif [ "$c" = "$q" ]; then
           q=""
         fi
       else
+        # The '\' branch below matches a literal single-character backslash
+        # (the shell escape char being scanned for), not an escaped quote.
+        # The directive sits before `case` because SC1124 rejects directives
+        # attached to individual case branches.
+        # shellcheck disable=SC1003
         case "$c" in
           '\')     idx=$((idx + 1)) ;;
           "'"|'"') q="$c" ;;

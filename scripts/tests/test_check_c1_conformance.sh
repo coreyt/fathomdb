@@ -250,7 +250,8 @@ copy_contract() {
 
 # edit_pin <name> <python-body> -> a COPY of the pin, mutated. `pin` is the dict.
 edit_pin() {
-  local name="$1" body="$2" out="$TMPROOT/pin-$1.json"
+  local name="$1" body="$2"
+  local out="$TMPROOT/pin-$name.json"
   mkdir -p "$TMPROOT"
   python3 - "$REAL_PIN" "$out" <<PY
 import json, sys

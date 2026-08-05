@@ -111,8 +111,6 @@ export GIT_OPTIONAL_LOCKS=0
 
 BUDGET_BYTES="${STEWARD_ORIENT_BUDGET:-4096}"
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
 if ! REPO_ROOT="$(git --no-optional-locks rev-parse --show-toplevel 2>/dev/null)"; then
   printf 'steward-orient: not inside a git worktree\n' >&2
   exit 2
@@ -122,6 +120,9 @@ cd "$REPO_ROOT"
 # The one filesystem touch, removed on EXIT. Guarded like the repo's test
 # harnesses so a surprising value can never turn cleanup into a destructive rm.
 SANDBOX="$(mktemp -d)"
+# Invoked indirectly by the `trap cleanup EXIT` below; a trap handler is not a
+# call site as far as SC2329 is concerned.
+# shellcheck disable=SC2329
 cleanup() {
   case "$SANDBOX" in
     "${TMPDIR:-/tmp}"/*|/tmp/*) rm -rf "$SANDBOX" ;;
@@ -220,7 +221,7 @@ WT_SHOWN=0
 wt_select() {
   local idx="$1" label="$2"
   [ -z "${WT_LABELS[$idx]:-}" ] || return 0
-  WT_LABELS[$idx]="$label"
+  WT_LABELS[idx]="$label"
   WT_SHOWN=$((WT_SHOWN + 1))
 }
 if [ "$WT_CURRENT" -ge 0 ]; then wt_select "$WT_CURRENT" current; fi
@@ -531,7 +532,7 @@ fi
 # ---------------------------------------------------------------- HANDOFF ---
 # Newest by the dated filename, which is the naming convention of record
 # (STEWARD-SESSION-HANDOFF-YYYY-MM-DD-<A|B|...>.md), so lexicographic == newest.
-HANDOFF="$(ls -1 dev/plans/runs/STEWARD-SESSION-HANDOFF-*.md 2>/dev/null | sort | tail -1 || true)"
+HANDOFF="$(find dev/plans/runs -maxdepth 1 -name 'STEWARD-SESSION-HANDOFF-*.md' 2>/dev/null | sort | tail -1 || true)"
 if [ -z "$HANDOFF" ]; then
   note_empty "steward hand-off (no dev/plans/runs/STEWARD-SESSION-HANDOFF-*.md found)"
   add "PRs $PRS · HANDOFF (none found)"

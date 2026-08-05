@@ -255,13 +255,13 @@ else
   fail "arm C: the last executable line of agent-test.sh is NOT suite_summary_and_exit: [$LAST_EXEC_LINE]"
 fi
 
-if grep -qE '^run_suite test-rust bash scripts/test-rust-workspace\.sh --serial$' "$AGENT_TEST"; then
-  pass "arm C: test-rust delegates to the canonical serial workspace runner"
+if grep -qE '^run_tier_suite heavy test-rust bash scripts/test-rust-workspace\.sh --serial$' "$AGENT_TEST"; then
+  pass "arm C: the heavy tier delegates test-rust to the canonical serial workspace runner"
 else
-  fail "arm C: test-rust must delegate to scripts/test-rust-workspace.sh --serial"
+  fail "arm C: heavy test-rust must delegate to scripts/test-rust-workspace.sh --serial"
 fi
 
-if grep -qE '^run_suite test-cargo-publish-if-new bash scripts/tests/test_cargo_publish_if_new\.sh$' "$AGENT_TEST"; then
+if grep -qE '^run_tier_suite fast test-cargo-publish-if-new bash scripts/tests/test_cargo_publish_if_new\.sh$' "$AGENT_TEST"; then
   pass "arm C: normal agent-test runs cargo publish helper behavior coverage"
 else
   fail "arm C: agent-test must run test_cargo_publish_if_new.sh"
@@ -281,11 +281,14 @@ fi
 # file (a `.`/`source` statement); otherwise this false-positives on any
 # prose mention of the filename in a doc, JSON witness or markdown record
 # (e.g. this very suite's own closure output.json, which names the file in
-# its rationale).
+# its rationale). The two named test drivers source the real library in
+# disposable fixtures; only an additional production sourcer would violate
+# this contract.
 OTHER_SOURCERS="$(grep -rl --include='*.sh' 'agent-suite-run.sh' "$REPO_ROOT/scripts" "$REPO_ROOT/dev" 2>/dev/null \
   | grep -v -F "$AGENT_TEST" \
   | grep -v -F "$AGENT_SUITE_RUN_LIB" \
   | grep -v -F "$SCRIPT_DIR/test_agent_test_collect_all.sh" \
+  | grep -v -F "$SCRIPT_DIR/test_ci_verify_observability.sh" \
   || true)"
 if [ -z "$OTHER_SOURCERS" ]; then
   pass "arm D: no other script in the repo sources agent-suite-run.sh"

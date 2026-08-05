@@ -81,4 +81,5 @@ run_gate "AC-050c removal-detect"     0           bash "$SEC/check-removal-chang
 echo
 echo "agent-security: $violations violation(s), $blockers blocker(s), $downgrades downgrade(s)"
 
-exit "$(battery_exit_code "$violations" "$blockers" "${STRICT:-0}")"
+battery_rc="$(battery_exit_code "$violations" "$blockers" "${STRICT:-0}")"
+exit "$battery_rc"

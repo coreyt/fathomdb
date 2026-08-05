@@ -77,7 +77,10 @@
 #           vacuous scan;
 #       2 = usage error / the gate could not run.
 set -euo pipefail
-cd "$(git rev-parse --show-toplevel)"
+# `git rev-parse` failing here used to degrade to `cd ""` — a bash no-op that
+# leaves the script running in an arbitrary cwd. Bind and check it instead.
+_repo_toplevel="$(git rev-parse --show-toplevel)" || exit 1
+cd "$_repo_toplevel" || exit 1
 
 MODE="check"
 QUIET=0
@@ -156,6 +159,30 @@ def check_remote_landing(release, st):
     """Verify every `landed` SHA is reachable from `origin/main`."""
     if _git("rev-parse", "--verify", "--quiet", "origin/main")[0] != 0:
         return  # No remote-tracking ref (fresh or detached clone): unverifiable.
+
+    # A SHALLOW clone cannot answer this question. `actions/checkout` defaults to
+    # `--depth=1`, so `origin/main` EXISTS but carries only the tip commit: every
+    # historical landed SHA is simply absent from the object store, and
+    # `merge-base --is-ancestor` cannot resolve it.
+    #
+    # WHY THIS GUARD EXISTS. Without it this check reported all 15 of 0.8.20's
+    # and all 5 of 0.8.21's landed slices as "not reachable from origin/main" and
+    # HARD-FAILED on `main` — on 2026-08-04 it red-lined four consecutive `main`
+    # runs. Every one of those SHAs was genuinely on the remote; the clone just
+    # could not see them. That is a false negative, and a permanently-red gate is
+    # the very antipattern this repository documents (a gate that is always red
+    # trains readers to discount red, which is how real failures survive).
+    #
+    # Absent history means UNVERIFIABLE, never FALSE — the same rule already
+    # applied above for a missing remote ref. To make the check meaningful in CI,
+    # give its job `fetch-depth: 0` rather than weakening the assertion here.
+    if _git("rev-parse", "--is-shallow-repository")[1] == "true":
+        if not QUIET:
+            sys.stderr.write(
+                "note  check-release-state-views: shallow clone — the `origin/main`\n"
+                "  landing claim is UNVERIFIABLE here and was not checked. Give this\n"
+                "  job `fetch-depth: 0` to verify it.\n")
+        return
 
     by = _by_slice(st)
     unpushed = []
@@ -504,6 +531,36 @@ def render_plan_immediate_next(st):
                " → ".join(_slice_str(n) for n in st["remaining_ladder"])))
 
 
+def render_status_current_state(st):
+    """STATUS board's next-slice row, derived from the release state."""
+    nxt = st["next_slice"]
+    if isinstance(nxt, bool) or not isinstance(nxt, (int, float)):
+        raise ValueError(
+            "`next_slice` is %r, not a slice number. The STATUS board's next-slice "
+            "pointer cannot be rendered from it." % (nxt,))
+    by = _by_slice(st)
+    if nxt not in by:
+        raise ValueError(
+            "`next_slice` is %s but the ladder carries no such slice, so the STATUS "
+            "board would name a slice that does not exist." % _slice_str(nxt))
+    entry = by[nxt]
+    landed = " · ".join(
+        "%s (`%s`)" % (_slice_str(item["slice"]), item["sha"])
+        for item in st["ladder"] if item["slice"] in st["landed"])
+    return ("**Next is Slice %s (%s), %s.** Landed on `origin/main`: %s — "
+            "verified reachable, not asserted."
+            % (_slice_str(nxt), entry["short"], entry["status"], landed))
+
+
+def render_status_next_action(st):
+    """STATUS board's commission action, derived from the next ladder entry."""
+    nxt = st["next_slice"]
+    entry = _by_slice(st)[nxt]
+    return ("**Commission Slice %s (%s)** — %s. **Remaining ladder:** %s."
+            % (_slice_str(nxt), entry["short"], entry["title"],
+               " → ".join(_slice_str(item) for item in st["remaining_ladder"])))
+
+
 def render_plan_landed_roll_up(st):
     """`plan-<release>.md` §9's LANDED roll-up (TC-89, second site).
 
@@ -544,7 +601,37 @@ RENDERERS = {
     "status-live-open-count":  render_status_live_open_count,
     "handoff-next-step":       render_handoff_next_step,
     "plan-immediate-next":     render_plan_immediate_next,
+    "status-current-state":    render_status_current_state,
+    "status-next-action":      render_status_next_action,
 }
+
+
+def validate_ladder_progress(st):
+    """Reject contradictory terminal and next-slice facts before rendering."""
+    landed = st.get("landed")
+    remaining = st.get("remaining_ladder")
+    next_slice = st.get("next_slice")
+    if not isinstance(landed, list):
+        raise ValueError("`landed` must be a list of slice ids")
+    if not isinstance(remaining, list):
+        raise ValueError("`remaining_ladder` must be a list of slice ids")
+    overlap = sorted({_slice_str(item) for item in landed}
+                     & {_slice_str(item) for item in remaining})
+    if overlap:
+        raise ValueError(
+            "`landed` and `remaining_ladder` overlap at slice(s) %s; a slice cannot "
+            "be both landed and remaining" % ", ".join(overlap))
+    if not remaining:
+        if next_slice is not None:
+            raise ValueError(
+                "`remaining_ladder` is empty but `next_slice` is %r; a terminal "
+                "release must set `next_slice` to null" % (next_slice,))
+        return
+    if next_slice != remaining[0]:
+        raise ValueError(
+            "`remaining_ladder` starts at %s but `next_slice` is %r; a live release "
+            "must name its first remaining slice as next"
+            % (_slice_str(remaining[0]), next_slice))
 
 # ---------------------------------------------------------------------------
 # Discover tracked inputs. A stale linked worktree's state or Markdown copy is
@@ -594,6 +681,12 @@ for sp in state_paths:
         bad("FAIL %s: `generated_views` is EMPTY, so this state file owns no region\n"
             "  and nothing about it is checkable. A state file that gates nothing is a\n"
             "  vacuous pass, not a pass (TC-37)." % sp)
+        continue
+
+    try:
+        validate_ladder_progress(st)
+    except ValueError as exc:
+        bad("FAIL %s: invalid ladder progress — %s" % (sp, exc))
         continue
 
     # The `origin/main` claim the views are about to render is a fact about the

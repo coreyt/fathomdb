@@ -801,8 +801,14 @@ fi
 # lands, the single writer is updated, and the plan's prose is not.
 setup_fixture
 plannext_fixture
-perl -0777 -pi -e 's/"next_slice": 10/"next_slice": 20/' \
-  "$FIX/dev/plans/release-state-9.9.9.json"
+python3 - "$FIX/dev/plans/release-state-9.9.9.json" <<'PY'
+import json, sys
+p = sys.argv[1]
+s = json.load(open(p))
+s["next_slice"] = 20
+s["remaining_ladder"] = [20, 30, 40]
+json.dump(s, open(p, "w"), indent=2)
+PY
 run_gate
 if [ "$RC" -ne 0 ] && grep -q 'is STALE' <<<"$OUT" && grep -q 'plan-immediate-next' <<<"$OUT" \
    && grep -q 'Slice 20' <<<"$OUT"; then
@@ -846,8 +852,14 @@ fi
 # exists to close, wearing a different hat. It must fail with the REASON.
 setup_fixture
 plannext_fixture
-perl -0777 -pi -e 's/"next_slice": 10/"next_slice": null/' \
-  "$FIX/dev/plans/release-state-9.9.9.json"
+python3 - "$FIX/dev/plans/release-state-9.9.9.json" <<'PY'
+import json, sys
+p = sys.argv[1]
+s = json.load(open(p))
+s["next_slice"] = None
+s["remaining_ladder"] = []
+json.dump(s, open(p, "w"), indent=2)
+PY
 run_gate
 # `plan-immediate-next` must be NAMED in the failure: `handoff-next-step` also
 # reads `next_slice` and also refuses to render it, so an assertion that merely
@@ -944,6 +956,7 @@ import json, sys
 p = sys.argv[1]
 s = json.load(open(p))
 s["remaining_ladder"] = []
+s["next_slice"] = None
 json.dump(s, open(p, "w"), indent=2)
 PY
 run_gate
@@ -1339,6 +1352,11 @@ if printf '%s' "$CI_JOB_BLOCK" | grep -qE '^\s*(if|needs):'; then
 else
   pass "the release-state-views job is always-on (no if:, no needs:, not docs_only-gated)"
 fi
+if printf '%s\n' "$CI_JOB_BLOCK" | grep -qE '^[[:space:]]+fetch-depth:[[:space:]]*0([[:space:]]|$)'; then
+  pass "the release-state-views job checks out full history for origin/main ancestry"
+else
+  fail "the release-state-views job must set checkout fetch-depth: 0; block: $CI_JOB_BLOCK"
+fi
 
 # --- Arm R (remote-landing guard) ------------------------------------------
 # THE DEFECT THIS PINS. Both `render_master_ladder_progress` and
@@ -1358,6 +1376,10 @@ remote_fixture() {
   (
     cd "$FIX"
     git branch -M main
+    # rm first: `git init --bare` on an EXISTING bare repo is a no-op that keeps
+    # its refs, so a second remote_fixture call would push against the previous
+    # call's `main` and be rejected non-fast-forward.
+    rm -rf "$TMPROOT/remote.git"
     git init -q --bare "$TMPROOT/remote.git"
     git remote add origin "$TMPROOT/remote.git"
     git push -q origin main
@@ -1422,7 +1444,8 @@ fi
   git checkout -q -b feature/in-flight
   echo "branch change" >branch-only.txt
   git add branch-only.txt && git commit -qm 'branch: not pushed'
-  python3 - "$(git rev-parse --short HEAD)" <<'PY'
+  branch_head="$(git rev-parse --short HEAD)"
+  python3 - "$branch_head" <<'PY'
 import json, sys
 p = "dev/plans/release-state-9.9.9.json"
 st = json.load(open(p))
@@ -1449,6 +1472,232 @@ if printf '%s' "$OUT" | grep -q '9.9.9 claims'; then
   pass "arm R4: the guard actually executes and names the release (not a no-op)"
 else
   fail "arm R4 (guard must not be vacuous): out=$OUT"
+fi
+
+# --- Arm R5: a SHALLOW clone is UNVERIFIABLE, never FALSE ---------------------
+# THE DEFECT THIS PINS. `actions/checkout` defaults to `--depth=1`. In that clone
+# `origin/main` EXISTS but holds only the tip commit, so every historical landed
+# SHA is absent from the object store and `merge-base --is-ancestor` cannot
+# resolve it. The first version of this guard read that as "not reachable from
+# origin/main" and HARD-FAILED on `main`: on 2026-08-04 it red-lined four
+# consecutive `main` runs while claiming 15 of 0.8.20's and 5 of 0.8.21's slices
+# were unpushed. All twenty were genuinely on the remote.
+#
+# A permanently-red gate is worse than no gate — it trains readers to discount
+# red, which is how a real failure survives. Absent history means UNVERIFIABLE.
+# Reuse the remote arms R–R3 already built and pushed, rather than rebuilding the
+# fixture. A second `remote_fixture` call is avoidable state: in CI it aborted the
+# whole suite under `set -e` before arm R5 printed anything, and a fixture that
+# can kill the run is a worse hazard than the one being tested.
+if ! git -C "$TMPROOT/remote.git" rev-parse --verify --quiet main >/dev/null 2>&1; then
+  fail "arm R5 setup: the shared fixture remote has no main; arms R-R3 must run first"
+fi
+
+SHALLOW="$TMPROOT/shallow"
+SHALLOW_PROBE="$TMPROOT/shallow-default-branch"
+rm -rf "$SHALLOW"
+# `--depth` is ignored for a plain local path, so the remote MUST be a file://
+# URL. GitHub Actions runners set `protocol.file.allow=never` (the
+# CVE-2022-39253 mitigation), which rejects that with
+# `fatal: transport 'file' not allowed` — so the fixture opts back in for this
+# one clone. That is a fixture-local override against a bare repo this test just
+# created; it changes nothing about the repository's own protocol policy.
+#
+# Do NOT redirect this to /dev/null. The first version did, so when the clone
+# failed in CI `set -e` aborted the suite with NO arm R5 output at all and the
+# job reported a bare `exit 1` — the same silent-abort class this suite exists to
+# catch, reproduced inside the suite itself.
+#
+# The bare remote deliberately advertises an unborn default branch. This is the
+# exact pre-fix failure: a branchless clone can exit 0 but has no working tree,
+# hence no `scripts/` directory for the copied gate. Keep a probe for that
+# failure so the fixture is deterministic, then explicitly request `main` for
+# the clone the arm runs against.
+set +e
+SHALLOW_DEFAULT_HEAD_ERR="$(git -C "$TMPROOT/remote.git" symbolic-ref HEAD refs/heads/unborn-default 2>&1)"
+SHALLOW_DEFAULT_HEAD_RC=$?
+set -e
+if [ "$SHALLOW_DEFAULT_HEAD_RC" -ne 0 ]; then
+  fail "arm R5 setup: could not advertise an unborn default branch (rc=$SHALLOW_DEFAULT_HEAD_RC): $SHALLOW_DEFAULT_HEAD_ERR"
+fi
+rm -rf "$SHALLOW_PROBE"
+set +e
+SHALLOW_PROBE_ERR="$(git -c protocol.file.allow=always clone -q --depth=1 \
+  "file://$TMPROOT/remote.git" "$SHALLOW_PROBE" 2>&1)"
+SHALLOW_PROBE_RC=$?
+set -e
+if [ "$SHALLOW_PROBE_RC" -eq 0 ] \
+   && [ ! -f "$SHALLOW_PROBE/scripts/check-release-state-views.sh" ]; then
+  pass "arm R5 setup: a branchless shallow clone reproduces the missing scripts/ failure"
+else
+  fail "arm R5 setup: expected the branchless shallow-clone probe to lack scripts/ (rc=$SHALLOW_PROBE_RC): $SHALLOW_PROBE_ERR"
+fi
+
+set +e
+SHALLOW_CLONE_ERR="$(git -c protocol.file.allow=always clone -q --depth=1 --branch main \
+  "file://$TMPROOT/remote.git" "$SHALLOW" 2>&1)"
+SHALLOW_CLONE_RC=$?
+set -e
+if [ "$SHALLOW_CLONE_RC" -ne 0 ]; then
+  fail "arm R5 setup: could not build the shallow fixture (rc=$SHALLOW_CLONE_RC): $SHALLOW_CLONE_ERR"
+elif [ ! -f "$SHALLOW/scripts/check-release-state-views.sh" ]; then
+  fail "arm R5 setup: shallow main checkout lacks scripts/check-release-state-views.sh: $SHALLOW_CLONE_ERR"
+else
+  set +e
+  SHALLOW_GATE_COPY_ERR="$({ cp "$GATE" "$SHALLOW/scripts/check-release-state-views.sh" \
+    && chmod +x "$SHALLOW/scripts/check-release-state-views.sh"; } 2>&1)"
+  SHALLOW_GATE_COPY_RC=$?
+  set -e
+  if [ "$SHALLOW_GATE_COPY_RC" -ne 0 ]; then
+    fail "arm R5 setup: could not install the gate in the shallow fixture (rc=$SHALLOW_GATE_COPY_RC): $SHALLOW_GATE_COPY_ERR"
+  fi
+fi
+SHALLOW_IS_SHALLOW=""
+SHALLOW_IS_SHALLOW_RC=1
+if [ -d "$SHALLOW/.git" ]; then
+  set +e
+  SHALLOW_IS_SHALLOW="$(git -C "$SHALLOW" rev-parse --is-shallow-repository 2>/dev/null)"
+  SHALLOW_IS_SHALLOW_RC=$?
+  set -e
+fi
+if [ "$SHALLOW_IS_SHALLOW_RC" -eq 0 ] && [ "$SHALLOW_IS_SHALLOW" = "true" ]; then
+  pass "arm R5 setup: the fixture clone really is shallow"
+else
+  fail "arm R5 setup: clone is not shallow, the arm would prove nothing"
+fi
+
+# Make a landed SHA unresolvable in the shallow clone the same way CI does: the
+# state file names commits the depth=1 clone never fetched.
+if [ -x "$SHALLOW/scripts/check-release-state-views.sh" ]; then
+  set +e
+  SHALLOW_OUT="$(cd "$SHALLOW" && ./scripts/check-release-state-views.sh 2>&1)"
+  SHALLOW_RC=$?
+  set -e
+
+  if [ "$SHALLOW_RC" -eq 0 ]; then
+    pass "arm R5: a shallow clone does not hard-fail the landing claim"
+  else
+    fail "arm R5 (shallow must not hard-fail): rc=$SHALLOW_RC out=$SHALLOW_OUT"
+  fi
+
+  # Assert on the VERDICT LINE, not on one of its two possible reasons. In a
+  # shallow clone the absent SHA reports as "not a commit in this repository"
+  # rather than "not reachable from origin/main", so grepping the latter alone
+  # passes whether or not the fix is present — a non-discriminating arm.
+  if printf '%s' "$SHALLOW_OUT" | grep -qE 'claims [0-9]+ slice\(s\) LANDED'; then
+    fail "arm R5: shallow clone emitted a FALSE unpushed verdict: $SHALLOW_OUT"
+  else
+    pass "arm R5: shallow clone emits no unpushed verdict at all"
+  fi
+else
+  fail "arm R5: gate was not runnable after shallow-fixture setup; see prior R5 setup failures"
+fi
+
+# --- Arm R6: every live release owns its plan AND board next-state pointer ---
+# A nonterminal release has two commission surfaces: the plan's mandate and the
+# STATUS board's current-state row.  Both must be rendered from `next_slice`.
+# Naming only the plan leaves the board free to keep commissioning a landed
+# slice, which is the same stale-pointer defect on a second surface.
+set +e
+LIVE_POINTER_ERRORS="$(python3 - "$REPO_ROOT" <<'PY'
+import glob
+import json
+import os
+import sys
+
+root = sys.argv[1]
+errors = []
+for state_path in sorted(glob.glob(os.path.join(root, "dev/plans/release-state-*.json"))):
+    with open(state_path, encoding="utf-8") as handle:
+        state = json.load(handle)
+    next_slice = state.get("next_slice")
+    if next_slice is None:
+        continue
+    views = {view.get("id"): view.get("file") for view in state.get("generated_views", [])}
+    remaining = state.get("remaining_ladder")
+    if not isinstance(remaining, list):
+        errors.append(f"{os.path.basename(state_path)}: remaining_ladder must be a list")
+        continue
+    if not remaining:
+        if next_slice is not None:
+            errors.append(f"{os.path.basename(state_path)}: terminal ladder requires next_slice null")
+        continue
+    if next_slice != remaining[0]:
+        errors.append(
+            f"{os.path.basename(state_path)}: remaining_ladder starts at {remaining[0]}, not next_slice {next_slice}"
+        )
+        continue
+    for view_id, document_key in (("plan-immediate-next", "plan"), ("status-current-state", "board"), ("status-next-action", "board")):
+        document = state.get(document_key, "")
+        if views.get(view_id) != document:
+            errors.append(
+                f"{os.path.basename(state_path)}: next_slice {next_slice} requires {view_id} for {document}"
+            )
+            continue
+        marker = f"BEGIN GENERATED release-state:{state['release']}:{view_id}"
+        document_path = os.path.join(root, document)
+        if not os.path.isfile(document_path) or marker not in open(document_path, encoding="utf-8").read():
+            errors.append(f"{os.path.basename(state_path)}: {view_id} marker missing from {document}")
+if errors:
+    print("\n".join(errors))
+    sys.exit(1)
+PY
+)"
+LIVE_POINTER_RC=$?
+set -e
+if [ "$LIVE_POINTER_RC" -eq 0 ]; then
+  pass "real repo — every nonterminal release generates both its plan and STATUS next-state pointers"
+else
+  fail "arm R6 (all-live current-state pointers): rc=$LIVE_POINTER_RC errors=$LIVE_POINTER_ERRORS"
+fi
+
+# --- Arm R7: terminalness is derived from the remaining ladder, not asserted ---
+setup_fixture
+perl -0777 -pi -e 's/"next_slice": 10/"next_slice": null/' \
+  "$FIX/dev/plans/release-state-9.9.9.json"
+run_gate
+if [ "$RC" -ne 0 ] && grep -q 'remaining_ladder' <<<"$OUT" \
+   && grep -q 'next_slice' <<<"$OUT"; then
+  pass "remaining ladder with null next_slice HARD-fails as malformed state"
+else
+  fail "arm R7 (malformed terminal state): rc=$RC out=$OUT"
+fi
+
+# The inverse is equally dangerous: a completed ladder carrying a numeric next
+# slice would fabricate work for the next commission.
+setup_fixture
+python3 - "$FIX/dev/plans/release-state-9.9.9.json" <<'PY'
+import json, sys
+p = sys.argv[1]
+s = json.load(open(p))
+s["remaining_ladder"] = []
+json.dump(s, open(p, "w"), indent=2)
+PY
+run_gate
+if [ "$RC" -ne 0 ] && grep -q 'remaining_ladder' <<<"$OUT" \
+   && grep -q 'next_slice' <<<"$OUT"; then
+  pass "empty remaining ladder with numeric next_slice HARD-fails as malformed state"
+else
+  fail "arm R8 (fabricated next slice): rc=$RC out=$OUT"
+fi
+
+# A slice cannot be both landed and remaining. Keeping it in both arrays renders
+# a self-contradictory board: "LANDED" and still awaiting the same slice.
+setup_fixture
+python3 - "$FIX/dev/plans/release-state-9.9.9.json" <<'PY'
+import json, sys
+p = sys.argv[1]
+s = json.load(open(p))
+s["remaining_ladder"] = [0, 10, 20, 30, 40]
+s["next_slice"] = 0
+json.dump(s, open(p, "w"), indent=2)
+PY
+run_gate
+if [ "$RC" -ne 0 ] && grep -q 'landed' <<<"$OUT" \
+   && grep -q 'remaining' <<<"$OUT"; then
+  pass "landed slices cannot remain in the remaining ladder"
+else
+  fail "arm R9 (landed/remaining overlap): rc=$RC out=$OUT"
 fi
 
 if [ "$FAILED" -gt 0 ]; then

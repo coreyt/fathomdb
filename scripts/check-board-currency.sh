@@ -147,7 +147,10 @@ _CBC_LIB_DIR="$_CBC_SCRIPT_DIR/lib"
 # shellcheck source=lib/board-closed.sh
 . "$_CBC_LIB_DIR/board-closed.sh"
 
-cd "$(git rev-parse --show-toplevel)"
+# `git rev-parse` failing here used to degrade to `cd ""` — a bash no-op that
+# leaves the script running in an arbitrary cwd. Bind and check it instead.
+_repo_toplevel="$(git rev-parse --show-toplevel)" || exit 1
+cd "$_repo_toplevel" || exit 1
 
 TIP="HEAD"
 BOARDS_DIR="dev/plans/runs"
@@ -663,7 +666,7 @@ done
 # the banner predicate when no conforming resolver tuple exists.
 CURRENT_BOARD=""
 CURRENT_STATE=""
-if [ "$BOARDS_DIR" = "dev/plans/runs" ] && CURRENT="$($_CBC_SCRIPT_DIR/release-current.py 2>/dev/null)"; then
+if [ "$BOARDS_DIR" = "dev/plans/runs" ] && CURRENT="$("$_CBC_SCRIPT_DIR/release-current.py" 2>/dev/null)"; then
   IFS=$'\t' read -r _CURRENT_VER CURRENT_BOARD CURRENT_STATE <<<"$CURRENT"
   if [ -n "$CURRENT_BOARD" ]; then
     FILTERED_BOARDS=("$CURRENT_BOARD")

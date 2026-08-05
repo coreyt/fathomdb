@@ -1,0 +1,16 @@
+{
+  "schema_version": 2,
+  "advisory_snapshot": {
+    "source": "GitHub Advisory Database",
+    "retrieved_at": "2026-08-04",
+    "path": "scripts/pinned-override-advisories.json",
+    "sha256": "0aee0fc7be3dceb63bcd5abcb4877eaac256a03ca9511b37448f235a1a3c1f97",
+    "provenance": "Human-reviewed, minimal npm advisory snapshot for governed root overrides. The immutable SHA-256 above binds this record to the separately checked-in advisory content, so verify is deterministic and network-free; refresh both deliberately when an override or advisory changes."
+  },
+  "scope": {
+    "npm": "All root package.json overrides are governed. Each must have a matching npm_overrides record with a rationale and a complete per-pin advisory_ids mapping. R2 deliberately fails closed for any live override: npm's lockfile records the override result, not a mechanically reproducible no-override resolution.",
+    "cargo": "Cargo [patch], [replace], and git dependencies are governed override mechanisms. No such pins exist today; their appearance hard-fails until this record and checker gain an explicit advisory/rationale entry.",
+    "governed_commit_pins": "scripts/governed-surface-pin.json pins repository contract content, not an external dependency version. Its commit/hash integrity is enforced by scripts/check-governed-surface-pin.sh; it has no package-advisory semantics and is explicitly not reinterpreted here."
+  },
+  "npm_overrides": []
+}

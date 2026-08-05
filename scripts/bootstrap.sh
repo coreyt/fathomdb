@@ -2,7 +2,10 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$(git rev-parse --show-toplevel)"
+# `git rev-parse` failing here used to degrade to `cd ""` — a bash no-op that
+# leaves the script running in an arbitrary cwd. Bind and check it instead.
+_repo_toplevel="$(git rev-parse --show-toplevel)" || exit 1
+cd "$_repo_toplevel" || exit 1
 # shellcheck source=lib/actionlint-version.sh
 . "$SCRIPT_DIR/lib/actionlint-version.sh"
 
@@ -89,15 +92,38 @@ if [ "$actionlint_version" != "$ACTIONLINT_VERSION" ]; then
   echo "Installing actionlint v$ACTIONLINT_VERSION via go install..."
   GO111MODULE=on go install "github.com/rhysd/actionlint/cmd/actionlint@v$ACTIONLINT_VERSION"
   actionlint_bin="$(go env GOPATH)/bin/actionlint"
-  if [ ! -x "$actionlint_bin" ] || [ "$(read_actionlint_version "$actionlint_bin")" != "$ACTIONLINT_VERSION" ]; then
+  installed_actionlint_version=""
+  if [ -x "$actionlint_bin" ]; then
+    installed_actionlint_version="$(read_actionlint_version "$actionlint_bin")"
+  fi
+  if [ "$installed_actionlint_version" != "$ACTIONLINT_VERSION" ]; then
     echo "actionlint v$ACTIONLINT_VERSION installation did not produce the required binary" >&2
     exit 1
   fi
   echo "actionlint v$ACTIONLINT_VERSION is installed at $actionlint_bin"
 fi
 
+# ShellCheck — the shell linter. Pinned for the same reason actionlint and ruff
+# are: shellcheck's finding set changes between releases, so an unpinned linter
+# silently redefines what "green" means.
+#
+# The installer itself lives in scripts/install-shellcheck.sh — ONE file, so
+# that the 0.8.21 Slice 35 `shell-lint` CI job can install the exact same pinned
+# linter WITHOUT paying for the rest of this bootstrap (rust, node, the python
+# venv, `cargo install lychee`), and so a pin bump cannot leave that job and this
+# script on different linters. That file also owns the "the runner image ships
+# its own shellcheck" handling and persists its directory to $GITHUB_PATH.
+#
+# ⛔ NO SILENT SKIP. install-shellcheck.sh exits non-zero on every failure path,
+# and `set -e` here propagates it. A bootstrap that "succeeds" without the
+# linter produces a lint run that cannot fail, which is the TC-37 vacuous-green
+# trap that hid a red `main` for three weeks.
+bash "$SCRIPT_DIR/install-shellcheck.sh"
+
 # GitHub Actions applies GITHUB_PATH only to later steps. Persist the resolved
-# directory so `agent-verify` can invoke the exact bootstrap-installed binary.
+# actionlint directory so `agent-verify` can invoke the exact bootstrap-installed
+# binary. (install-shellcheck.sh persists shellcheck's own directory.)
 if [ -n "${GITHUB_PATH:-}" ]; then
-  printf '%s\n' "$(dirname "$actionlint_bin")" >>"$GITHUB_PATH"
+  actionlint_dir="$(dirname "$actionlint_bin")"
+  printf '%s\n' "$actionlint_dir" >>"$GITHUB_PATH"
 fi
