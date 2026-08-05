@@ -219,11 +219,10 @@ retained in place; current indexes must identify current authority.
 
 ## Release gate
 
-All planned implementation slices are landed. The remaining work is the
-versioned registry-release gate authorized by HITL ruling `seq-243`.
+All planned implementation slices are landed. The registry-release gate
+authorized by HITL ruling `seq-243` completed with `v0.8.21` published.
 
 ## Immediate next slice
 
-No implementation slice remains. The immediate release action is to merge the
-0.8.21 registry-promotion change, pass GitHub preflight and the release dry
-run, then publish the immutable `v0.8.21` tag under the HITL authorization.
+No implementation slice remains. The release is complete; any further work
+requires a separately commissioned follow-on plan.

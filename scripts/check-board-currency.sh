@@ -668,6 +668,9 @@ CURRENT_BOARD=""
 CURRENT_STATE=""
 if [ "$BOARDS_DIR" = "dev/plans/runs" ] && CURRENT="$("$_CBC_SCRIPT_DIR/release-current.py" 2>/dev/null)"; then
   IFS=$'\t' read -r _CURRENT_VER CURRENT_BOARD CURRENT_STATE <<<"$CURRENT"
+  # An empty, successful resolver result is the valid terminal state: every
+  # tracked release is published, so no retained historical board is live.
+  FILTERED_BOARDS=()
   if [ -n "$CURRENT_BOARD" ]; then
     FILTERED_BOARDS=("$CURRENT_BOARD")
   fi

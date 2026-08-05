@@ -37,11 +37,16 @@ for triple, entry in triples.items():
             raise SystemExit(f'FAIL platform-capabilities: package metadata disagrees for {triple}')
 
 published = [entry for entry in platforms if entry['status'] == 'published']
-if [entry['triple'] for entry in published] != ['linux-x64-gnu']:
-    raise SystemExit('FAIL platform-capabilities: public docs currently support exactly linux-x64-gnu')
+if [entry['triple'] for entry in published] != ['linux-x64-gnu', 'linux-arm64-gnu']:
+    raise SystemExit(
+        'FAIL platform-capabilities: public docs currently support exactly '
+        'linux-x64-gnu and linux-arm64-gnu'
+    )
 for path in ('README.md', 'docs/compatibility/index.md', 'docs/install/python.md', 'docs/install/typescript.md'):
     text = (root / path).read_text()
     if 'Linux x86_64' not in text and 'x86_64-unknown-linux-gnu' not in text:
         raise SystemExit(f'FAIL platform-capabilities: {path} lacks the published-platform boundary')
+    if 'Linux AArch64' not in text and 'aarch64-unknown-linux-gnu' not in text:
+        raise SystemExit(f'FAIL platform-capabilities: {path} lacks the published ARM64-platform boundary')
 print(f'ok    platform-capabilities: {len(triples)} loader triples, {len(published)} published')
 PY

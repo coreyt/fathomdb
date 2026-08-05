@@ -1,6 +1,14 @@
 {
   "release": "0.8.21",
   "release_kind": "odd, registry publish by HITL exception (seq-243)",
+  "published": {
+    "tag": "v0.8.21",
+    "tag_commit": "6f4b6cad782ade8283a8b76155e9bf5d2bb2806b",
+    "published_on": "2026-08-05",
+    "npm_dist_tag": "next",
+    "native_artifact_scope": "Linux x86_64/glibc and AArch64/glibc",
+    "evidence": "Release workflow 31033732068 completed after an idempotent failed-job recovery: registry smokes passed for crates CLI, PyPI wheel, npm package, and AArch64 PyPI wheel. An independent installed-PyPI-wheel open/write/search/close/exit smoke also passed."
+  },
   "board": "dev/plans/runs/STATUS-0.8.21.md",
   "plan": "dev/plans/plan-0.8.21.md",
   "master": "dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md",

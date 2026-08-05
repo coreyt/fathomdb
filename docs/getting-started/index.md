@@ -1,8 +1,8 @@
 # Getting Started
 
-> **Published release.** **v0.8.20 is published** to crates.io / PyPI /
-> npm. Native Python and npm artifacts currently cover Linux x86_64/glibc
-> only, and npm installs use its `next` dist-tag. FathomDB is pre-1.0 and
+> **Published release.** **v0.8.21 is published** to crates.io / PyPI /
+> npm. Native Python and npm artifacts cover Linux x86_64/glibc and Linux
+> AArch64/glibc, and npm installs use its `next` dist-tag. FathomDB is pre-1.0 and
 > the surface is **beta**. See the
 > [CHANGELOG](https://github.com/coreyt/fathomdb/blob/main/CHANGELOG.md)
 > for what changed since 0.8.9.
@@ -15,7 +15,7 @@
 - [Install — TypeScript / Node.js](../install/typescript.md)
 - [Install — Rust](../install/rust.md)
 
-## What ships in 0.8.20
+## What ships in 0.8.21
 
 The governed SDK surface (identical names in Python, TypeScript and
 Rust, in each language's idiomatic spelling — pinned by
@@ -42,7 +42,7 @@ Rust, in each language's idiomatic spelling — pinned by
   `fathomdb recover --accept-data-loss` (truncate-wal, rebuild-vec0,
   rebuild-projections, excise-source, excise-record).
 - Local-first storage on SQLite (FTS5 + `sqlite-vec`), on-disk schema
-  version **24**.
+  version **25**.
 - Two-axis versioning: workspace lockstep across the
   runtime/binding/CLI crates and the independently versioned
   `fathomdb-embedder-api` trait crate.

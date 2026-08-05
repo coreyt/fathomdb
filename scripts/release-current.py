@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""Resolve the one tracked, non-CLOSED FathomDB release.
+"""Resolve the one tracked, active FathomDB release.
 
 The release state is deliberately derived from tracked state/board pairs, never
 from a worktree scan: linked worktrees and untracked scratch documents must not
 change the release of record.  On success stdout is a tab-separated
-``release, board, state`` tuple, suitable for small shell consumers.
+``release, board, state`` tuple, suitable for small shell consumers. When every
+tracked release is published, success has empty stdout: the schedule is valid
+but has no active release to commission.
 """
 
 from __future__ import annotations
@@ -94,6 +96,8 @@ def main() -> int:
         for release in sorted(board_by_release)
         if not closed(board_by_release[release]) and not state_by_release[release][1]
     ]
+    if not live and state_by_release and all(published for _, published in state_by_release.values()):
+        return 0
     if len(live) != 1:
         names = ", ".join(release for release, _, _ in live) or "none"
         print(

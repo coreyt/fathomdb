@@ -1,8 +1,7 @@
 # Compatibility
 
 Supported platforms, toolchains, and version-alignment policy for the
-**0.8.21 release candidate**. The current published release is
-**0.8.20**.
+published **0.8.21** release.
 
 > **Pre-1.0 = beta.** FathomDB is on a pre-1.0 line. The surface may
 > change between micro releases, and 0.8.21 carries breaking changes
@@ -25,22 +24,22 @@ toolchain (which bundles npm **11.12.1**).
 Rust **1.95.0**. This is the declared MSRV and the exact compiler used by CI
 and release jobs.
 
-## Prebuilt artifacts — 0.8.20 Linux x86_64 published; 0.8.21 AArch64 candidate
+## Prebuilt artifacts — Linux x86_64 and AArch64 published
 
-⚠ **The published 0.8.20 wheel and npm platform binaries are built for Linux
-`x86_64-unknown-linux-gnu` glibc only.** The 0.8.21 candidate's AArch64 route
-is release-ready but is not yet a published artifact. Do not expect the published
-npm package to install on macOS, Windows, Linux arm64, or Linux musl.
+⚠ **The published 0.8.21 wheel and npm platform binaries support Linux
+`x86_64-unknown-linux-gnu` and `aarch64-unknown-linux-gnu` glibc.** Linux
+aarch64 is published for Python and npm. Do not expect the published npm
+package to install on macOS, Windows, or Linux musl.
 
 | OS      | Architecture                | Published prebuilt? |
 | ------- | --------------------------- | ------------------- |
 | Linux   | `x86_64-unknown-linux-gnu`  | **yes** (manylinux 2_28) |
-| Linux   | `aarch64-unknown-linux-gnu` | no — 0.8.21 candidate is release-ready |
+| Linux   | `aarch64-unknown-linux-gnu` | **yes** (manylinux 2_28) |
 | macOS   | `x86_64-apple-darwin`       | no — unsupported published artifact |
 | macOS   | `aarch64-apple-darwin`      | no — unsupported published artifact |
 | Windows | `x86_64-pc-windows-msvc`    | no — unsupported published artifact |
 
-Platforms outside the one published Linux x86_64/glibc artifact are unsupported for the
+Platforms outside the two published Linux glibc artifacts are unsupported for the
 published Python and npm packages in this release.
 
 ## SQLite + sqlite-vec

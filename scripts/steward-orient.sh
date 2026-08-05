@@ -281,6 +281,8 @@ if [ ! -x "$RESOLVER" ]; then
 elif ! CURRENT="$($RESOLVER)"; then
   note_empty "current release (release-current resolver rejected tracked release metadata)"
   add "RELEASE (no authoritative current release)"
+elif [ -z "$CURRENT" ]; then
+  add "RELEASE (all tracked releases are published; no active release)"
 else
   IFS=$'\t' read -r VER BOARD STATE <<<"$CURRENT"
   if [ -z "$VER" ] || [ -z "$BOARD" ] || [ -z "$STATE" ]; then
