@@ -3,7 +3,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { Engine } from "../src/index.js";
+import { Engine, read } from "../src/index.js";
 import { freshDbPath } from "./helpers.js";
 
 test("nested source type-collapsed equality and projected search use a real database", async () => {
@@ -18,6 +18,9 @@ test("nested source type-collapsed equality and projected search use a real data
         source: ["attributes", "core:value", "value"],
       },
     ]);
+    const [declared] = await read.projections(engine);
+    assert.deepEqual(declared.source, ["attributes", "core:value", "value"]);
+    assert.equal((await engine.configureProjections([declared])).unchanged, true);
     await engine.write([
       {
         kind: "doc",

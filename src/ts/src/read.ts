@@ -361,6 +361,7 @@ export const read = {
       ftsTokenizer: s.ftsTokenizer ?? null,
       vector: s.vector,
       vectorEmbedder: s.vectorEmbedder ?? null,
+      source: s.source ?? undefined,
       // 0.8.20 Slice 20 (R-20-DR) — engine-set readiness read metadata
       // ("ready"/"embedding"; null when there is no vector sub-object).
       vectorDenseReadiness: (s.vectorDenseReadiness ?? null) as DenseReadiness | null,

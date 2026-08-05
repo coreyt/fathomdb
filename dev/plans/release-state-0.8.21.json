@@ -4,7 +4,7 @@
   "board": "dev/plans/runs/STATUS-0.8.21.md",
   "plan": "dev/plans/plan-0.8.21.md",
   "master": "dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md",
-  "schema_version": 24,
+  "schema_version": 25,
   "schema_version_source": "pub const SCHEMA_VERSION in src/rust/crates/fathomdb-schema/src/lib.rs",
   "ladder": [
     {"slice": 0, "short": "FOUNDATION", "title": "state, documentation, toolchain, platform-manifest, and tracking design", "depends_on": [], "status": "LANDED", "sha": "2ea2c884", "merge_subject": "0.8.21 foundation and tracking authority"},
