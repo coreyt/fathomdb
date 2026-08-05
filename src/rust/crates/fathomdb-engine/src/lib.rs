@@ -671,6 +671,17 @@ impl std::fmt::Debug for ReaderWorkerPool {
 /// returned through a fresh oneshot channel so requests cannot be
 /// routed to or duplicated across workers.
 enum ReaderRequest {
+    /// Slice 60 — property-FTS search stays on a reader-owned connection, never
+    /// the writer connection. It shares the snapshot-local filter validation of
+    /// the hybrid search path.
+    SearchProjectedText {
+        query: String,
+        name: String,
+        filter: Option<Box<SearchFilter>>,
+        limit: usize,
+        view: ReadView,
+        respond: SyncSender<ProjectedTextReaderResponse>,
+    },
     Search {
         compiled: fathomdb_query::CompiledQuery,
         /// Un-centered f32 query vector serialized for `vec_f32`. Phase 2
@@ -848,6 +859,8 @@ type ReaderResponse = Result<
     (u64, Option<SoftFallback>, Vec<SearchHit>, GraphFrontierStats, Option<Explanation>),
     SearchReaderError,
 >;
+
+type ProjectedTextReaderResponse = Result<SearchResult, SearchReaderError>;
 
 /// 0.8.20 keystone closeout fix-3 (codex §9 [P2], TOCTOU) — the error a Search
 /// reader worker can return. Two arms:
@@ -1069,6 +1082,17 @@ fn reader_worker_loop(
     while let Ok(request) = rx.recv() {
         match request {
             ReaderRequest::Shutdown => break,
+            ReaderRequest::SearchProjectedText { query, name, filter, limit, view, respond } => {
+                let result = read_projected_text_in_tx(
+                    &mut connection,
+                    &query,
+                    &name,
+                    filter.as_deref(),
+                    limit,
+                    view,
+                );
+                let _ = respond.send(result);
+            }
             ReaderRequest::Search {
                 compiled,
                 query_vector,
@@ -6396,94 +6420,34 @@ impl Engine {
             return Err(EngineError::WriteValidation);
         }
 
-        let compiled = compile_text_query(query);
         let limit = self
             .projection_runtime
             .shared
             .search_limit_override
             .load(Ordering::SeqCst)
             .max(SEARCH_RERANK_LIMIT);
-        let frozen = view.freeze();
-        let mut connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
-        let connection = connection.as_mut().ok_or(EngineError::Closing)?;
-        let tx = connection
-            .transaction_with_behavior(rusqlite::TransactionBehavior::Deferred)
-            .map_err(|_| EngineError::Storage)?;
-        let registry = load_projection_registry(&tx).map_err(|_| EngineError::Storage)?;
-        let declared = registry.get(name).ok_or_else(|| EngineError::InvalidFilter {
-            reason: format!("projected text field {name:?} is not declared"),
-        })?;
-        if !declared.wants_property_fts() {
-            return Err(EngineError::InvalidFilter {
-                reason: format!(
-                    "projected text field {name:?} is not a declared `searchable` projection with property FTS"
-                ),
-            });
+        let (response_tx, response_rx) = mpsc::sync_channel(1);
+        let request = ReaderRequest::SearchProjectedText {
+            query: query.to_string(),
+            name: name.to_string(),
+            filter: filter.map(Box::new),
+            limit,
+            view: *view,
+            respond: response_tx,
+        };
+        if self.reader_pool.dispatch(request).is_err() {
+            return Err(EngineError::Closing);
         }
-        if let Some(filter) = filter.as_ref() {
-            match validate_filter_attributes_on_snapshot(&tx, filter) {
-                Ok(()) => {}
-                Err(SearchReaderError::InvalidFilter(reason)) => {
-                    return Err(EngineError::InvalidFilter { reason });
-                }
-                Err(SearchReaderError::Sqlite(_)) => return Err(EngineError::Storage),
+        match response_rx.recv().map_err(|_| EngineError::Storage)? {
+            Ok(result) => Ok(result),
+            Err(SearchReaderError::InvalidFilter(reason)) => {
+                Err(EngineError::InvalidFilter { reason })
+            }
+            Err(SearchReaderError::Sqlite(err)) => {
+                self.emit_sqlite_internal_error(&err);
+                Err(EngineError::Storage)
             }
         }
-
-        let validity = frozen.validity_sql("n", 3);
-        let sql = format!(
-            "SELECT p.write_cursor, bm25(property_search_index), n.kind, n.body, n.logical_id, n.source_id
-             FROM property_search_index p
-             JOIN canonical_nodes n ON n.write_cursor = p.write_cursor
-             WHERE p.attr_name = ?1 AND property_search_index MATCH ?2
-               AND n.superseded_at IS NULL AND n.state = 'active'{validity}
-             ORDER BY bm25(property_search_index) ASC, p.write_cursor ASC"
-        );
-        let mut params = vec![
-            rusqlite::types::Value::Text(name.to_string()),
-            rusqlite::types::Value::Text(compiled.match_expression),
-        ];
-        if let Some(now) = frozen.now_param() {
-            params.push(rusqlite::types::Value::Integer(now));
-        }
-        let mut stmt = tx.prepare(&sql).map_err(|_| EngineError::Storage)?;
-        let rows = stmt
-            .query_map(rusqlite::params_from_iter(params.iter()), |row| {
-                Ok((
-                    row.get::<_, i64>(0)?,
-                    row.get::<_, f64>(1)?,
-                    row.get::<_, String>(2)?,
-                    row.get::<_, String>(3)?,
-                    row.get::<_, Option<String>>(4)?,
-                    row.get::<_, Option<String>>(5)?,
-                ))
-            })
-            .map_err(|_| EngineError::Storage)?;
-        let mut results = Vec::new();
-        for row in rows {
-            let (cursor, bm25, kind, body, logical_id, source_id) =
-                row.map_err(|_| EngineError::Storage)?;
-            if !text_hit_passes_filter(&tx, cursor as u64, &kind, filter.as_ref())
-                .map_err(|_| EngineError::Storage)?
-            {
-                continue;
-            }
-            results.push(SearchHit {
-                id: derive_stable_id(logical_id.as_deref(), &body),
-                write_cursor: cursor as u64,
-                kind,
-                body,
-                score: -bm25,
-                branch: SoftFallbackBranch::Text,
-                source_id,
-                ce_score: None,
-            });
-            if results.len() >= limit {
-                break;
-            }
-        }
-        let projection_cursor = load_projection_cursor(&tx).map_err(|_| EngineError::Storage)?;
-        Ok(SearchResult { projection_cursor, soft_fallback: None, results, explanation: None })
     }
 
     /// 0.8.18 Slice 5 (R-VEQ-6) — degraded-open observability accessor. `true` iff
@@ -8587,6 +8551,9 @@ impl Engine {
             .map_err(|_| EngineError::Storage)?;
             if matches!(to_state, LifecycleState::Active) {
                 project_node_attributes(&tx, cursor, body).map_err(|_| EngineError::Storage)?;
+                if let Ok(dimension) = default_profile_dimension(&tx) {
+                    refresh_vector_attr_values(&tx, dimension).map_err(|_| EngineError::Storage)?;
+                }
             }
         }
         tx.commit().map_err(|_| EngineError::Storage)?;
@@ -11109,6 +11076,79 @@ fn edge_fts_hit_passes_filter(
 }
 
 /// Read projection cursor and matching body rows inside one read tx.
+fn read_projected_text_in_tx(
+    reader: &mut Connection,
+    query: &str,
+    name: &str,
+    filter: Option<&SearchFilter>,
+    limit: usize,
+    view: ReadView,
+) -> ProjectedTextReaderResponse {
+    let compiled = compile_text_query(query);
+    let frozen = view.freeze();
+    let tx = reader.transaction_with_behavior(rusqlite::TransactionBehavior::Deferred)?;
+    let registry = load_projection_registry(&tx)?;
+    let declared = registry.get(name).ok_or_else(|| {
+        SearchReaderError::InvalidFilter(format!("projected text field {name:?} is not declared"))
+    })?;
+    if !declared.wants_property_fts() {
+        return Err(SearchReaderError::InvalidFilter(format!(
+            "projected text field {name:?} is not a declared `searchable` projection with property FTS"
+        )));
+    }
+    if let Some(filter) = filter {
+        validate_filter_attributes_on_snapshot(&tx, filter)?;
+    }
+    let validity = frozen.validity_sql("n", 3);
+    let sql = format!(
+        "SELECT p.write_cursor, bm25(property_search_index), n.kind, n.body, n.logical_id, n.source_id
+         FROM property_search_index p JOIN canonical_nodes n ON n.write_cursor = p.write_cursor
+         WHERE p.attr_name = ?1 AND property_search_index MATCH ?2
+           AND n.superseded_at IS NULL AND n.state = 'active'{validity}
+         ORDER BY bm25(property_search_index) ASC, p.write_cursor ASC"
+    );
+    let mut params = vec![
+        rusqlite::types::Value::Text(name.to_string()),
+        rusqlite::types::Value::Text(compiled.match_expression),
+    ];
+    if let Some(now) = frozen.now_param() {
+        params.push(rusqlite::types::Value::Integer(now));
+    }
+    let mut stmt = tx.prepare(&sql)?;
+    let rows = stmt.query_map(rusqlite::params_from_iter(params.iter()), |row| {
+        Ok((
+            row.get::<_, i64>(0)?,
+            row.get::<_, f64>(1)?,
+            row.get::<_, String>(2)?,
+            row.get::<_, String>(3)?,
+            row.get::<_, Option<String>>(4)?,
+            row.get::<_, Option<String>>(5)?,
+        ))
+    })?;
+    let mut results = Vec::new();
+    for row in rows {
+        let (cursor, bm25, kind, body, logical_id, source_id) = row?;
+        if !text_hit_passes_filter(&tx, cursor as u64, &kind, filter)? {
+            continue;
+        }
+        results.push(SearchHit {
+            id: derive_stable_id(logical_id.as_deref(), &body),
+            write_cursor: cursor as u64,
+            kind,
+            body,
+            score: -bm25,
+            branch: SoftFallbackBranch::Text,
+            source_id,
+            ce_score: None,
+        });
+        if results.len() >= limit {
+            break;
+        }
+    }
+    let projection_cursor = load_projection_cursor(&tx)?;
+    Ok(SearchResult { projection_cursor, soft_fallback: None, results, explanation: None })
+}
+
 // The 8th parameter (`vector_stage_only`) is the additive GA-2 / ◆ B-1
 // measurement seam; the reader-worker call site threads each field through
 // explicitly (mirroring the existing `recency_enabled` plumbing), so a wrapper
@@ -15311,7 +15351,7 @@ fn refresh_vector_attr_values(conn: &Connection, dimension: u32) -> rusqlite::Re
     let desired = desired_vector_attr_columns(conn)?;
     let actual = actual_vector_attr_columns(conn)?;
     if desired != actual {
-        reshape_vector_partition_nondestructive(conn, dimension, &desired, &actual, false)?;
+        reshape_vector_partition_nondestructive(conn, dimension, &desired, &actual, true)?;
     } else if !desired.is_empty() {
         reshape_vector_partition_nondestructive(conn, dimension, &desired, &actual, true)?;
     }

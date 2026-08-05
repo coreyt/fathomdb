@@ -205,8 +205,9 @@ fn source_change_refreshes_existing_vec0_attribute_metadata() {
     engine.drain(10_000).expect("drain");
 
     let new = nested_filterable_vector_spec("priority", &["new"]);
+    let extra = filterable_spec("extra");
     engine
-        .configure_projections(&[new], &["priority".to_string()])
+        .configure_projections(&[new, extra], &["priority".to_string()])
         .expect("drop and redeclare changed source");
 
     let column = attr_col("priority");
