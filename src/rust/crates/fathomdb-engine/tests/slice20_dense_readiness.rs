@@ -24,9 +24,10 @@
 //! `_fathomdb_projection_terminal` / `_fathomdb_vector_rows` / `canonical_nodes`
 //! directly.
 //!
-//! **No schema step.** Readiness is DERIVED from the existing pending-projection
-//! -work predicate (the same one `drain`/`wait_for_idle` use), so `SCHEMA_VERSION`
-//! is unchanged at 24 — asserted below. A stored flag is exactly what could tear.
+//! **No Slice 20 schema step.** Readiness is DERIVED from the existing pending-
+//! projection-work predicate (the same one `drain`/`wait_for_idle` use), so this
+//! feature does not require its own migration. A stored flag is exactly what
+//! could tear; later unrelated migrations do not change that invariant.
 
 use fathomdb_embedder_api::{Embedder, EmbedderError, EmbedderIdentity, Vector};
 use fathomdb_engine::{
@@ -751,16 +752,9 @@ fn readiness_is_not_part_of_the_declaration_reapply_is_a_no_op() {
 
 /// A caller who never declares a vector projection sees IDENTICAL behaviour:
 /// no readiness field is produced anywhere, the same rows are embedded, and no
-/// schema step was taken (readiness is derived, so `SCHEMA_VERSION` is
-/// unchanged at 24).
+/// No Slice 20 schema step was needed (readiness is derived).
 #[test]
 fn default_path_is_unchanged_when_no_vector_projection_is_declared() {
-    assert_eq!(
-        fathomdb_schema::SCHEMA_VERSION,
-        24,
-        "R-20-DR derives readiness and MUST NOT add a schema step"
-    );
-
     let dir = TempDir::new().unwrap();
     let path = db_path(&dir, "readiness_default");
     let opened =

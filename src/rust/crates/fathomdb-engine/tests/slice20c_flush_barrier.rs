@@ -32,9 +32,10 @@
 //! `ready`, which is what a naive test would assert after a drain). The falsifying
 //! oracle is `_fathomdb_vector_rows` + `vector_default` — the vectors at rest.
 //!
-//! **No schema step.** This slice did not change `SCHEMA_VERSION`. Re-enqueueing
-//! embed work inside ONE live database is runtime reconfiguration, not a
-//! cross-version data migration (HITL 2026-07-21, cf. TC-46).
+//! **No Slice 20c schema step.** Re-enqueueing embed work inside ONE live
+//! database is runtime reconfiguration, not a cross-version data migration
+//! (HITL 2026-07-21, cf. TC-46). Later unrelated migrations do not affect that
+//! boundary.
 //!
 //! ## Known: this suite sometimes reports ~30 s wall time (not a flake)
 //!
@@ -299,12 +300,6 @@ fn leaf_rows_of_kind_without_vectors(conn: &rusqlite::Connection, kind: &str) ->
 /// only an operator `rebuild` would ever have created those vectors.
 #[test]
 fn declaring_a_vector_projection_backfills_pre_existing_rows_and_drain_flushes_to_ready() {
-    assert_eq!(
-        fathomdb_schema::SCHEMA_VERSION,
-        24,
-        "Slice 20c re-enqueues within one live DB — no schema step"
-    );
-
     let dir = TempDir::new().unwrap();
     let path = db_path(&dir, "flush_barrier_backfill");
     let embedder = CountingEmbedder::new();
