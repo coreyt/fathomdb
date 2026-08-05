@@ -22,8 +22,8 @@ use std::sync::Arc;
 
 use fathomdb_embedder_api::{Embedder, EmbedderError, EmbedderIdentity, Vector};
 use fathomdb_engine::{
-    vector_phase1_sql_for_test, Engine, InitialState, PreparedWrite, ProjectionRole,
-    ProjectionSpec, ProjectionVector, SearchFilter, SourceId,
+    vector_phase1_sql_for_test, Engine, InitialState, LifecycleState, PreparedWrite,
+    ProjectionRole, ProjectionSpec, ProjectionVector, SearchFilter, SourceId,
 };
 use fathomdb_schema::SQLITE_SUFFIX;
 use rusqlite::Connection;
@@ -216,6 +216,30 @@ fn source_change_refreshes_existing_vec0_attribute_metadata() {
         .query_row(&format!("SELECT {column} FROM vector_default LIMIT 1"), [], |row| row.get(0))
         .expect("read refreshed vec0 metadata");
     assert_eq!(value, "\u{1}fresh", "vec0 metadata must follow the replacement source path");
+}
+
+#[test]
+fn reactivation_refreshes_vec0_metadata_after_a_source_change() {
+    let (_dir, path) = fixture("s60_reactivate_refresh");
+    let opened = open(&path);
+    let engine = &opened.engine;
+    let old = nested_filterable_vector_spec("priority", &["old"]);
+    engine.configure_projections(std::slice::from_ref(&old), &[]).expect("configure old source");
+    engine.write(&[node("N1", r#"{"old":"stale","new":"fresh"}"#)]).expect("write");
+    engine.drain(10_000).expect("drain");
+    engine.transition("N1", LifecycleState::Deleted, None).expect("delete");
+    let new = nested_filterable_vector_spec("priority", &["new"]);
+    engine
+        .configure_projections(&[new], &["priority".to_string()])
+        .expect("replace source while deleted");
+    engine.transition("N1", LifecycleState::Active, None).expect("reactivate");
+
+    let column = attr_col("priority");
+    let conn = Connection::open(&path).expect("open raw");
+    let value: String = conn
+        .query_row(&format!("SELECT {column} FROM vector_default LIMIT 1"), [], |row| row.get(0))
+        .expect("read refreshed vec0 metadata");
+    assert_eq!(value, "\u{1}fresh", "reactivation must refresh vec0 metadata from the new source");
 }
 
 #[test]
