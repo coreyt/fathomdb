@@ -656,9 +656,8 @@ alpha / `pool_n` guards.
 These are ARGUMENTS, not new verbs — the governed command surface
 (`src/conformance/governed-surface-allowlist.json`) is unchanged.
 
-## Nested-source projections (0.8.21 Slice 45)
+## Nested-source projections (0.8.21 Slice 60)
 
-**Status: local implementation, pending separate merge HITL.**
 `ProjectionSpec.source: tuple[str, ...] | None` is a literal canonical-body
 member path; `None` keeps legacy top-level lookup. Missing/null terminals produce
 no row. Object/array terminals reject configuration backfill and writes atomically

@@ -23,7 +23,7 @@ use std::sync::Arc;
 use fathomdb_embedder_api::{Embedder, EmbedderError, EmbedderIdentity, Vector};
 use fathomdb_engine::{
     vector_phase1_sql_for_test, Engine, InitialState, PreparedWrite, ProjectionRole,
-    ProjectionSpec, SearchFilter, SourceId,
+    ProjectionSpec, ProjectionVector, SearchFilter, SourceId,
 };
 use fathomdb_schema::SQLITE_SUFFIX;
 use rusqlite::Connection;
@@ -115,6 +115,19 @@ fn filterable_spec(name: &str) -> ProjectionSpec {
     ProjectionSpec { name: name.to_string(), roles, fts: None, vector: None, source: None }
 }
 
+fn nested_filterable_vector_spec(name: &str, source: &[&str]) -> ProjectionSpec {
+    let mut roles = BTreeSet::new();
+    roles.insert(ProjectionRole::Filterable);
+    roles.insert(ProjectionRole::Searchable);
+    ProjectionSpec {
+        name: name.to_string(),
+        roles,
+        fts: None,
+        vector: Some(ProjectionVector::default()),
+        source: Some(source.iter().map(|segment| (*segment).to_string()).collect()),
+    }
+}
+
 fn table_sql(path: &std::path::Path) -> String {
     let conn = Connection::open(path).expect("raw reopen");
     conn.query_row(
@@ -180,6 +193,29 @@ fn filterable_predicate_compiles_into_prekn_match_clause() {
 // ===========================================================================
 // (2) ALIGNMENT + COHERENCE: reshape preserves rowids + bits; sentinel skips.
 // ===========================================================================
+
+#[test]
+fn source_change_refreshes_existing_vec0_attribute_metadata() {
+    let (_dir, path) = fixture("s60_source_refresh");
+    let opened = open(&path);
+    let engine = &opened.engine;
+    let old = nested_filterable_vector_spec("priority", &["old"]);
+    engine.configure_projections(std::slice::from_ref(&old), &[]).expect("configure old source");
+    engine.write(&[node("N1", r#"{"old":"stale","new":"fresh"}"#)]).expect("write");
+    engine.drain(10_000).expect("drain");
+
+    let new = nested_filterable_vector_spec("priority", &["new"]);
+    engine
+        .configure_projections(&[new], &["priority".to_string()])
+        .expect("drop and redeclare changed source");
+
+    let column = attr_col("priority");
+    let conn = Connection::open(&path).expect("open raw");
+    let value: String = conn
+        .query_row(&format!("SELECT {column} FROM vector_default LIMIT 1"), [], |row| row.get(0))
+        .expect("read refreshed vec0 metadata");
+    assert_eq!(value, "\u{1}fresh", "vec0 metadata must follow the replacement source path");
+}
 
 #[test]
 fn reshape_is_nondestructive_preserves_bits_rowids_and_sentinel() {

@@ -712,9 +712,9 @@ stays engine-internal in 0.8.20 — there is NO Py/TS wire exposure (that is a l
 slice), so `SearchFilterInput` / the Python `SearchFilter` binding input are
 unchanged.
 
-## Nested-source projections (0.8.21 Slice 45)
+## Nested-source projections (0.8.21 Slice 60)
 
-**Status: local implementation, pending separate merge HITL.** `ProjectionSpec`
+`ProjectionSpec`
 adds `source: Option<Vec<String>>`. Omitted preserves direct top-level lookup;
 present paths are literal, safe JSON object-member segments stored durably in
 the registry. Missing/null terminals create no derived row. Object/array

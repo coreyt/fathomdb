@@ -48,6 +48,19 @@ fn node(logical_id: &str, source_id: &str, body: &str) -> fathomdb_engine::Prepa
     }
 }
 
+fn pending_node(logical_id: &str, source_id: &str, body: &str) -> fathomdb_engine::PreparedWrite {
+    fathomdb_engine::PreparedWrite::Node {
+        kind: "doc".to_string(),
+        body: body.to_string(),
+        source_id: SourceId::new(source_id).expect("source id"),
+        logical_id: Some(logical_id.to_string()),
+        state: InitialState::Pending,
+        reason: None,
+        valid_from: None,
+        valid_until: None,
+    }
+}
+
 fn eav_values(path: &Path, name: &str) -> Vec<String> {
     let conn = rusqlite::Connection::open_with_flags(
         path,
@@ -410,6 +423,72 @@ fn projected_text_search_is_field_scoped_filtered_and_text_only() {
         r#"{"body_only":"needle","attributes":{"core:title":{"value":"needle alpha"},"core:status":{"value":"open"}}}"#
     );
     assert_eq!(result.results[0].branch, SoftFallbackBranch::Text);
+}
+
+#[test]
+fn projected_text_search_filters_before_applying_its_result_limit() {
+    let dir = TempDir::new().unwrap();
+    let opened = Engine::open(db_path(&dir, "filtered_limit")).unwrap();
+    let engine = &opened.engine;
+    engine
+        .configure_projections(
+            &[
+                nested_spec(
+                    "title",
+                    &["title"],
+                    &[ProjectionRole::Filterable, ProjectionRole::Searchable],
+                    true,
+                ),
+                nested_spec("state", &["state"], &[ProjectionRole::Filterable], false),
+            ],
+            &[],
+        )
+        .unwrap();
+    let mut writes = Vec::new();
+    for i in 0..11 {
+        writes.push(node(
+            &format!("N{i}"),
+            &format!("slice45:limit:{i}"),
+            &format!(r#"{{"title":"needle","state":"{}"}}"#, if i == 10 { "keep" } else { "drop" }),
+        ));
+    }
+    engine.write(&writes).unwrap();
+    let mut filter = SearchFilter::default();
+    filter.attributes = vec![("state".to_string(), "keep".to_string())];
+    let hits = engine
+        .search_projected_text("needle", "title", Some(filter), &ReadView::default())
+        .unwrap();
+    assert_eq!(hits.results.len(), 1);
+    assert_eq!(hits.results[0].id.value, "N10");
+}
+
+#[test]
+fn promoting_a_preexisting_composite_nested_source_is_rejected() {
+    let dir = TempDir::new().unwrap();
+    let opened = Engine::open(db_path(&dir, "pending_composite")).unwrap();
+    let engine = &opened.engine;
+    engine
+        .write(&[pending_node(
+            "pending",
+            "slice45:pending-composite",
+            r#"{"attributes":{"core:value":{"value":{"not":"scalar"}}}}"#,
+        )])
+        .unwrap();
+    engine
+        .configure_projections(
+            &[nested_spec(
+                "value",
+                &["attributes", "core:value", "value"],
+                &[ProjectionRole::Filterable],
+                false,
+            )],
+            &[],
+        )
+        .unwrap();
+    assert_eq!(
+        engine.transition("pending", LifecycleState::Active, None),
+        Err(EngineError::WriteValidation)
+    );
 }
 
 proptest! {

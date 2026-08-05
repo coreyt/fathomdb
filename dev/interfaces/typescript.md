@@ -695,9 +695,8 @@ enumerate history.
 These are ARGUMENTS, not new verbs — the governed command surface
 (`src/conformance/governed-surface-allowlist.json`) is unchanged.
 
-## Nested-source projections (0.8.21 Slice 45)
+## Nested-source projections (0.8.21 Slice 60)
 
-**Status: local implementation, pending separate merge HITL.**
 `ProjectionSpec.source?: string[] | null` is a literal canonical-body member
 path; omission keeps legacy top-level lookup. Missing/null terminals create no
 row. Object/array terminals reject configuration backfill and writes atomically

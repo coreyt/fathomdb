@@ -6437,8 +6437,7 @@ impl Engine {
              JOIN canonical_nodes n ON n.write_cursor = p.write_cursor
              WHERE p.attr_name = ?1 AND property_search_index MATCH ?2
                AND n.superseded_at IS NULL AND n.state = 'active'{validity}
-             ORDER BY bm25(property_search_index) ASC, p.write_cursor ASC
-             LIMIT {limit}"
+             ORDER BY bm25(property_search_index) ASC, p.write_cursor ASC"
         );
         let mut params = vec![
             rusqlite::types::Value::Text(name.to_string()),
@@ -6479,6 +6478,9 @@ impl Engine {
                 source_id,
                 ce_score: None,
             });
+            if results.len() >= limit {
+                break;
+            }
         }
         let projection_cursor = load_projection_cursor(&tx).map_err(|_| EngineError::Storage)?;
         Ok(SearchResult { projection_cursor, soft_fallback: None, results, explanation: None })
@@ -8540,6 +8542,12 @@ impl Engine {
                 to_state,
                 legal: from_state.legal_next_states(),
             });
+        }
+
+        if matches!(to_state, LifecycleState::Active) {
+            if let Some((_, _, body)) = &current {
+                validate_nested_projection_sources_for_body(&tx, body)?;
+            }
         }
 
         // Admit (promote/undelete) → clear reason; exclude (reject/soft-delete) →
@@ -15292,8 +15300,22 @@ fn reconcile_vector_attr_columns(conn: &Connection, dimension: u32) -> rusqlite:
     if desired == actual {
         return Ok(false);
     }
-    reshape_vector_partition_nondestructive(conn, dimension, &desired, &actual)?;
+    reshape_vector_partition_nondestructive(conn, dimension, &desired, &actual, false)?;
     Ok(true)
+}
+
+/// Rebuild vec0 attribute metadata from the canonical EAV projection while
+/// preserving the existing column set. A changed nested source can leave the
+/// `attr_<hex>` schema untouched while changing every value behind that column.
+fn refresh_vector_attr_values(conn: &Connection, dimension: u32) -> rusqlite::Result<()> {
+    let desired = desired_vector_attr_columns(conn)?;
+    let actual = actual_vector_attr_columns(conn)?;
+    if desired != actual {
+        reshape_vector_partition_nondestructive(conn, dimension, &desired, &actual, false)?;
+    } else if !desired.is_empty() {
+        reshape_vector_partition_nondestructive(conn, dimension, &desired, &actual, true)?;
+    }
+    Ok(())
 }
 
 /// 0.8.20 Slice 15e — the NON-DESTRUCTIVE reshape itself. Stages every live row
@@ -15325,6 +15347,7 @@ fn reshape_vector_partition_nondestructive(
     dimension: u32,
     desired_cols: &[String],
     actual_cols: &[String],
+    refresh_values: bool,
 ) -> rusqlite::Result<()> {
     // Stage: base columns + every ACTUAL attribute column (so no at-rest value is
     // lost, even for a column being dropped).
@@ -15365,7 +15388,7 @@ fn reshape_vector_partition_nondestructive(
     );
     for col in desired_cols {
         insert_cols.push_str(&format!(", {col}"));
-        if actual_cols.iter().any(|a| a == col) {
+        if actual_cols.iter().any(|a| a == col) && !refresh_values {
             // Surviving column — carry its value forward (never NULL: vec0 TEXT
             // metadata is `''`-sentinelled, but COALESCE defends the stage table).
             select_exprs.push_str(&format!(", COALESCE({col}, '')"));
@@ -17455,18 +17478,23 @@ fn validate_nested_projection_sources_for_write(
     conn: &Connection,
     batch: &[PreparedWrite],
 ) -> Result<(), EngineError> {
-    let registry = load_projection_registry(conn).map_err(|_| EngineError::Storage)?;
-    if registry.values().all(|stored| stored.source.is_none()) {
-        return Ok(());
-    }
     for write in batch {
         let PreparedWrite::Node { body, .. } = write else { continue };
-        for (name, stored) in &registry {
-            if nested_projection_terminal_is_composite(conn, body, name, stored)
-                .map_err(|_| EngineError::Storage)?
-            {
-                return Err(EngineError::WriteValidation);
-            }
+        validate_nested_projection_sources_for_body(conn, body)?;
+    }
+    Ok(())
+}
+
+fn validate_nested_projection_sources_for_body(
+    conn: &Connection,
+    body: &str,
+) -> Result<(), EngineError> {
+    let registry = load_projection_registry(conn).map_err(|_| EngineError::Storage)?;
+    for (name, stored) in &registry {
+        if nested_projection_terminal_is_composite(conn, body, name, stored)
+            .map_err(|_| EngineError::Storage)?
+        {
+            return Err(EngineError::WriteValidation);
         }
     }
     Ok(())
@@ -17992,17 +18020,22 @@ fn apply_projection_config(
     // Check the pre-drop registry before inspecting a proposed source's backfill
     // rows; otherwise a composite at that source could mask ProjectionDestructive.
     let pre_drop = load_projection_registry(tx).map_err(|_| EngineError::Storage)?;
+    let mut refresh_vector_attributes = false;
     for spec in specs {
-        if drop.iter().any(|name| name == &spec.name) {
-            continue;
-        }
         let desired = StoredProjection::from_spec(spec);
         if let Some(existing) = pre_drop.get(&spec.name) {
-            if is_destructive_projection_change(existing, &desired) {
+            let replacing = drop.iter().any(|name| name == &spec.name);
+            if !replacing && is_destructive_projection_change(existing, &desired) {
                 return Err(EngineError::ProjectionDestructive {
                     name: spec.name.clone(),
                     delta: describe_projection_delta(existing, &desired),
                 });
+            }
+            if replacing
+                && existing.source != desired.source
+                && desired.roles.contains(&ProjectionRole::Filterable)
+            {
+                refresh_vector_attributes = true;
             }
         }
     }
@@ -18100,7 +18133,11 @@ fn apply_projection_config(
     // no-op (vec0 untouched) and `delta.unchanged` above is unaffected. Skipped
     // when there is no embedder profile (⇒ no `vector_default` to reshape).
     if let Ok(dimension) = default_profile_dimension(tx) {
-        reconcile_vector_attr_columns(tx, dimension).map_err(|_| EngineError::Storage)?;
+        if refresh_vector_attributes {
+            refresh_vector_attr_values(tx, dimension).map_err(|_| EngineError::Storage)?;
+        } else {
+            reconcile_vector_attr_columns(tx, dimension).map_err(|_| EngineError::Storage)?;
+        }
     }
 
     delta.unchanged =
