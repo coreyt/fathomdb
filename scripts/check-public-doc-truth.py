@@ -71,11 +71,11 @@ def has_platform_boundary(text: str) -> bool:
 
 def main() -> None:
     root = repo_root()
-    state = load_json(root, Path("dev/plans/release-state-0.8.20.json"))
+    state = load_json(root, Path("dev/plans/release-state-0.8.21.json"))
     version = state.get("release")
     published = state.get("published")
     if not isinstance(version, str) or not isinstance(published, dict):
-        fail("release-state-0.8.20.json must declare release and published")
+        fail("release-state-0.8.21.json must declare release and published")
     if published.get("tag") != f"v{version}":
         fail("release-state published tag must match its release")
     if published.get("npm_dist_tag") != "next":
@@ -87,8 +87,11 @@ def main() -> None:
         for platform in manifest.get("platforms", [])
         if platform.get("status") == "published"
     ]
-    if published_triples != ["linux-x64-gnu"]:
-        fail(f"manifest must declare only linux-x64-gnu as published, got {published_triples}")
+    if published_triples != ["linux-x64-gnu", "linux-arm64-gnu"]:
+        fail(
+            "manifest must declare the published Linux x64 and ARM64 artifacts, "
+            f"got {published_triples}"
+        )
 
     docs: dict[Path, str] = {}
     for relative in PUBLIC_DOCS:
@@ -116,9 +119,9 @@ def main() -> None:
         r"(?is)\b(?:linux\s+)?(?:aarch64|arm64)(?:-unknown-linux-gnu)?\b"
         r".{0,80}\b(?:is|are|currently|now)\s+(?:published|available|supported)\b"
     )
-    for relative, text in docs.items():
-        if arm64_positive.search(text):
-            fail(f"{relative} advertises aarch64/arm64 as a published native artifact")
+    compatibility = docs[Path("docs/compatibility/index.md")]
+    if not arm64_positive.search(compatibility):
+        fail("docs/compatibility/index.md lacks the published ARM64 native-artifact fact")
 
     ts_install = docs[Path("docs/install/typescript.md")]
     if "npm install fathomdb@next" not in ts_install:
@@ -138,7 +141,7 @@ def main() -> None:
 
     print(
         f"ok    public-doc-truth: {version} published; "
-        f"{published_triples[0]} is the sole published native artifact"
+        f"published native artifacts are {', '.join(published_triples)}"
     )
 
 

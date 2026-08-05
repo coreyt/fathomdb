@@ -4,7 +4,7 @@
   "source_of_truth": "This manifest defines native-package capability, not a promise that an unbuilt artifact is published.",
   "platforms": [
     {"triple": "linux-x64-gnu", "rust_target": "x86_64-unknown-linux-gnu", "status": "published", "npm_package": "fathomdb-linux-x64-gnu", "package_dir": "src/ts/npm/linux-x64-gnu", "python_wheel": "manylinux_2_28_x86_64"},
-    {"triple": "linux-arm64-gnu", "rust_target": "aarch64-unknown-linux-gnu", "status": "release-ready", "npm_package": "fathomdb-linux-arm64-gnu", "package_dir": "src/ts/npm/linux-arm64-gnu", "python_wheel": "manylinux_2_28_aarch64"},
+    {"triple": "linux-arm64-gnu", "rust_target": "aarch64-unknown-linux-gnu", "status": "published", "npm_package": "fathomdb-linux-arm64-gnu", "package_dir": "src/ts/npm/linux-arm64-gnu", "python_wheel": "manylinux_2_28_aarch64"},
     {"triple": "linux-x64-musl", "rust_target": "x86_64-unknown-linux-musl", "status": "planned", "npm_package": "@fathomdb/fathomdb-linux-x64-musl", "package_dir": null, "python_wheel": null},
     {"triple": "linux-arm64-musl", "rust_target": "aarch64-unknown-linux-musl", "status": "planned", "npm_package": "@fathomdb/fathomdb-linux-arm64-musl", "package_dir": null, "python_wheel": null},
     {"triple": "linux-arm-gnueabihf", "rust_target": "armv7-unknown-linux-gnueabihf", "status": "planned", "npm_package": "@fathomdb/fathomdb-linux-arm-gnueabihf", "package_dir": null, "python_wheel": null},

@@ -15,7 +15,7 @@ make_fixture() {
     "$root/docs/install" "$root/docs/compatibility"
   cp "$REPO_ROOT/README.md" "$root/README.md"
   cp "$REPO_ROOT/Cargo.toml" "$root/Cargo.toml"
-  cp "$REPO_ROOT/dev/plans/release-state-0.8.20.json" "$root/dev/plans/"
+  cp "$REPO_ROOT/dev/plans/release-state-0.8.21.json" "$root/dev/plans/"
   cp "$REPO_ROOT/dev/platform-capabilities.json" "$root/dev/"
   cp "$REPO_ROOT/docs/index.md" "$root/docs/"
   cp "$REPO_ROOT/docs/getting-started/index.md" "$root/docs/getting-started/"
@@ -46,15 +46,15 @@ FIXTURE="$TMPROOT/fixture"
 make_fixture "$FIXTURE"
 expect_pass "$FIXTURE" 'baseline current public facts agree with release and platform state'
 
-sed -i 's/v0\.8\.20 is published/v0.8.20 is not yet published/' "$FIXTURE/README.md"
+sed -i 's/v0\.8\.21 is published/v0.8.21 is not yet published/' "$FIXTURE/README.md"
 expect_fail "$FIXTURE" 'rejects an unpublished claim for the published release'
 
 make_fixture "$FIXTURE"
-printf '\nLinux aarch64 is published for npm.\n' >>"$FIXTURE/docs/compatibility/index.md"
-expect_fail "$FIXTURE" 'rejects an aarch64 published-artifact assertion'
+sed -i 's/aarch64 is published/aarch64 is not published/' "$FIXTURE/docs/compatibility/index.md"
+expect_fail "$FIXTURE" 'requires the published aarch64 native-artifact assertion'
 
 make_fixture "$FIXTURE"
-sed -i 's/npm install fathomdb@next/npm install fathomdb@0.8.20/' "$FIXTURE/docs/install/typescript.md"
+sed -i 's/npm install fathomdb@next/npm install fathomdb@0.8.21/' "$FIXTURE/docs/install/typescript.md"
 expect_fail "$FIXTURE" 'requires npm next install guidance'
 
 make_fixture "$FIXTURE"

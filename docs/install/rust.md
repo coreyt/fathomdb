@@ -8,7 +8,7 @@ Two consumption paths for Rust users:
   `fathomdb recover` verbs. Operator-only; does **not**
   ship `search` / `get` / `list` query verbs.
 
-> **0.8.20 is published to crates.io.** FathomDB is pre-1.0 and the surface
+> **0.8.21 is published to crates.io.** FathomDB is pre-1.0 and the surface
 > is **beta**.
 
 ## Requirements
@@ -18,7 +18,8 @@ Two consumption paths for Rust users:
   (the workspace builds `sqlite-vec` from source by default).
 - A Rust-supported target and a working SQLite + `sqlite-vec` build. The
   published Python and npm native-artifact boundary is Linux
-  `x86_64-unknown-linux-gnu` only; Rust crates compile from source.
+  `x86_64-unknown-linux-gnu` and `aarch64-unknown-linux-gnu`; Rust crates
+  compile from source.
 
 ## Install the published crates
 
@@ -31,7 +32,7 @@ cargo add fathomdb
 CLI:
 
 ```bash
-cargo install fathomdb-cli --version 0.8.20
+cargo install fathomdb-cli --version 0.8.21
 ```
 
 ## Install (current path — from git)
