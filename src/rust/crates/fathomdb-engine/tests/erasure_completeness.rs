@@ -151,9 +151,9 @@ fn erasure_busy_yields_incomplete_not_success() {
     // checkpointer from resetting/truncating the log.
     let blocker = Connection::open(&path).expect("blocker connection");
     blocker.execute_batch("BEGIN").expect("begin blocker read txn");
-    let _pinned: u64 = blocker
-        .query_row("SELECT COUNT(*) FROM canonical_nodes", [], |row| row.get(0))
-        .expect("pin a WAL read snapshot");
+    let _pinned = blocker
+        .query_row("SELECT COUNT(*) FROM canonical_nodes", [], |row| row.get::<_, i64>(0))
+        .expect("pin a WAL read snapshot") as u64;
 
     let err = opened
         .engine
@@ -343,11 +343,11 @@ fn telemetry_redaction_retry_completes_after_failure() {
     // makes the naive retry recompute an empty id set. RAW state, per Rule 1.
     chmod(&sink_dir, 0o755);
     let probe_conn = Connection::open(&path).expect("probe connection");
-    let remaining: u64 = probe_conn
+    let remaining = probe_conn
         .query_row("SELECT COUNT(*) FROM canonical_nodes WHERE source_id = 'S1'", [], |row| {
-            row.get(0)
+            row.get::<_, i64>(0)
         })
-        .expect("count S1 rows");
+        .expect("count S1 rows") as u64;
     drop(probe_conn);
     assert_eq!(remaining, 0, "precondition: the delete transaction committed");
     assert!(
@@ -417,13 +417,13 @@ fn op_store_record_erasable_by_key() {
         "non-erased record must survive: {remaining:?}"
     );
     // The audit row must not re-introduce the erased key (it stores a digest).
-    let audit_leak: u64 = conn
+    let audit_leak = conn
         .query_row(
             "SELECT COUNT(*) FROM operational_mutations WHERE record_key = 'subject-a'",
             [],
-            |row| row.get(0),
+            |row| row.get::<_, i64>(0),
         )
-        .unwrap();
+        .unwrap() as u64;
     assert_eq!(audit_leak, 0, "erasure audit must not persist the erased record key verbatim");
 }
 
@@ -483,14 +483,12 @@ fn count_audit_rows(engine: &Engine) -> u64 {
 /// the physical table, never a verb's own report and never `search()`.
 fn raw_collection_row_count(path: &Path, collection: &str) -> u64 {
     let conn = Connection::open(path).expect("probe connection");
-    let count: u64 = conn
-        .query_row(
-            "SELECT COUNT(*) FROM operational_mutations WHERE collection_name = ?1",
-            [collection],
-            |row| row.get(0),
-        )
-        .expect("count collection rows");
-    count
+    conn.query_row(
+        "SELECT COUNT(*) FROM operational_mutations WHERE collection_name = ?1",
+        [collection],
+        |row| row.get::<_, i64>(0),
+    )
+    .expect("count collection rows") as u64
 }
 
 /// Drive an erasure to the point where a telemetry redaction is OWED but not
@@ -725,9 +723,9 @@ fn erasure_wal_retry_is_bounded() {
 
     let blocker = Connection::open(&path).expect("blocker connection");
     blocker.execute_batch("BEGIN").expect("begin");
-    let _pinned: u64 = blocker
-        .query_row("SELECT COUNT(*) FROM canonical_nodes", [], |row| row.get(0))
-        .expect("pin snapshot");
+    let _pinned = blocker
+        .query_row("SELECT COUNT(*) FROM canonical_nodes", [], |row| row.get::<_, i64>(0))
+        .expect("pin snapshot") as u64;
 
     let started = std::time::Instant::now();
     let _ = opened.engine.excise_source("S1");

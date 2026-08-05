@@ -34,13 +34,15 @@ mkdir -p "$WHEELS"
 # leak build/ or *.egg-info under the tracked fixture path.
 cp -r "$FIXTURE" "$SRC"
 
-python3 -m venv "$VENV"
+# The fixture's build tools were already verified in the host interpreter.
+# Inherit them so this resolver-only test stays offline: upgrading them here
+# makes a fresh venv contact PyPI before the local `--no-index` assertion.
+python3 -m venv --system-site-packages "$VENV"
 PIP="$VENV/bin/pip"
 
 # Build wheels for the two api versions + two probes into a local
 # find-links directory. --no-build-isolation avoids a network fetch of
-# the build backend; setuptools+wheel are already in the venv.
-"$PIP" install --quiet --upgrade pip setuptools wheel >/dev/null
+# the build backend; the inherited setuptools+wheel were verified above.
 for pkg in api-v1 api-v2 probe-a probe-b; do
   "$PIP" wheel --quiet --no-deps --no-build-isolation \
     --wheel-dir "$WHEELS" "$SRC/$pkg" >/dev/null

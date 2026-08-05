@@ -130,6 +130,7 @@ run_tier_suite fast test-set-version bash scripts/tests/test_set_version.sh
 # Scripts (bash): release-cut fields deliberately outside set-version.sh.
 run_tier_suite fast test-release-version-surfaces bash scripts/tests/test_release_version_surfaces.sh
 run_tier_suite fast test-platform-capabilities bash scripts/tests/test_platform_capabilities.sh
+run_tier_suite fast test-sqlite-dependency-contract bash scripts/tests/test_sqlite_dependency_contract.sh
 run_tier_suite fast test-public-doc-truth bash scripts/tests/test_public_doc_truth.sh
 
 # The partition gate itself is intentionally early: if a registration is

@@ -118,16 +118,22 @@ def test_release_workflow_build_python_has_explicit_features() -> None:
     )
 
 
-def test_ci_wheel_size_matrix_is_linux_first() -> None:
-    """The wheel-size gate covers only the shipped Linux x86_64 artifact."""
+def test_ci_wheel_size_matrix_covers_the_stable_platforms() -> None:
+    """The wheel-size gate covers every 0.8.22 shipped wheel platform."""
 
     data = _load_yaml(CI_YML)
     job = data["jobs"]["wheel-size-gate"]
     matrix_include = job["strategy"]["matrix"]["include"]
 
     actual_targets = {entry.get("target") for entry in matrix_include}
-    assert actual_targets == {"x86_64-unknown-linux-gnu"}, (
-        "wheel-size-gate must remain Linux x86_64 only for 0.8.20; "
+    assert actual_targets == {
+        "x86_64-unknown-linux-gnu",
+        "aarch64-unknown-linux-gnu",
+        "x86_64-apple-darwin",
+        "aarch64-apple-darwin",
+        "x86_64-pc-windows-msvc",
+    }, (
+        "wheel-size-gate must cover the 0.8.22 stable platform matrix; "
         f"current entries cover {actual_targets!r}."
     )
 

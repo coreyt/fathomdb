@@ -37,7 +37,7 @@ fn register_sqlite_vec_once() {
     REGISTER.call_once(|| unsafe {
         let entrypoint: unsafe extern "C" fn(
             *mut rusqlite::ffi::sqlite3,
-            *mut *const std::os::raw::c_char,
+            *mut *mut std::os::raw::c_char,
             *const rusqlite::ffi::sqlite3_api_routines,
         ) -> std::os::raw::c_int = std::mem::transmute(sqlite_vec::sqlite3_vec_init as *const ());
         rusqlite::ffi::sqlite3_auto_extension(Some(entrypoint));
@@ -59,7 +59,7 @@ fn steps_through(limit: u32) -> Vec<fathomdb_schema::Migration> {
 fn sidecar_has(conn: &Connection, write_cursor: u64) -> bool {
     conn.query_row(
         "SELECT EXISTS(SELECT 1 FROM _fathomdb_vector_rows WHERE write_cursor = ?1)",
-        [write_cursor],
+        [write_cursor as i64],
         |row| row.get::<_, i64>(0),
     )
     .unwrap()

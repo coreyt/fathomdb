@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Verify that native-loader triples, published package metadata, and public
-# support claims have one source of truth.
+# Verify that native-loader triples and release-ready package metadata have one
+# source of truth. Public documentation is promoted only after registry smokes.
 set -euo pipefail
 # `git rev-parse` failing here used to degrade to `cd ""` — a bash no-op that
 # leaves the script running in an arbitrary cwd. Bind and check it instead.
@@ -37,7 +37,18 @@ for triple, entry in triples.items():
             raise SystemExit(f'FAIL platform-capabilities: package metadata disagrees for {triple}')
 
 published = [entry for entry in platforms if entry['status'] == 'published']
-if [entry['triple'] for entry in published] != ['linux-x64-gnu', 'linux-arm64-gnu']:
+release_ready = [
+    entry for entry in platforms if entry['status'] in {'published', 'release-ready'}
+]
+expected_ready = [
+    'linux-x64-gnu', 'linux-arm64-gnu', 'darwin-x64', 'darwin-arm64',
+    'win32-x64-msvc',
+]
+if [entry['triple'] for entry in release_ready] != expected_ready:
+    raise SystemExit('FAIL platform-capabilities: 0.8.22 release-ready matrix is incomplete or reordered')
+
+published = [entry for entry in platforms if entry['status'] == 'published']
+if [entry['triple'] for entry in published] != expected_ready[:2]:
     raise SystemExit(
         'FAIL platform-capabilities: public docs currently support exactly '
         'linux-x64-gnu and linux-arm64-gnu'
@@ -48,5 +59,5 @@ for path in ('README.md', 'docs/compatibility/index.md', 'docs/install/python.md
         raise SystemExit(f'FAIL platform-capabilities: {path} lacks the published-platform boundary')
     if 'Linux AArch64' not in text and 'aarch64-unknown-linux-gnu' not in text:
         raise SystemExit(f'FAIL platform-capabilities: {path} lacks the published ARM64-platform boundary')
-print(f'ok    platform-capabilities: {len(triples)} loader triples, {len(published)} published')
+print(f'ok    platform-capabilities: {len(triples)} loader triples, {len(release_ready)} in the release matrix, {len(published)} published')
 PY

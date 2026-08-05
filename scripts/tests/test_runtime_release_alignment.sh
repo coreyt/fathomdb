@@ -36,7 +36,7 @@ for manifest in "$REPO_ROOT/package.json" "$REPO_ROOT/src/ts/package.json"; do
 done
 
 release="$REPO_ROOT/.github/workflows/release.yml"
-if [ "$(grep -c 'NPM_BIN: "npm"' "$release" || true)" -eq 3 ] && ! grep -q 'npx npm@latest' "$release"; then
+if [ "$(grep -c 'NPM_BIN: "npm"' "$release" || true)" -eq 6 ] && ! grep -q 'npx npm@latest' "$release"; then
   pass "release publishing uses Node-bundled npm"
 else
   fail "release publishing must use the pinned Node-bundled npm in every npm publish job"
@@ -61,7 +61,7 @@ else
   fail "release dispatch must derive preflight, smokes, co-tagging, and GitHub Release from RELEASE_TAG"
 fi
 
-# A dry-run dispatch must exercise the UI-selected immutable commit before the
+# A dry-run dispatch must receive an explicit immutable full SHA before the
 # release tag exists. A non-dry-run recovery dispatch must instead use the
 # canonical tag. Count every checkout so a new release job cannot escape either
 # side of that boundary.
@@ -69,11 +69,14 @@ checkout_total="$(grep -c 'uses: actions/checkout@' "$release" || true)"
 release_checkout_ref='ref: ${{ env.RELEASE_CHECKOUT_REF }}'
 release_checkout_total="$(grep -Fc "$release_checkout_ref" "$release" || true)"
 if [ "$checkout_total" -gt 0 ] && [ "$checkout_total" -eq "$release_checkout_total" ] \
-  && grep -Fq "RELEASE_CHECKOUT_REF: \${{ github.event_name == 'workflow_dispatch' && inputs.dry_run == true && github.sha || github.event_name == 'workflow_dispatch' && format('refs/tags/v{0}', inputs.release_version) || github.ref }}" "$release" \
+  && grep -A3 '^      candidate_commit:$' "$release" | grep -q 'type: string' \
+  && grep -Fq "RELEASE_GATES_CANDIDATE_COMMIT: \${{ inputs.candidate_commit || '' }}" "$release" \
+  && grep -Fq "RELEASE_CHECKOUT_REF: \${{ github.event_name == 'workflow_dispatch' && inputs.dry_run == true && inputs.candidate_commit || github.event_name == 'workflow_dispatch' && format('refs/tags/v{0}', inputs.release_version) || github.ref }}" "$release" \
+  && grep -Fq 'RELEASE_GATES_CANDIDATE_COMMIT: ${{ env.RELEASE_GATES_CANDIDATE_COMMIT }}' "$release" \
   && grep -Fq "RELEASE_GATES_REQUIRE_TAG_CHECKOUT: \${{ (github.event_name != 'workflow_dispatch' || inputs.dry_run != true) && '1' || '0' }}" "$release"; then
-  pass "dry-run dispatch uses its selected commit while publish/recovery dispatch verifies the canonical tag"
+  pass "dry-run dispatch uses its explicit candidate SHA while publish/recovery dispatch verifies the canonical tag"
 else
-  fail "release checkout must use the selected commit only for dry-runs and the canonical tag for publish/recovery"
+  fail "release checkout must use an explicit candidate SHA only for dry-runs and the canonical tag for publish/recovery"
 fi
 
 local_dry_run="$REPO_ROOT/scripts/release/local-dry-run.sh"

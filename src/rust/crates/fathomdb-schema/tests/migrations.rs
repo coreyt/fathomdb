@@ -15,7 +15,7 @@ fn register_sqlite_vec_once() {
     REGISTER.call_once(|| unsafe {
         let entrypoint: unsafe extern "C" fn(
             *mut rusqlite::ffi::sqlite3,
-            *mut *const std::os::raw::c_char,
+            *mut *mut std::os::raw::c_char,
             *const rusqlite::ffi::sqlite3_api_routines,
         ) -> std::os::raw::c_int = std::mem::transmute(sqlite_vec::sqlite3_vec_init as *const ());
         rusqlite::ffi::sqlite3_auto_extension(Some(entrypoint));
@@ -171,22 +171,22 @@ fn phase9_pack_b_migration_008_adds_source_id_columns_and_indexes() {
         .any(|name| name == "source_id");
     assert!(edges_has_source_id, "canonical_edges.source_id must be present after migration 8");
 
-    let nodes_idx: u64 = conn
+    let nodes_idx = conn
         .query_row(
             "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name=?1",
             ["canonical_nodes_source_id_idx"],
-            |row| row.get(0),
+            |row| row.get::<_, i64>(0),
         )
-        .unwrap();
+        .unwrap() as u64;
     assert_eq!(nodes_idx, 1);
 
-    let edges_idx: u64 = conn
+    let edges_idx = conn
         .query_row(
             "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name=?1",
             ["canonical_edges_source_id_idx"],
-            |row| row.get(0),
+            |row| row.get::<_, i64>(0),
         )
-        .unwrap();
+        .unwrap() as u64;
     assert_eq!(edges_idx, 1);
 
     assert_eq!(user_version(&conn), SCHEMA_VERSION);
@@ -247,9 +247,9 @@ fn s12_g0_adds_logical_id_superseded_at_columns_and_partial_unique_index() {
         conn.query_row(
             "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name=?1",
             [name],
-            |row| row.get(0),
+            |row| row.get::<_, i64>(0),
         )
-        .unwrap()
+        .unwrap() as u64
     };
     for idx in [
         "canonical_nodes_logical_active_idx",
@@ -301,13 +301,13 @@ fn s13_op_store_collection_index_present_after_migrate() {
     set_user_version(&conn, 1);
     migrate(&conn).unwrap();
 
-    let idx_count: u64 = conn
+    let idx_count = conn
         .query_row(
             "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name=?1",
             ["operational_mutations_collection_id_idx"],
-            |row| row.get(0),
+            |row| row.get::<_, i64>(0),
         )
-        .unwrap();
+        .unwrap() as u64;
     assert_eq!(idx_count, 1, "step-13 must create operational_mutations_collection_id_idx");
 
     // The index is shaped (collection_name, id): leading column collection_name

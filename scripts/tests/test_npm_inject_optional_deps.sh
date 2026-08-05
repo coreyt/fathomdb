@@ -55,10 +55,10 @@ else
   pass "no platform packages -> error"
 fi
 
-# 5) The real repo fixture carries both supported Linux platform packages.
-present="$(find "$REPO_ROOT/src/ts/npm" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; 2>/dev/null | sort | tr '\n' ',' )"
-[ "$present" = "linux-arm64-gnu,linux-x64-gnu," ] \
-  && pass "committed platform set carries Linux x64 and arm64" \
+# 5) The real repo fixture carries every 0.8.22 stable platform package.
+present="$(ls -d "$REPO_ROOT"/src/ts/npm/*/ 2>/dev/null | xargs -n1 basename | sort | tr '\n' ',' )"
+[ "$present" = "darwin-arm64,darwin-x64,linux-arm64-gnu,linux-x64-gnu,win32-x64-msvc," ] \
+  && pass "committed platform set carries every stable target" \
   || fail "unexpected committed platform set: $present"
 
 if [ "$FAILED" -gt 0 ]; then

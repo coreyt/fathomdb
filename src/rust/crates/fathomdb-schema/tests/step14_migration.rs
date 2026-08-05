@@ -13,7 +13,7 @@ fn register_sqlite_vec_once() {
     REGISTER.call_once(|| unsafe {
         let entrypoint: unsafe extern "C" fn(
             *mut rusqlite::ffi::sqlite3,
-            *mut *const std::os::raw::c_char,
+            *mut *mut std::os::raw::c_char,
             *const rusqlite::ffi::sqlite3_api_routines,
         ) -> std::os::raw::c_int = std::mem::transmute(sqlite_vec::sqlite3_vec_init as *const ());
         rusqlite::ffi::sqlite3_auto_extension(Some(entrypoint));
@@ -153,13 +153,13 @@ fn s14_search_index_edges_table_exists() {
     let conn = Connection::open_in_memory().unwrap();
     migrate_fresh(&conn);
 
-    let count: u64 = conn
+    let count = conn
         .query_row(
             "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='search_index_edges'",
             [],
-            |row| row.get(0),
+            |row| row.get::<_, i64>(0),
         )
-        .unwrap();
+        .unwrap() as u64;
     assert_eq!(count, 1, "search_index_edges must exist after step-14");
 }
 

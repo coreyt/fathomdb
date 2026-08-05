@@ -18,6 +18,9 @@
 #   RELEASE_GATES_TAG=<tag>          Canonical release tag supplied by CI.
 #   RELEASE_DISPATCH_VERSION=<semver> workflow_dispatch release_version input.
 #   RELEASE_GATES_REQUIRE_TAG_CHECKOUT=1  Require HEAD to resolve to the tag.
+#   RELEASE_GATES_CANDIDATE_COMMIT=<40-hex SHA>  Required only for a
+#                                             workflow_dispatch dry run; HEAD
+#                                             must equal this immutable commit.
 #
 # Owner: dev/design/release.md § Tiered publish order (entry gate to T1).
 set -euo pipefail
@@ -73,6 +76,21 @@ if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
   fi
   if [ "$DISPATCH_VERSION" != "$WS_VERSION" ]; then
     die "dispatch/workspace version mismatch — release_version is '$DISPATCH_VERSION', Cargo.toml [workspace.package].version is '$WS_VERSION'"
+  fi
+  if [ "${DRY_RUN:-}" = "true" ]; then
+    candidate="${RELEASE_GATES_CANDIDATE_COMMIT:-}"
+    if ! [[ "$candidate" =~ ^[0-9A-Fa-f]{40}$ ]]; then
+      die "workflow_dispatch dry-run requires candidate_commit to be an immutable full 40-hex commit SHA; got '${candidate}'"
+    fi
+    candidate="$(tr 'A-F' 'a-f' <<<"$candidate")"
+    candidate_commit="$(git -C "$REPO_ROOT" rev-parse --verify "${candidate}^{commit}" 2>/dev/null)" \
+      || die "workflow_dispatch dry-run candidate_commit '$candidate' does not resolve to a commit in this checkout"
+    head_commit="$(git -C "$REPO_ROOT" rev-parse HEAD)"
+    if [ "$head_commit" != "$candidate_commit" ]; then
+      die "workflow_dispatch dry-run checkout mismatch — HEAD is '$head_commit', selected candidate_commit is '$candidate_commit'"
+    fi
+  elif [ -n "${RELEASE_GATES_CANDIDATE_COMMIT:-}" ]; then
+    die "workflow_dispatch with dry_run=false is canonical-tag-only; candidate_commit is not permitted"
   fi
   if [ "${RELEASE_GATES_REQUIRE_TAG_CHECKOUT:-0}" = "1" ]; then
     tag_commit="$(git -C "$REPO_ROOT" rev-parse --verify "refs/tags/$TAG^{commit}" 2>/dev/null)" \

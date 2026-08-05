@@ -88,6 +88,7 @@ CL_PATH="$TMPDIR_ROOT/CHANGELOG.md"
 export RELEASE_GATES_CHANGELOG="$CL_PATH"
 
 WS="$(ws_version)"
+CANDIDATE_SHA="$(git -C "$REPO_ROOT" rev-parse HEAD)"
 
 # 1. Happy path: tag matches workspace version, CHANGELOG has matching
 #    heading, --check-files passes, every crate has description.
@@ -190,15 +191,44 @@ else
 fi
 restore
 
-# 9. workflow_dispatch + dry_run=true: the required semver input derives a
-#    canonical v-tag, while GITHUB_REF_NAME remains a branch name.
+# 9. workflow_dispatch + dry_run=true accepts an immutable full candidate SHA.
+#    The prospective tag still has to match Axis W, but the tag need not exist.
 restore
 printf '# Changelog\n\n## %s\n' "$WS" > "$CL_PATH"
 GITHUB_EVENT_NAME="workflow_dispatch" DRY_RUN="true" \
   RELEASE_DISPATCH_VERSION="$WS" RELEASE_GATES_TAG="v${WS}" \
+  RELEASE_GATES_CANDIDATE_COMMIT="$CANDIDATE_SHA" \
   GITHUB_REF_NAME="phase-11d-release-workflow" "$VRG" >/dev/null 2>&1 \
-  && pass "dispatch+dry_run=true validates its derived canonical tag and passes" \
-  || fail "dispatch+dry_run=true should pass with a matching semver input"
+  && pass "dispatch+dry_run=true validates its immutable candidate and prospective tag" \
+  || fail "dispatch+dry_run=true should pass with a matching candidate SHA"
+
+# 9a. A dry run must not silently fall back to a branch tip or an uncreated tag.
+restore
+printf '# Changelog\n\n## %s\n' "$WS" > "$CL_PATH"
+if out="$(GITHUB_EVENT_NAME="workflow_dispatch" DRY_RUN="true" \
+    RELEASE_DISPATCH_VERSION="$WS" RELEASE_GATES_TAG="v${WS}" \
+    GITHUB_REF_NAME="phase-11d-release-workflow" "$VRG" 2>&1)"; then
+  fail "dispatch+dry_run=true without an immutable candidate SHA should fail"
+else
+  printf '%s' "$out" | grep -qi 'candidate' \
+    && pass "dry-run dispatch requires an immutable candidate SHA" \
+    || fail "wrong diagnostic for missing dry-run candidate; got: $out"
+fi
+
+# 9b. The full SHA must resolve and be the checked-out commit, not merely look
+# like one. Forty zeroes has the right shape but cannot be selected safely.
+restore
+printf '# Changelog\n\n## %s\n' "$WS" > "$CL_PATH"
+if out="$(GITHUB_EVENT_NAME="workflow_dispatch" DRY_RUN="true" \
+    RELEASE_DISPATCH_VERSION="$WS" RELEASE_GATES_TAG="v${WS}" \
+    RELEASE_GATES_CANDIDATE_COMMIT="0000000000000000000000000000000000000000" \
+    GITHUB_REF_NAME="phase-11d-release-workflow" "$VRG" 2>&1)"; then
+  fail "dispatch+dry_run=true with an unresolved candidate SHA should fail"
+else
+  printf '%s' "$out" | grep -qi 'candidate' \
+    && pass "dry-run dispatch rejects an unresolved candidate SHA" \
+    || fail "wrong diagnostic for unresolved dry-run candidate; got: $out"
+fi
 
 # 10. workflow_dispatch rejects a non-semver release input before a dry run
 #     can exercise any publisher.
@@ -206,6 +236,7 @@ restore
 printf '# Changelog\n\n## %s\n' "$WS" > "$CL_PATH"
 if out="$(GITHUB_EVENT_NAME="workflow_dispatch" DRY_RUN="true" \
     RELEASE_DISPATCH_VERSION="not-semver" RELEASE_GATES_TAG="vnot-semver" \
+    RELEASE_GATES_CANDIDATE_COMMIT="$CANDIDATE_SHA" \
     GITHUB_REF_NAME="phase-11d-release-workflow" "$VRG" 2>&1)"; then
   fail "dispatch with a non-semver release version should fail; got: $out"
 else
@@ -219,6 +250,7 @@ restore
 printf '# Changelog\n\n## %s\n' "$WS" > "$CL_PATH"
 if out="$(GITHUB_EVENT_NAME="workflow_dispatch" DRY_RUN="true" \
     RELEASE_DISPATCH_VERSION="$WS" RELEASE_GATES_TAG="v9.9.9" \
+    RELEASE_GATES_CANDIDATE_COMMIT="$CANDIDATE_SHA" \
     GITHUB_REF_NAME="phase-11d-release-workflow" "$VRG" 2>&1)"; then
   fail "dispatch with a mismatched derived tag should fail; got: $out"
 else
@@ -277,6 +309,7 @@ ENG="$REPO_ROOT/src/rust/crates/fathomdb-engine/Cargo.toml"
 sed -i '/^description[[:space:]]*=/d' "$ENG"
 if out="$(GITHUB_EVENT_NAME="workflow_dispatch" DRY_RUN="true" \
     RELEASE_DISPATCH_VERSION="$WS" RELEASE_GATES_TAG="v${WS}" \
+    RELEASE_GATES_CANDIDATE_COMMIT="$CANDIDATE_SHA" \
     GITHUB_REF_NAME="phase-11d-release-workflow" "$VRG" 2>&1)"; then
   cp "$SNAP_CRATES/fathomdb-engine.toml" "$ENG"
   fail "dispatch+broken metadata should still fail crate-metadata check"
@@ -287,9 +320,9 @@ else
     || fail "wrong diagnostic on dispatch metadata break; got: $out"
 fi
 
-# 16. workflow_dispatch must be checked out at its canonical tag, not the
-#     branch/ref selected in the GitHub UI. Exercise the real git resolution:
-#     a tag at HEAD passes, while a tag at HEAD^ must fail before publishing.
+# 16. A non-dry-run workflow_dispatch must be checked out at its canonical tag,
+#     not the branch/ref selected in the GitHub UI. Exercise real git resolution:
+#     a tag at HEAD passes, while a tag at HEAD^ fails before publishing.
 CHECKOUT_TEST_ID="${BASHPID:-$$}"
 CHECKOUT_OK_VERSION="0.997.${CHECKOUT_TEST_ID}"
 CHECKOUT_OK_TAG="v${CHECKOUT_OK_VERSION}"
@@ -298,8 +331,9 @@ bash "$REPO_ROOT/scripts/set-version.sh" --workspace "$CHECKOUT_OK_VERSION" >/de
 printf '# Changelog\n\n## %s\n' "$CHECKOUT_OK_VERSION" > "$CL_PATH"
 git -C "$REPO_ROOT" tag "$CHECKOUT_OK_TAG" HEAD
 TEMP_TAGS+=("$CHECKOUT_OK_TAG")
-if out="$(GITHUB_EVENT_NAME="workflow_dispatch" DRY_RUN="true" \
+if out="$(GITHUB_EVENT_NAME="workflow_dispatch" DRY_RUN="false" \
     RELEASE_GATES_REQUIRE_TAG_CHECKOUT=1 \
+    RELEASE_CONFIRM_VERSION="$CHECKOUT_OK_VERSION" \
     RELEASE_DISPATCH_VERSION="$CHECKOUT_OK_VERSION" RELEASE_GATES_TAG="$CHECKOUT_OK_TAG" \
     GITHUB_REF_NAME="main" "$VRG" 2>&1)"; then
   pass "dispatch accepts a checkout whose HEAD is the canonical tag"
@@ -314,8 +348,9 @@ bash "$REPO_ROOT/scripts/set-version.sh" --workspace "$CHECKOUT_BAD_VERSION" >/d
 printf '# Changelog\n\n## %s\n' "$CHECKOUT_BAD_VERSION" > "$CL_PATH"
 git -C "$REPO_ROOT" tag "$CHECKOUT_BAD_TAG" HEAD^
 TEMP_TAGS+=("$CHECKOUT_BAD_TAG")
-if out="$(GITHUB_EVENT_NAME="workflow_dispatch" DRY_RUN="true" \
+if out="$(GITHUB_EVENT_NAME="workflow_dispatch" DRY_RUN="false" \
     RELEASE_GATES_REQUIRE_TAG_CHECKOUT=1 \
+    RELEASE_CONFIRM_VERSION="$CHECKOUT_BAD_VERSION" \
     RELEASE_DISPATCH_VERSION="$CHECKOUT_BAD_VERSION" RELEASE_GATES_TAG="$CHECKOUT_BAD_TAG" \
     GITHUB_REF_NAME="main" "$VRG" 2>&1)"; then
   fail "dispatch must reject a UI-selected checkout that differs from its canonical tag; got: $out"

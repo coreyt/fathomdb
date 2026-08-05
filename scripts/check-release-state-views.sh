@@ -299,6 +299,9 @@ def render_master_ladder_progress(st):
     # FIELD through the helper, so a bare `str` here put the same fact in two
     # documents in two shapes (`40.0` here, `40` there).
     ladder = _remaining_ladder(st)
+    if not landed:
+        return ("No slices are LANDED on `origin/main`; SCHEMA is %d; "
+                "remaining ladder = %s." % (st["schema_version"], ladder))
     return ("Slices %s are all LANDED on `origin/main`; SCHEMA is %d; "
             "remaining ladder = %s." % (landed, st["schema_version"], ladder))
 
@@ -589,6 +592,10 @@ def render_plan_landed_roll_up(st):
     """
     by = _by_slice(st)
     landed = " · ".join("%s (`%s`)" % (_slice_str(n), by[n]["sha"]) for n in st["landed"])
+    if not landed:
+        return ("\n**LANDED on `origin/main`, in full:** no slices. SCHEMA is %d; "
+                "remaining ladder = %s."
+                % (st["schema_version"], _remaining_ladder(st)))
     return ("\n**LANDED on `origin/main`, in full:** Slices %s. SCHEMA is %d; remaining ladder = %s."
             % (landed, st["schema_version"],
                _remaining_ladder(st)))

@@ -159,13 +159,13 @@ fn s20_default_flag_and_count_commits_the_batch() {
     }
     // The edge committed despite dangling endpoints (flag-and-count, not reject).
     let conn = Connection::open(&path).expect("open sqlite");
-    let committed: u64 = conn
+    let committed = conn
         .query_row(
             "SELECT COUNT(*) FROM canonical_edges WHERE from_id = 'GHOST_A' AND to_id = 'GHOST_B'",
             [],
-            |r| r.get(0),
+            |r| r.get::<_, i64>(0),
         )
-        .unwrap();
+        .unwrap() as u64;
     assert_eq!(committed, 1, "the dangling edge must still be committed (flag-and-count)");
 }
 
