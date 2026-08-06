@@ -284,6 +284,11 @@ run_tier_suite fast test-smoke-scripts bash scripts/tests/test_smoke_scripts.sh
 # dist-tag). Pure python3+PyYAML parse; never runs the workflow.
 run_tier_suite fast test-release-workflow-scope bash scripts/tests/test_release_workflow_scope.sh
 
+# Fast mutation coverage for the manifest-derived release-ready native matrix.
+# This standard-library checker guards matrix, package, smoke, and promotion
+# drift without interpreting public documentation.
+run_tier_suite fast test-release-contract-truth bash scripts/tests/test_release_contract_truth.sh
+
 # Slice 40 / seq-234: Linux x86_64 is the 0.8.20 native-artifact scope.
 # Static assertions here complement actionlint's workflow syntax/schema check.
 run_tier_suite fast test-linux-first-platform-scope bash scripts/tests/test_linux_first_platform_scope.sh
