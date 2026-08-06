@@ -198,6 +198,29 @@ run_orient() {
   SANDBOX_RESIDUE="$(find "$sandbox" -mindepth 1 | awk 'NR <= 5')"
 }
 
+# Replace the normal landed fixture with the exact state shape of a newly
+# activated release: no land, the first/next slice may be active, every later
+# slice is not started, and every slice remains in the ladder.
+set_initial_release_state() {
+  python3 - "$FIX/dev/plans/release-state-0.9.0.json" <<'PY'
+import json
+import sys
+
+path = sys.argv[1]
+with open(path, encoding="utf-8") as fh:
+    state = json.load(fh)
+state["ladder"] = [
+    {"slice": 0, "short": "X0", "title": "design gate", "status": "IN_PROGRESS"},
+    {"slice": 5, "short": "R-A", "title": "the first", "status": "NOT_STARTED"},
+]
+state["landed"] = []
+state["next_slice"] = 0
+state["remaining_ladder"] = [0, 5]
+with open(path, "w", encoding="utf-8") as fh:
+    json.dump(state, fh)
+PY
+}
+
 tree_snapshot() { find "$1" -path '*/.git' -prune -o -printf '%p %s\n' | sort; }
 
 # --- Arm 0: BASELINE fixture is GREEN, under budget, every section present ---
@@ -420,6 +443,87 @@ if [ "$RC" -ne 0 ] && grep -qi 'landed' <<<"$ERR"; then
   pass "zero landed slices -> HARD fail, and the message names the section"
 else
   fail "arm 3 (zero landed slices): rc=$RC err=$ERR"
+fi
+
+# --- Arm 3a: an exact initial release may truthfully have no landed slices --
+# This is RED before the state-backed initial-release exemption: a valid active
+# first slice must print `LANDED (none)` without being confused with a broken
+# ordinary release state.
+setup_fixture
+set_initial_release_state
+run_orient "$FIX"
+if [ "$RC" -eq 0 ] && grep -qF 'LANDED (none)' <<<"$OUT"; then
+  pass "a state-backed newly activated release may orient with no landed slices"
+else
+  fail "arm 3a (valid initial release): rc=$RC err=$ERR out=$OUT"
+fi
+
+# The exemption is exact: a later next slice, a flat landed claim, or a ladder
+# landed claim must retain the ordinary hard failure rather than create a second
+# way to certify a partial or malformed release state.
+setup_fixture
+set_initial_release_state
+python3 - "$FIX/dev/plans/release-state-0.9.0.json" <<'PY'
+import json, sys
+p = sys.argv[1]
+d = json.load(open(p, encoding="utf-8"))
+del d["remaining_ladder"]
+open(p, "w", encoding="utf-8").write(json.dumps(d))
+PY
+run_orient "$FIX"
+if [ "$RC" -ne 0 ] && grep -qi 'landed' <<<"$ERR"; then
+  pass "a malformed initial state still HARD-fails orientation"
+else
+  fail "arm 3a (malformed state): rc=$RC err=$ERR out=$OUT"
+fi
+
+setup_fixture
+set_initial_release_state
+python3 - "$FIX/dev/plans/release-state-0.9.0.json" <<'PY'
+import json, sys
+p = sys.argv[1]
+d = json.load(open(p, encoding="utf-8"))
+d["next_slice"] = 5
+open(p, "w", encoding="utf-8").write(json.dumps(d))
+PY
+run_orient "$FIX"
+if [ "$RC" -ne 0 ] && grep -qi 'landed' <<<"$ERR"; then
+  pass "a non-first initial next_slice still HARD-fails orientation"
+else
+  fail "arm 3a (non-first next_slice): rc=$RC err=$ERR out=$OUT"
+fi
+
+setup_fixture
+set_initial_release_state
+python3 - "$FIX/dev/plans/release-state-0.9.0.json" <<'PY'
+import json, sys
+p = sys.argv[1]
+d = json.load(open(p, encoding="utf-8"))
+d["landed"] = [0]
+open(p, "w", encoding="utf-8").write(json.dumps(d))
+PY
+run_orient "$FIX"
+if [ "$RC" -ne 0 ] && grep -qi 'landed' <<<"$ERR"; then
+  pass "a flat landed claim does not qualify for initial-release orientation"
+else
+  fail "arm 3a (flat landed claim): rc=$RC err=$ERR out=$OUT"
+fi
+
+setup_fixture
+set_initial_release_state
+python3 - "$FIX/dev/plans/release-state-0.9.0.json" <<'PY'
+import json, sys
+p = sys.argv[1]
+d = json.load(open(p, encoding="utf-8"))
+d["ladder"][0]["status"] = "LANDED"
+d["ladder"][0]["sha"] = "aaaa1111"
+open(p, "w", encoding="utf-8").write(json.dumps(d))
+PY
+run_orient "$FIX"
+if [ "$RC" -ne 0 ] && grep -qi 'inconsistent\|landed' <<<"$ERR"; then
+  pass "a ladder landed claim absent from landed still HARD-fails orientation"
+else
+  fail "arm 3a (ladder landed claim): rc=$RC err=$ERR out=$OUT"
 fi
 
 # --- Arm 4: ZERO ledger entries -> HARD fail ------------------------------
