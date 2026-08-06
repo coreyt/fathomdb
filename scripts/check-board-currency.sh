@@ -38,7 +38,8 @@
 #        the loop would otherwise pass it by default. HARD fail instead, except
 #        for a state-backed newly activated release whose `landed` is empty,
 #        whose `next_slice` is its earliest ladder slice, and whose complete
-#        ladder remains — see the dedicated section below.
+#        ladder remains with no recorded landing evidence — see the dedicated
+#        section below.
 #     6. BOARD/STATE CROSS-READ (TC-133): steps 2-4 ask git a question. This
 #        step asks dev/plans/release-state-<version>.json — the single writer
 #        for landed slices, their SHAs and the remaining ladder — whether the
@@ -128,10 +129,11 @@
 # loudly that it could not vouch for it (see the "no landing merge matched"
 # message below), never report ok by default. The only exception is a newly
 # activated state whose empty `landed`, first `next_slice`, and complete
-# `remaining_ladder` prove no merge can exist yet; its STATUS ladder is still
-# structurally validated by the unconditional TC-133 cross-read. This can only
-# convert a silent pass into a loud failure -- it never fires for a board with
-# >=1 matched slice.
+# `remaining_ladder` prove no merge can exist yet. Every ladder entry must also
+# still be `NOT_STARTED` with no landing SHA; its STATUS ladder is structurally
+# validated by the unconditional TC-133 cross-read. This can only convert a
+# silent pass into a loud failure -- it never fires for a board with >=1 matched
+# slice.
 #
 # Usage:
 #   scripts/check-board-currency.sh [--tip <ref>] [--boards-dir <dir>]
@@ -707,6 +709,10 @@ try:
     for entry in ladder:
         if not isinstance(entry, dict) or "slice" not in entry:
             raise ValueError("ladder entry has no slice")
+        if entry.get("status") != "NOT_STARTED":
+            raise ValueError("ladder records a non-initial status")
+        if entry.get("sha") not in (None, ""):
+            raise ValueError("ladder records a landing SHA")
         ladder_slices.append(slice_key(entry["slice"]))
     if len(set(ladder_slices)) != len(ladder_slices):
         raise ValueError("ladder has duplicate slices")

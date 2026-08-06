@@ -408,6 +408,28 @@ INITIAL_RELEASE_STATE='{
 INITIAL_REPO="$TMPROOT/initial-release"
 make_initial_release_fixture "$INITIAL_REPO" 0.8.81 "$INITIAL_RELEASE_STATE"
 
+INITIAL_UNRECORDED_LAND_STATE='{
+  "release": "0.8.77",
+  "board": "dev/plans/runs/STATUS-0.8.77.md",
+  "landed": [],
+  "ladder": [{"slice": 5, "status": "LANDED", "sha": "deadbeef"}, {"slice": 40, "status": "NOT_STARTED"}],
+  "remaining_ladder": [5, 40],
+  "next_slice": 5
+}'
+INITIAL_UNRECORDED_LAND_REPO="$TMPROOT/initial-unrecorded-land"
+make_initial_release_fixture "$INITIAL_UNRECORDED_LAND_REPO" 0.8.77 "$INITIAL_UNRECORDED_LAND_STATE"
+
+INITIAL_UNRECORDED_SHA_STATE='{
+  "release": "0.8.76",
+  "board": "dev/plans/runs/STATUS-0.8.76.md",
+  "landed": [],
+  "ladder": [{"slice": 5, "status": "NOT_STARTED", "sha": "deadbeef"}, {"slice": 40, "status": "NOT_STARTED"}],
+  "remaining_ladder": [5, 40],
+  "next_slice": 5
+}'
+INITIAL_UNRECORDED_SHA_REPO="$TMPROOT/initial-unrecorded-sha"
+make_initial_release_fixture "$INITIAL_UNRECORDED_SHA_REPO" 0.8.76 "$INITIAL_UNRECORDED_SHA_STATE"
+
 INITIAL_NO_TABLE_REPO="$TMPROOT/initial-no-table"
 make_initial_release_fixture "$INITIAL_NO_TABLE_REPO" 0.8.81 "$INITIAL_RELEASE_STATE"
 printf '# STATUS — 0.8.81 fixture\n\nInitial release, no ladder table.\n' \
@@ -1099,6 +1121,23 @@ if [ "$RC" -eq 0 ] \
   pass "a state-backed newly activated initial release may have zero landing merges"
 else
   fail "initial release must pass only through the explicit state-backed exception; rc=$RC, out: $OUT"
+fi
+
+# This is RED before the initial-state predicate rejects a ladder which claims
+# a land without including that slice in `landed`; a non-empty SHA alone is
+# likewise landing evidence that cannot coexist with an initial release.
+run_checker "$INITIAL_UNRECORDED_LAND_REPO"
+if [ "$RC" -ne 0 ] && grep -q 'STALE.*no landing merge matched the convention' <<<"$OUT"; then
+  pass "a ladder LANDED status absent from landed still HARD-fails"
+else
+  fail "unrecorded ladder land must not qualify for the initial-release exception; rc=$RC, out: $OUT"
+fi
+
+run_checker "$INITIAL_UNRECORDED_SHA_REPO"
+if [ "$RC" -ne 0 ] && grep -q 'STALE.*no landing merge matched the convention' <<<"$OUT"; then
+  pass "a ladder SHA absent from landed still HARD-fails"
+else
+  fail "unrecorded ladder SHA must not qualify for the initial-release exception; rc=$RC, out: $OUT"
 fi
 
 run_checker "$INITIAL_NO_TABLE_REPO"
