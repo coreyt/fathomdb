@@ -7,7 +7,7 @@
   "schema_version": 25,
   "schema_version_source": "pub const SCHEMA_VERSION in src/rust/crates/fathomdb-schema/src/lib.rs",
   "ladder": [
-    {"slice": 0, "short": "CONTRACT", "title": "release contract, platform acceptance, and trusted-publishing runbook", "depends_on": [], "status": "IN_PROGRESS"},
+    {"slice": 0, "short": "CONTRACT", "title": "release contract, platform acceptance, and trusted-publishing runbook", "depends_on": [], "status": "IN_PROGRESS", "design_refs": ["dev/design/release.md", "dev/design/bindings.md"]},
     {"slice": 5, "short": "SQLITE", "title": "rusqlite/sqlite-vec security migration and TC-76 regression proof", "depends_on": [0], "status": "NOT_STARTED"},
     {"slice": 10, "short": "TOPOLOGY", "title": "five-target npm platform-package topology", "depends_on": [5], "status": "NOT_STARTED"},
     {"slice": 15, "short": "NATIVE-CI", "title": "native build, validation, and wheel-size matrix", "depends_on": [10], "status": "NOT_STARTED"},
