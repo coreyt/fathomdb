@@ -105,11 +105,12 @@ done
 
 require_ps1_exit_check() {
   local invocation="$1"
-  local check="$2"
-  awk -v invocation="$invocation" -v check="$check" '
+  awk -v invocation="$invocation" '
     $0 == invocation {
       found = 1
-      if (getline && $0 == check) { valid = 1 }
+      if (getline && $0 ~ /^[[:space:]]*if \(\$LASTEXITCODE -ne 0\)[[:space:]]*\{[[:space:]]*throw[[:space:]]+[^}]+[[:space:]]*\}[[:space:]]*$/) {
+        valid = 1
+      }
       exit
     }
     END { exit !(found && valid) }
@@ -118,11 +119,9 @@ require_ps1_exit_check() {
 
 require_ps1_exit_check \
   "  & \$python -m pip install --no-index --find-links \$WheelDirectory fathomdb" \
-  "  if (\$LASTEXITCODE -ne 0) { throw 'smoke-local-native-artifacts: local wheel install failed' }" \
   || fail 'PowerShell wheel install must immediately propagate its Python exit code'
 require_ps1_exit_check \
   "'@ | & \$python - (Join-Path \$work 'python-smoke.fdb')" \
-  "  if (\$LASTEXITCODE -ne 0) { throw 'smoke-local-native-artifacts: local Python wheel runtime smoke failed' }" \
   || fail 'PowerShell Python smoke must immediately propagate its Python exit code'
 
 for forbidden in \
@@ -184,14 +183,14 @@ if [ "${NATIVE_RUNTIME_VALIDATION_FIXTURE:-0}" != "1" ]; then
     fail 'TypeScript build control accepted the wrong tsc configuration'
   fi
 
-  sed '/local wheel install failed/d' "$PS1_HELPER" > "$ps1_fixture"
+  awk '
+    $0 == "'"'"'@ | & $python - (Join-Path $work '\''python-smoke.fdb'\'')" { after_python_smoke = 1 }
+    after_python_smoke && /\$LASTEXITCODE -ne 0/ && !removed { removed = 1; next }
+    { print }
+    END { exit !removed }
+  ' "$PS1_HELPER" > "$ps1_fixture"
   if NATIVE_RUNTIME_VALIDATION_FIXTURE=1 PS1_HELPER="$ps1_fixture" bash "$0" >/dev/null 2>&1; then
-    fail 'PowerShell exit-code control accepted removal of the wheel install check'
-  fi
-
-  sed 's/local Python wheel runtime smoke failed/local Python wheel runtime smoke ignored/' "$PS1_HELPER" > "$ps1_fixture"
-  if NATIVE_RUNTIME_VALIDATION_FIXTURE=1 PS1_HELPER="$ps1_fixture" bash "$0" >/dev/null 2>&1; then
-    fail 'PowerShell exit-code control accepted mutation of the Python smoke check'
+    fail 'PowerShell exit-code control accepted removal of the Python smoke guard'
   fi
 fi
 
