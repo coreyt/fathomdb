@@ -445,7 +445,18 @@ def test_catalog_covers_the_search_signatures() -> None:
         # extension is absent.
         pytest.skip(f"native binding not built: {exc}")
 
-    names = {entry.name for entry in CATALOG}
+    import re  # noqa: PLC0415
+
+    # A catalog entry's `name` is EARP's CONFIG-facing name, which is not always
+    # the SDK parameter name -- `projection_name` covers `Engine
+    # .search_projected_text(name=)`. The call path already records the real
+    # parameter, so coverage is checked against both.
+    covered = {entry.name for entry in CATALOG}
+    for entry in CATALOG:
+        match = re.search(r"\((\w+)=\)$", entry.call_path or "")
+        if match:
+            covered.add(match.group(1))
+
     ignored = {"self", "engine", "query"}
     for func in (
         engine.Engine.search,
@@ -454,7 +465,7 @@ def test_catalog_covers_the_search_signatures() -> None:
     ):
         for param in inspect.signature(func).parameters:
             if param not in ignored:
-                assert param in names, f"{func.__name__}:{param}"
+                assert param in covered, f"{func.__name__}:{param}"
 
 
 # --- AC-11: the undeclared-dependency guard --------------------------------
