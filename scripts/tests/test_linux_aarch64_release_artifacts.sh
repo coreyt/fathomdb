@@ -9,137 +9,107 @@ WORKFLOW="$REPO_ROOT/.github/workflows/release.yml"
 PLATFORM_PACKAGE="$REPO_ROOT/src/ts/npm/linux-arm64-gnu/package.json"
 PREFLIGHT="$REPO_ROOT/.github/workflows/aarch64-release-preflight.yml"
 
-python3 - "$WORKFLOW" "$PLATFORM_PACKAGE" "$PREFLIGHT" <<'PY'
-import json
-from pathlib import Path
-import sys
+if ! command -v actionlint >/dev/null 2>&1; then
+  printf 'FAIL  actionlint is required to validate release workflows\n' >&2
+  exit 1
+fi
+actionlint "$WORKFLOW" "$PREFLIGHT"
 
-import yaml
+# Workflow syntax is actionlint's responsibility. The release-contract checker
+# intentionally reads only known job blocks and JSON contract files, so it can
+# enforce the exact five-target topology without accepting invalid Actions YAML.
+env REPO_ROOT="$REPO_ROOT" python3 "$REPO_ROOT/scripts/check-release-contract-truth.py"
 
-workflow_path, platform_package_path, preflight_path = sys.argv[1:]
-workflow = yaml.safe_load(open(workflow_path))
-jobs = workflow["jobs"]
-
-
-def fail(message):
-    print(f"FAIL  {message}", file=sys.stderr)
-    raise SystemExit(1)
-
-
-def includes(job):
-    return jobs[job]["strategy"]["matrix"]["include"]
-
-
-def entry(job, target):
-    for candidate in includes(job):
-        if candidate.get("target") == target:
-            return candidate
-    fail(f"{job} must include {target}")
-
-
-python_arm = entry("build-python", "aarch64-unknown-linux-gnu")
-if not {
-    "runner": "ubuntu-24.04-arm",
-    "target": "aarch64-unknown-linux-gnu",
-    "manylinux": "2_28",
-}.items() <= python_arm.items():
-    fail(f"build-python AArch64 entry is wrong: {python_arm!r}")
-
-napi_arm = entry("build-napi", "aarch64-unknown-linux-gnu")
-if napi_arm != {
-    "runner": "ubuntu-24.04-arm",
-    "target": "aarch64-unknown-linux-gnu",
-    "label": "linux-arm64-gnu",
-}:
-    fail(f"build-napi AArch64 entry is wrong: {napi_arm!r}")
-
-with open(platform_package_path) as package_file:
-    platform_package = json.load(package_file)
-expected_package = {
-    "name": "fathomdb-linux-arm64-gnu",
-    "os": ["linux"],
-    "cpu": ["arm64"],
-    "libc": ["glibc"],
-    "main": "fathomdb.linux-arm64-gnu.node",
-    "files": ["fathomdb.linux-arm64-gnu.node"],
+require_contains() {
+  local subject="$1"
+  local expected="$2"
+  local message="$3"
+  if [[ "$subject" != *"$expected"* ]]; then
+    printf 'FAIL  %s\n' "$message" >&2
+    exit 1
+  fi
 }
-for key, value in expected_package.items():
-    if platform_package.get(key) != value:
-        fail(f"linux-arm64-gnu package {key} must be {value!r}, got {platform_package.get(key)!r}")
 
-publish_arm = jobs.get("publish-npm-platform-linux-arm64-gnu")
-if publish_arm is None:
-    fail("release workflow must publish the linux-arm64-gnu platform package")
-if publish_arm.get("runs-on") != "ubuntu-24.04-arm":
-    fail("linux-arm64-gnu publish job must run on native ARM64")
-if publish_arm.get("needs") != "all-builds-passed":
-    fail("linux-arm64-gnu publish job must wait for all builds")
-publish_text = json.dumps(publish_arm)
-if "napi-linux-arm64-gnu" not in publish_text or "src/ts/npm/linux-arm64-gnu" not in publish_text:
-    fail("linux-arm64-gnu publish job must stage its matching artifact and package")
+release_job() {
+  local job="$1"
+  awk -v header="  $job:" '
+    $0 == header { found = 1; next }
+    found && /^  [^[:space:]#][^:]*:$/ { exit }
+    found { print }
+  ' "$WORKFLOW"
+}
 
-main_needs = jobs["publish-npm"].get("needs", [])
-if not {"publish-npm-platform-linux-x64-gnu", "publish-npm-platform-linux-arm64-gnu"} <= set(main_needs):
-    fail("main npm publish must wait for both Linux platform packages")
+preflight_job() {
+  awk '
+    $0 == "  native-aarch64-artifacts:" { found = 1; next }
+    found && /^  [^[:space:]#][^:]*:$/ { exit }
+    found { print }
+  ' "$PREFLIGHT"
+}
 
-smoke_arm = jobs.get("post-publish-smoke-aarch64")
-if smoke_arm is None:
-    fail("release workflow must smoke published AArch64 Python and npm artifacts")
-if smoke_arm.get("runs-on") != "ubuntu-24.04-arm":
-    fail("AArch64 post-publish smoke must run on native ARM64")
-smoke_text = json.dumps(smoke_arm)
-if "smoke-pypi-wheel.sh" not in smoke_text or "smoke-npm-package.sh" not in smoke_text:
-    fail("AArch64 post-publish smoke must exercise both registry bindings")
+if [ ! -f "$PREFLIGHT" ]; then
+  printf 'FAIL  AArch64 release preflight workflow is missing\n' >&2
+  exit 1
+fi
 
-promotion = jobs.get("promote-npm-latest")
-if promotion is None or "post-publish-smoke-aarch64" not in promotion.get("needs", []):
-    fail("npm latest promotion must wait for AArch64 registry smokes")
-release_needs = jobs["github-release"].get("needs", [])
-if "promote-npm-latest" not in release_needs:
-    fail("GitHub release must wait for npm latest promotion")
+build_python="$(release_job build-python)"
+require_contains "$build_python" $'          - runner: ubuntu-24.04-arm\n            target: aarch64-unknown-linux-gnu\n            manylinux: "2_28"' \
+  'build-python must include the native ARM64 manylinux 2_28 row'
 
-if not Path(preflight_path).is_file():
-    fail("AArch64 release preflight workflow is missing")
-preflight = yaml.safe_load(open(preflight_path))
-preflight_triggers = preflight.get(True, {})
-if set(preflight_triggers) != {"push", "workflow_dispatch"}:
-    fail("AArch64 release preflight must run on relevant branch pushes and workflow dispatch")
-push_paths = preflight_triggers.get("push", {}).get("paths", [])
-for required_path in [
-    ".github/workflows/aarch64-release-preflight.yml",
-    ".github/workflows/release.yml",
-    "src/python/**",
-    "src/rust/**",
-    "src/ts/**",
-    "Cargo.toml",
-    "Cargo.lock",
-]:
-    if required_path not in push_paths:
-        fail(f"AArch64 release preflight push trigger must include {required_path!r}")
-preflight_jobs = preflight.get("jobs", {})
-native_preflight = preflight_jobs.get("native-aarch64-artifacts")
-if native_preflight is None:
-    fail("AArch64 release preflight must define native-aarch64-artifacts")
-if native_preflight.get("runs-on") != "ubuntu-24.04-arm":
-    fail("AArch64 release preflight must run on native ARM64")
-preflight_text = json.dumps(native_preflight)
-for required in [
-    "PyO3/maturin-action@",
-    "aarch64-unknown-linux-gnu",
-    "manylinux",
-    "npm ci",
-    "npm run build:native",
-    "fathomdb.linux-arm64-gnu.node",
-    "src/ts/npm/linux-arm64-gnu",
-    "npm pack --dry-run",
-]:
-    if required not in preflight_text:
-        fail(f"AArch64 release preflight must exercise {required!r}")
-if "publish" in preflight_text.lower() or "npm-publish-if-new" in preflight_text:
-    fail("AArch64 release preflight must not contain a publishing step")
+build_napi="$(release_job build-napi)"
+require_contains "$build_napi" $'          - runner: ubuntu-24.04-arm\n            target: aarch64-unknown-linux-gnu\n            label: linux-arm64-gnu' \
+  'build-napi must include the exact native ARM64 platform row'
 
-print("PASS  Linux AArch64 release artifacts are built, published, and smoke-tested natively")
-PY
+node - "$PLATFORM_PACKAGE" <<'NODE'
+const fs = require("node:fs");
+const path = process.argv[2];
+const platformPackage = JSON.parse(fs.readFileSync(path, "utf8"));
+const expected = {
+  name: "fathomdb-linux-arm64-gnu",
+  os: ["linux"],
+  cpu: ["arm64"],
+  libc: ["glibc"],
+  main: "fathomdb.linux-arm64-gnu.node",
+  files: ["fathomdb.linux-arm64-gnu.node"],
+};
+for (const [key, value] of Object.entries(expected)) {
+  if (JSON.stringify(platformPackage[key]) !== JSON.stringify(value)) {
+    console.error(`FAIL  linux-arm64-gnu package ${key} must be ${JSON.stringify(value)}, got ${JSON.stringify(platformPackage[key])}`);
+    process.exit(1);
+  }
+}
+NODE
+
+preflight_trigger="$(awk '
+  $0 == "on:" { found = 1; next }
+  found && /^[^[:space:]#][^:]*:$/ { exit }
+  found { print }
+' "$PREFLIGHT")"
+expected_trigger=$'  push:\n    paths:\n      - .github/workflows/aarch64-release-preflight.yml\n      - .github/workflows/release.yml\n      - src/python/**\n      - src/rust/**\n      - src/ts/**\n      - Cargo.toml\n      - Cargo.lock\n  workflow_dispatch:'
+if [ "$preflight_trigger" != "$expected_trigger" ]; then
+  printf 'FAIL  AArch64 release preflight triggers or watched paths drifted\n' >&2
+  exit 1
+fi
+
+native_preflight="$(preflight_job)"
+require_contains "$native_preflight" 'runs-on: ubuntu-24.04-arm' \
+  'AArch64 release preflight must run on native ARM64'
+for required in \
+  'PyO3/maturin-action@' \
+  'aarch64-unknown-linux-gnu' \
+  'manylinux' \
+  'npm ci' \
+  'npm run build:native' \
+  'fathomdb.linux-arm64-gnu.node' \
+  'src/ts/npm/linux-arm64-gnu' \
+  'npm pack --dry-run'; do
+  require_contains "$native_preflight" "$required" \
+    "AArch64 release preflight must exercise $required"
+done
+if [[ "${native_preflight,,}" == *publish* ]] || [[ "$native_preflight" == *npm-publish-if-new* ]]; then
+  printf 'FAIL  AArch64 release preflight must not contain a publishing step\n' >&2
+  exit 1
+fi
 
 scratch="$(mktemp -d)"
 trap 'rm -rf "$scratch"' EXIT
@@ -152,4 +122,5 @@ if [ "$injected" != "$expected" ]; then
   printf 'FAIL  main npm package must inject every stable platform dependency, got: %s\n' "$injected" >&2
   exit 1
 fi
-printf 'PASS  main npm package injects every stable platform dependency\n'
+
+printf 'PASS  Linux AArch64 release artifacts are built, published, and smoke-tested natively\n'
