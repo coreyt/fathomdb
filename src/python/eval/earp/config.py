@@ -116,8 +116,10 @@ CONSUMER_REGISTRY: Mapping[str, Consumer] = {
     "scenario.engine.use_default_embedder": Consumer("S3"),
     "scenario.store": Consumer("S5"),
     "scenario.store.mode": Consumer("S5"),
+    "scenario.fixture": Consumer("S5"),
     "scenario.query": Consumer("S3"),
     "scenario.query.call": Consumer("S3"),
+    "scenario.query.text": Consumer("S5"),
     "scenario.query.rerank_depth": Consumer("S5"),
     "scenario.query.use_graph_arm": Consumer("S5"),
     "scenario.query.alpha": Consumer("S5"),
@@ -334,15 +336,29 @@ def resolve_config(doc: Mapping[str, Any]) -> ConfigResolution:
             if blocker is not None:
                 blockers.append(blocker)
 
-    if campaign_raw == "diagnostic" and ladder:
-        blockers.append(
-            _blocker(
-                BlockerCode.CONFIG_INAPPLICABLE_KNOB,
-                "a diagnostic campaign runs without gold, so it MUST NOT declare "
-                "`evidence_recall_k`",
-                "metrics.evidence_recall_k",
+    if campaign_raw == "diagnostic":
+        # ALL THREE metric keys, not just the ladder. A diagnostic makes no
+        # relevance claim, so document metrics and integrity metrics are as
+        # inapplicable as recall -- and refusing only the ladder left the
+        # "no metric under any configuration" guarantee unenforced.
+        for key in ("evidence_recall_k", "document_metrics", "integrity"):
+            if metrics.get(key):
+                blockers.append(
+                    _blocker(
+                        BlockerCode.CONFIG_INAPPLICABLE_KNOB,
+                        f"a diagnostic campaign runs without gold and makes no "
+                        f"relevance claim, so it MUST NOT declare `{key}`",
+                        f"metrics.{key}",
+                    )
+                )
+        if "gold" in doc:
+            blockers.append(
+                _blocker(
+                    BlockerCode.CONFIG_INAPPLICABLE_KNOB,
+                    "a diagnostic campaign runs without gold",
+                    "gold",
+                )
             )
-        )
 
     if (ladder or document_metrics) and "gold" not in doc:
         blockers.append(

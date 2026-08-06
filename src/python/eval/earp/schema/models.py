@@ -100,6 +100,9 @@ class WitnessSource(str, Enum):
     PROJECTION_DELTA = "projection_delta"
     SEARCH_RESULT = "search_result"
     STORE_QUERY = "store_query"
+    #: `Engine.write`. Its own category rather than `store_query`, which
+    #: reads: the enum's docstring warns these are not interchangeable.
+    WRITE_RECEIPT = "write_receipt"
     FILESYSTEM = "filesystem"
 
 
@@ -180,6 +183,15 @@ class BlockerCode(str, Enum):
     CONFIG_UNUSED_KEY = "config_unused_key"
     #: A campaign kind `earp.v1` structurally cannot represent.
     CONFIG_CAMPAIGN_INEXPRESSIBLE = "config_campaign_inexpressible"
+
+    # -- S5 fixture. Distinct from CORPUS_ROOT_ABSENT, which is about the
+    # gitignored corpus/gold tree: a diagnostic declares neither, so reusing
+    # that code would conflate two different refusals.
+    #: The declared fixture file is absent.
+    FIXTURE_MISSING = "fixture_missing"
+    #: The fixture parses but violates a precondition -- a missing or
+    #: non-string body, a missing or duplicate logical_id, no source_id.
+    FIXTURE_INVALID = "fixture_invalid"
 
 
 @dataclass(frozen=True)

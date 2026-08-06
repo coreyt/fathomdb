@@ -139,5 +139,27 @@ policy stops a later matrix slice from treating it as a constraint.
 
 ## Review
 
-Pending — an independent code-grounded review is required before
-implementation, per the per-slice governance in the plan.
+Independent review, 2026-08-06 — the first that could **execute** against the
+built binding rather than reason about the SDK. It hand-ran the design's whole
+shape end to end and it produced a valid sidecar, a valid index line, and six
+well-sourced witnesses on the first attempt. Verdict: **changes required**;
+five findings closed before implementation.
+
+| # | Severity | Finding | Resolution |
+| ---: | --- | --- | --- |
+| B-1 | BLOCKER | The fixture — the slice's central artifact — had no config surface, no format, and no blocker code; `earp.v1` is closed, so it could not even be named | `scenario.fixture` and `scenario.query.text` added to the schema and registry; `fixture_missing` / `fixture_invalid` added to the lock, kept distinct from `corpus_root_absent`, which is about the gitignored corpus tree a diagnostic never declares |
+| B-2 | BLOCKER | "No metric under any configuration" had no enforcing mechanism: S3 refused only `evidence_recall_k`, so `document_metrics` and `integrity` flowed through, and the writer accepted a full recall metric on a diagnostic config | S3 refuses all three metric keys and a `gold` block; the runner's sidecar is structurally `metrics: {}` |
+| M-3 | MAJOR | A null body is **accepted**, stored as `'{}'`, invisible to FTS, behind a healthy-looking receipt — so a broken fixture would report green | `body` must be a non-empty string, refused before the write; landing is witnessed by a `read.get_many` round trip, not the counter-only receipt |
+| M-4 | MAJOR | `write_receipt` had no legal `WitnessSource`, and filing it under `store_query` would reintroduce the conflation the lock closed | `write_receipt` added to the enum and the result schema |
+| M-5 | MAJOR | `search_projected_text` takes `name`, not `projection_name`, so the dispatch would `TypeError` on the only call with a required knob | A `PARAM_RENAMES` table, stated in the design |
+| M-6 | MAJOR | AC-6 was undriveable: a non-null `embedder_download_ms` needs a real fetch, which policy forbids | `classify_open` factored out as a pure function over a report mapping |
+| M-7 | MAJOR | A duplicate `logical_id` silently supersedes — for S6 an unattributable recall loss | Uniqueness enforced in `load_fixture`, with a forward note for S6 |
+| N-10 | MINOR | `close()` leaves a `.lock` sidecar, so per-file deletion is wrong | One temp **directory**, `close()` in a `finally`, then `rmtree` |
+| N-12 | MINOR | The zero-hit verdict was undefined | `complete` — a diagnostic makes no relevance claim — paired with the landing witness so a broken fixture is distinguishable |
+
+Confirmed by execution, no change required: the doc-id mapping is sound and
+`logical|content` is total for `search_text_only`; a hash-shaped `logical_id`
+still reports the logical space; superseded nodes and edges never appear;
+`source_id`'s own error message is clear and helpful. Also confirmed, and
+relevant to S6: the FTS branch really is **not** truncated at 10 — 30 matching
+documents returned 30 hits — so S3's `CALL_MODE` unbounded entry is right.

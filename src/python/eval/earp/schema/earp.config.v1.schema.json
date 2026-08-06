@@ -137,8 +137,16 @@
             "projection_name": {
               "type": "string",
               "description": "The projection to query. Required exactly when call is Engine.search_projected_text, which takes it as a required positional argument -- without it a config resolves cleanly and cannot run."
+            },
+            "text": {
+              "type": "string",
+              "description": "The query string actually issued. Without it a config names a call it cannot make."
             }
           }
+        },
+        "fixture": {
+          "type": "string",
+          "description": "Path to a human-authored fixture (JSONL of write items). Required for a diagnostic campaign, which has no corpus and no gold."
         }
       }
     },

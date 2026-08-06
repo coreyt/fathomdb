@@ -363,6 +363,7 @@
             "projection_delta",
             "search_result",
             "store_query",
+            "write_receipt",
             "filesystem"
           ],
           "description": "Not interchangeable: vector_dense_readiness comes only from read_projections, vector_unsupported_kinds only from projection_delta, dense_disabled only from open_report."
@@ -416,7 +417,9 @@
             "config_invalid_value",
             "config_inapplicable_knob",
             "config_unused_key",
-            "config_campaign_inexpressible"
+            "config_campaign_inexpressible",
+            "fixture_missing",
+            "fixture_invalid"
           ]
         },
         "message": {
