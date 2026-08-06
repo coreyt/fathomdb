@@ -18,16 +18,36 @@ abstention over the negatives, and writes per-query outcomes alongside the
 aggregate. It also owns `replay`, because deterministic run identity only
 becomes meaningful once there is a real campaign worth reproducing.
 
-## Ingest
+## Ingest — driven by the snapshot, never by a glob
 
-Corpus rows are JSONL shards under `<data_root>/raw/*.jsonl`, each carrying
-`doc_id` and `body` among other fields. Verified shape:
+Revision 1 said "JSONL shards under `<data_root>/raw/*.jsonl`". That is wrong
+in a way that would have silently corrupted every number:
 
 ```text
-keys: author_or_sender, body, created_at, doc_id, license, modified_at,
-      parent_doc_id, people_mentions, project_mentions, provenance,
-      recipients, source_type, tags, thread_id, title, url_or_external_id
+raw/*.jsonl total          23,306 rows
+snapshot.json total_docs   10,506
 ```
+
+The glob picks up `compmix`, `musique_dev`, and `wec_eng` — 12,800 documents
+that are **not in the frozen snapshot**. A run would pin `corpus_hash` to a
+10,506-doc identity while measuring recall against 2.2× that index, and
+Recall@10 would be strictly depressed by documents the corpus does not contain.
+That is the "confident number that is not true" failure this platform exists
+to prevent. Worse, `musique_dev.jsonl` has neither `doc_id` nor `body` on any
+of its 4,834 rows, so the ingest would raise on its first row anyway.
+
+Ingest is therefore driven by **`snapshot.per_source_sha256`**, which is the
+authoritative shard list: for each of the 10 entries, resolve
+`<data_root>/raw/<source>.jsonl`, verify its SHA-256 and line count against the
+declared values, refuse on mismatch with a typed blocker, and ingest only
+those. `source_id` is the snapshot's `source` name, which is what D-6.2's
+corpus identity actually means.
+
+Verified across those 10 shards: `doc_id` and `body` present and non-empty on
+all 10,506 rows, `body` always a string, `doc_id` unique within *and* across
+shards (0 collisions), `source_type` always present and drawn from
+`{article, email, meeting, note, paper, todo}` — all accepted by a real
+10,506-document write.
 
 The write mapping is fixed by S5's doc-id decision and inherits its
 preconditions:
@@ -74,11 +94,62 @@ Because the content is semantically identical between v1 and v2 (verified:
 `evidence_spans` is non-empty on zero of 4,597 source rows), regeneration is
 cheap and carries no re-baselining.
 
+## Runtime, measured — and why retrieval is cached
+
+Revision 1 was silent on runtime. Measured against the real engine:
+
+| Scale | Write | `search_text_only` |
+| --- | --- | --- |
+| 2,000 docs | 0.44 s | mean 966 ms |
+| **10,506 docs** | **2.15 s** | **mean 21.7 s, p95 38.1 s** |
+
+Ingest is a non-issue. **Retrieval is ~28 hours for one pass over 4,597
+queries**, and the cause is the very property cited elsewhere as a feature: the
+node-FTS branch is untruncated, so it materializes every bm25 match — ~5,000
+hits per query, of which Recall@{5,10} uses ten. About 99.8% of the work is
+discarded, and it scales superlinearly (5.25× the documents gave 22× the
+latency).
+
+Composed naively it is worse. `metrics.aggregate` calls `retrieve` inside its
+own per-K loop, so driving the ladder by calling it once per rung would
+re-execute all 4,597 searches — **~55 hours**.
+
+So S6 **retrieves once per query**, caches the ranked doc-id list truncated to
+`max(ladder)`, and feeds every K rung from that cache. `aggregate` is handed a
+cache lookup, never a live engine call.
+
+This figure is escalated to the HITL rather than absorbed: it plausibly
+re-prices the D-5.2 fanout slice from "unblocks @20/@50" to "is also the
+performance fix", since a bounded fanout would cut this by orders of magnitude.
+
+## Resumability
+
+A 28-hour run that cannot resume is a run nobody will finish. S6 writes an
+append-only checkpoint keyed on `query_id` and resumes from it.
+
+Per-query rows are also validated **as they are produced**, not in one batch at
+the end. Validation costs 30 µs per row (measured: 9,194 rows in 0.28 s), so
+per-row validation is free — and it means one nonconforming row fails that
+*query* rather than discarding a completed campaign, which is what batch
+validation before `mkdir` would do.
+
 ## Scoring
 
-Per gold query: run the call, map hits to doc ids, and score through S2.
-Nothing is recomputed here — S2 owns the metric semantics and is pinned to
-executed parity with the Rust reference.
+Per gold query: run the call once, map hits to doc ids, cache, and score every
+K rung through S2. Nothing is recomputed here — S2 owns the metric semantics
+and is pinned to executed parity with the Rust reference.
+
+The query text is **`GoldQuery.query`**, which every gold query carries. There
+is exactly one `scenario.query.text` in the config and 4,597 gold queries, so
+that key is refused as `config_unused_key` for a characterization — it is
+diagnostic-only. Symmetrically, `scenario.fixture` is refused for a
+characterization.
+
+`required_doc_ids ⊆ ingested_doc_ids` is asserted before scoring. The join is
+clean today — 1,650 distinct required doc ids, 100% present in the snapshot-10
+set, every positive query carrying exactly one and the 125 negatives carrying
+none — but the assert is free and prevents a silent 0.0 if the shard list ever
+drifts.
 
 - Negatives are routed to abstention and held out of the recall means.
 - A retrieval error is a typed per-query failure, never folded into an empty
@@ -112,6 +183,12 @@ drift. It lands here rather than with the writer because deterministic
 `run_id` is the *mechanism* while a real campaign is the first thing that makes
 reproducing one meaningful.
 
+`replay_of` is a **CLI argument, not a config key**. Putting it in the config
+would change `config_sha256`, so the config-drift axis would fire on every
+replay including a perfect one — destroying the one case worth reporting.
+`"replay"` is also removed from `INEXPRESSIBLE`, since that refusal is keyed on
+the campaign string independently of any key.
+
 Drift is reported across three axes, each already recorded in the sidecar or
 the shared record:
 
@@ -126,10 +203,13 @@ interesting case: same declared experiment, different engine. It is reported as
 drift with the axis named, never as a pass or a failure — S6 measures, it does
 not rule.
 
-`replay` is currently refused by S3 as `config_campaign_inexpressible`, because
-`earp.v1` has no key referencing a prior run. S6 therefore lands the replay
-*mechanism* over a stored record plus a `scenario.replay_of` key, which is a
-schema amendment this slice carries.
+S5 writes empty `code`/`env` dicts, so for records it has already written those
+axes are unrecoverable. `_lib.git_info()` and `_lib.env_info()` exist and were
+simply unused; S6 calls them, and reports an empty prior `git_sha` as
+`axis_unrecoverable` rather than as drift from `""`.
+
+`replay` is currently refused by S3 as `config_campaign_inexpressible`. S6
+lands the replay mechanism over a stored record and removes that refusal.
 
 ## Non-goals
 

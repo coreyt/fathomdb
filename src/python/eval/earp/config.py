@@ -64,11 +64,15 @@ CALL_PARAMS: Mapping[str, frozenset[str]] = {
 }
 
 #: Campaign kinds `earp.v1` structurally cannot represent: it has exactly one
-#: `scenario` object and no arms array, and no key referencing a prior run.
+#: `scenario` object and no arms array.
+#:
+#: `replay` is NOT here. It needs a pointer to a prior run, but that pointer is
+#: a CLI argument rather than a config key -- putting it in the config would
+#: change `config_sha256`, so the config-drift axis would fire on every replay
+#: including a perfect one, destroying the only case worth reporting.
 INEXPRESSIBLE: Mapping[str, str] = {
     "comparison": "S8 (needs >= 2 arms; earp.v1 has one scenario and no arms array)",
     "sweep": "S8 (needs N arms; earp.v1 has one scenario and no arms array)",
-    "replay": "S6 (needs a reference to a prior run_id; earp.v1 has no such key)",
 }
 
 #: metric name -> whether `@k` is required, and its emitting condition.
@@ -90,6 +94,14 @@ class Consumer:
 
 def _always(_doc: Mapping[str, Any]) -> bool:
     return True
+
+
+def _diagnostic_only(doc: Mapping[str, Any]) -> bool:
+    """`scenario.fixture` and `scenario.query.text` describe ONE authored query
+    over an authored fixture. A characterization has 4,597 gold queries and
+    takes its text from `GoldQuery.query`, so carrying either would be a
+    declaration the run must silently ignore."""
+    return doc.get("campaign") == "diagnostic"
 
 
 def _never(_doc: Mapping[str, Any]) -> bool:
@@ -116,10 +128,10 @@ CONSUMER_REGISTRY: Mapping[str, Consumer] = {
     "scenario.engine.use_default_embedder": Consumer("S3"),
     "scenario.store": Consumer("S5"),
     "scenario.store.mode": Consumer("S5"),
-    "scenario.fixture": Consumer("S5"),
+    "scenario.fixture": Consumer("S5", _diagnostic_only),
     "scenario.query": Consumer("S3"),
     "scenario.query.call": Consumer("S3"),
-    "scenario.query.text": Consumer("S5"),
+    "scenario.query.text": Consumer("S5", _diagnostic_only),
     "scenario.query.rerank_depth": Consumer("S5"),
     "scenario.query.use_graph_arm": Consumer("S5"),
     "scenario.query.alpha": Consumer("S5"),

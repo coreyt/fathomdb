@@ -271,13 +271,21 @@ def test_projection_name_rejected_for_other_calls() -> None:
 # --- AC-8: inexpressible campaigns -----------------------------------------
 
 
-@pytest.mark.parametrize("kind", ["comparison", "sweep", "replay"])
+@pytest.mark.parametrize("kind", ["comparison", "sweep"])
 def test_inexpressible_campaigns_are_refused(kind: str) -> None:
     """earp.v1 has one scenario and no arms array, so these cannot be
     represented — accepting them silently is the worst option."""
     result = resolve_config(_config(campaign=kind))
     assert BlockerCode.CONFIG_CAMPAIGN_INEXPRESSIBLE in _codes(result)
-    assert any("S8" in b.message or "S6" in b.message for b in result.blockers)
+    assert any("S8" in b.message for b in result.blockers)
+
+
+def test_replay_is_expressible() -> None:
+    """S6 owns replay. Its pointer to a prior run is a CLI argument, not a
+    config key: in the config it would change config_sha256 and make the
+    config-drift axis fire on every replay, including a perfect one."""
+    result = resolve_config(_config(campaign="replay"))
+    assert BlockerCode.CONFIG_CAMPAIGN_INEXPRESSIBLE not in _codes(result)
 
 
 def test_diagnostic_must_not_declare_evidence_recall() -> None:
