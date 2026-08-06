@@ -720,7 +720,8 @@ jobs:
 
   # Thin main `fathomdb` package: ships dist/ only (NO .node — the platform
   # packages carry the binaries as optionalDependencies). Idempotent publish
-  # under the NON-latest NPM_DIST_TAG while platform coverage is partial.
+  # under the staged `next` dist-tag until all registry smokes permit only the
+  # main package's promotion to `latest`.
   publish-npm:
     runs-on: ubuntu-latest
     if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.recovery_skip_npm == true && inputs.release_version == '0.8.20') }}
