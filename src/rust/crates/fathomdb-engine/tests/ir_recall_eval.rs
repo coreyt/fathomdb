@@ -20,15 +20,15 @@ mod corpus_subset;
 #[path = "support/ir_eval.rs"]
 mod ir_eval;
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 
 use corpus_subset::Doc;
 use ir_eval::{
     evaluate_gold_set, evidence_recall_at_k, experiment_to_json, load_gold_set, negative_abstained,
     parse_gold_set, required_doc_ids, run_experiment, run_mode_bodies, validate_gold_set,
-    EvidenceUnit, GoldQuery, GoldSet, Locator, Necessity, QueryClass, QueryOrigin, RetrievalMode,
-    Span, HEADLINE_K, K_LADDER, RUNNABLE_NOW_MODES,
+    EvidenceUnit, ExperimentResult, GoldQuery, GoldSet, Locator, Necessity, QueryClass,
+    QueryOrigin, RetrievalMode, Span, HEADLINE_K, K_LADDER, RUNNABLE_NOW_MODES,
 };
 
 // ── Test constructors (keep the unit tests terse) ───────────────────────────
@@ -165,6 +165,20 @@ fn supporting_coverage_aggregate_uses_only_support_bearing_queries() {
     assert_eq!(aggregate.supporting(), Some(0.5));
     assert_eq!(results[&HEADLINE_K].per_class[&QueryClass::Action].supporting_query_n, 0);
     assert_eq!(results[&HEADLINE_K].per_class[&QueryClass::Action].supporting(), None);
+
+    let result = ExperimentResult {
+        fanout: HEADLINE_K,
+        per_mode: BTreeMap::from([(RetrievalMode::RrfHybrid, results)]),
+        deferred_modes: vec![],
+    };
+    let json = experiment_to_json(&gold, &result);
+    let overall = &json["per_mode"]["rrf_hybrid"][HEADLINE_K.to_string()]["overall"];
+    assert_eq!(overall["supporting_coverage"], 0.5);
+    assert_eq!(overall["supporting_query_n"], 1);
+    let commitment =
+        &json["per_mode"]["rrf_hybrid"][HEADLINE_K.to_string()]["per_class"]["commitment"];
+    assert_eq!(commitment["supporting_coverage"], 0.5);
+    assert_eq!(commitment["supporting_query_n"], 1);
 }
 
 // ── (f) Legacy eu8 reduction: expected_top_k_doc_ids as the fallback unit ───
