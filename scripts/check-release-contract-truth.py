@@ -67,7 +67,7 @@ CONTINUE_ON_ERROR = re.compile(
     re.MULTILINE,
 )
 SUCCESS_BYPASS = re.compile(
-    r"(?:\b(?:always|cancelled|failure)\s*\(|!\s*success\s*\()",
+    r"(?:\b(?:always|cancelled|failure)\s*\(|!\s*(?:\(\s*)*success\s*\()",
     re.IGNORECASE,
 )
 
