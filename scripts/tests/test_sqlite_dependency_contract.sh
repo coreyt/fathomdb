@@ -23,9 +23,9 @@ for manifest in \
 done
 
 tc76="$root/src/rust/crates/fathomdb-engine/tests/tc76_vec0_long_metadata_delete.rs"
-if ! rg -q 'fn bare_vec0_delete_pins_the_upstream_length_boundary' "$tc76" \
-  || ! rg -q 'sqlite-vec 0\.1\.9 must delete a' "$tc76" \
-  || ! rg -q 'assert_eq!\(residue, 0' "$tc76"; then
+if ! grep -Fq 'fn bare_vec0_delete_pins_the_upstream_length_boundary' "$tc76" \
+  || ! grep -Fq 'sqlite-vec 0.1.9 must delete a' "$tc76" \
+  || ! grep -Fq 'assert_eq!(residue, 0' "$tc76"; then
   printf 'FAIL  TC-76 must prove sqlite-vec 0.1.9 deletes long vec0 metadata without residue\n' >&2
   exit 1
 fi

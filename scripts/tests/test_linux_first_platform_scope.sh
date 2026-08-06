@@ -116,10 +116,18 @@ for mapping in \
   assert_job_runner "$job" "$runner" "$job runs on its supported target runner"
 done
 
-if rg -q 'unknown-linux-musl|apple-ios|aarch64-pc-windows|i686-pc-windows|win32-arm64' "$CI" "$RELEASE"; then
-  fail "CI or release workflow declares an unsupported musl or platform target"
+if ! command -v grep >/dev/null 2>&1; then
+  fail "grep is required to inspect unsupported target triples"
 else
-  pass "CI and release workflow exclude musl and other unsupported target triples"
+  set +e
+  grep -Eq -- 'unknown-linux-musl|apple-ios|aarch64-pc-windows|i686-pc-windows|win32-arm64' "$CI" "$RELEASE"
+  unsupported_target_rc=$?
+  set -e
+  case "$unsupported_target_rc" in
+    0) fail "CI or release workflow declares an unsupported musl or platform target" ;;
+    1) pass "CI and release workflow exclude musl and other unsupported target triples" ;;
+    *) fail "could not inspect CI and release workflow target triples (grep rc=$unsupported_target_rc)" ;;
+  esac
 fi
 
 promotion_block="$(job_block "$RELEASE" promote-npm-latest)"
