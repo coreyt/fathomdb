@@ -30,8 +30,38 @@ JOB_HEADER = re.compile(r"^  ([A-Za-z][A-Za-z0-9_-]*):\s*$")
 MATRIX_RUNNER = re.compile(r"^          - runner: ([^\s#]+)\s*$")
 MATRIX_VALUE = re.compile(r"^            ([a-z_]+): ([^\s#]+)\s*$")
 RUNNER = re.compile(r"^    runs-on: ([^\s#]+)\s*$", re.MULTILINE)
+MATRIX_RUNS_ON = re.compile(r"^    runs-on: \$\{\{ matrix\.runner \}\}\s*$", re.MULTILINE)
 INLINE_NEEDS = re.compile(r"^    needs: \[([^]]*)\]\s*$", re.MULTILINE)
 SCALAR_NEEDS = re.compile(r"^    needs: ([A-Za-z0-9_-]+)\s*$", re.MULTILINE)
+SHARED_SMOKE_COMMAND = re.compile(
+    r'^        run: bash "scripts/release/smoke/smoke-\$\{\{ matrix\.smoke \}\}\.sh" '
+    r'"\$\{\{ steps\.ver\.outputs\.version \}\}"\s*$',
+    re.MULTILINE,
+)
+UNIX_WHEEL_SMOKE = re.compile(
+    r'^(?:      - |        )run: bash scripts/release/smoke/smoke-pypi-wheel\.sh '
+    r'"\$\{\{ steps\.ver\.outputs\.version \}\}"\s*$',
+    re.MULTILINE,
+)
+UNIX_NPM_SMOKE = re.compile(
+    r'^(?:      - |        )run: bash scripts/release/smoke/smoke-npm-package\.sh '
+    r'"\$\{\{ steps\.ver\.outputs\.version \}\}"\s*$',
+    re.MULTILINE,
+)
+WINDOWS_WHEEL_SMOKE = re.compile(
+    r'^        run: \./scripts/release/smoke/smoke-pypi-wheel\.ps1 '
+    r'"\$\{\{ steps\.ver\.outputs\.version \}\}"\s*$',
+    re.MULTILINE,
+)
+WINDOWS_NPM_SMOKE = re.compile(
+    r'^        run: \./scripts/release/smoke/smoke-npm-package\.ps1 '
+    r'"\$\{\{ steps\.ver\.outputs\.version \}\}"\s*$',
+    re.MULTILINE,
+)
+PROMOTION_COMMAND = re.compile(
+    r'^        run: npm dist-tag add "fathomdb@\$\{RELEASE_TAG#v\}" latest\s*$',
+    re.MULTILINE,
+)
 
 
 def root() -> Path:
@@ -144,6 +174,28 @@ def require_runner(job_name: str, block: str, expected: str) -> None:
         fail(f"{job_name} runs on {match.group(1)!r}, expected {expected!r}")
 
 
+def require_matrix_runner(job_name: str, block: str) -> None:
+    if not MATRIX_RUNS_ON.search(block):
+        fail(f"{job_name} must run each matrix entry on ${{{{ matrix.runner }}}}")
+
+
+def require_smoke_commands(job_name: str, block: str, runner: str) -> None:
+    if job_name == "post-publish-smoke":
+        smoke_matrix = re.search(r"^        smoke: (.+)$", block, re.MULTILINE)
+        if smoke_matrix is None or not all(
+            token in smoke_matrix.group(1) for token in ('"pypi-wheel"', '"npm-package"')
+        ):
+            fail(f"{job_name} matrix must select both Python-wheel and npm-package smokes")
+        if not SHARED_SMOKE_COMMAND.search(block):
+            fail(f"{job_name} must execute the selected shared smoke command")
+        return
+
+    wheel = WINDOWS_WHEEL_SMOKE if runner == "windows-latest" else UNIX_WHEEL_SMOKE
+    npm = WINDOWS_NPM_SMOKE if runner == "windows-latest" else UNIX_NPM_SMOKE
+    if not wheel.search(block) or not npm.search(block):
+        fail(f"{job_name} must execute Python-wheel and npm-package smoke commands")
+
+
 def main() -> None:
     repo = root()
     manifest = read_json(repo / "dev/platform-capabilities.json")
@@ -184,6 +236,7 @@ def main() -> None:
         block = jobs.get(job_name)
         if block is None:
             fail(f"release workflow lacks {job_name}")
+        require_matrix_runner(job_name, block)
         rows = matrix_rows(job_name, block, label_required)
         actual = {(runner, target) for runner, target, _ in rows}
         if len(rows) != len(actual):
@@ -240,10 +293,7 @@ def main() -> None:
         require_runner(smoke_job, smoke_block, entry["runner"])
         if "publish-npm" not in needs(smoke_job, smoke_block):
             fail(f"{smoke_job} must depend on publish-npm")
-        has_python_smoke = "smoke-pypi-wheel" in smoke_block or "pypi-wheel" in smoke_block
-        has_npm_smoke = "smoke-npm-package" in smoke_block or "npm-package" in smoke_block
-        if not (has_python_smoke and has_npm_smoke):
-            fail(f"{smoke_job} must run Python-wheel and npm-package smokes")
+        require_smoke_commands(smoke_job, smoke_block, entry["runner"])
         smoke_jobs.append(smoke_job)
 
     publish_main = jobs.get("publish-npm")
@@ -262,6 +312,9 @@ def main() -> None:
         fail("promote-npm-latest must depend on every release-ready platform smoke")
     if "co-tagging-assert" not in promotion_needs:
         fail("promote-npm-latest must depend on co-tagging-assert")
+    promotion_commands = re.findall(r"^        run: npm dist-tag add .+$", promotion, re.MULTILINE)
+    if len(promotion_commands) != 1 or not PROMOTION_COMMAND.search(promotion):
+        fail("promote-npm-latest must promote only fathomdb@${RELEASE_TAG#v} to latest")
 
     print(f"ok    release-contract-truth: {release} has {len(ready)} release-ready native triples")
 

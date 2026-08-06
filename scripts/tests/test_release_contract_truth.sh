@@ -43,6 +43,20 @@ make_fixture "$FIXTURE"
 expect_pass "$FIXTURE" 'baseline release-ready contract agrees'
 
 make_fixture "$FIXTURE"
+python3 - "$FIXTURE/.github/workflows/release.yml" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text()
+needle = "    runs-on: ${{ matrix.runner }}\n"
+if text.count(needle) != 2:
+    raise SystemExit("test fixture no longer contains both matrix runner bindings")
+path.write_text(text.replace(needle, "    runs-on: ubuntu-latest\n", 1))
+PY
+expect_fail "$FIXTURE" 'rejects a build matrix that ignores matrix.runner'
+
+make_fixture "$FIXTURE"
 sed -i '/target: aarch64-apple-darwin/d' "$FIXTURE/.github/workflows/release.yml"
 expect_fail "$FIXTURE" 'rejects a missing native build target'
 
@@ -63,6 +77,34 @@ expect_fail "$FIXTURE" 'rejects a duplicate native build row'
 make_fixture "$FIXTURE"
 sed -i '0,/label: darwin-arm64/s//label: darwin-x64/' "$FIXTURE/.github/workflows/release.yml"
 expect_fail "$FIXTURE" 'rejects a wrong N-API label'
+
+make_fixture "$FIXTURE"
+python3 - "$FIXTURE/.github/workflows/release.yml" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text()
+needle = 'smoke-${{ matrix.smoke }}.sh'
+if text.count(needle) != 1:
+    raise SystemExit("test fixture no longer contains exactly one shared smoke command")
+path.write_text(text.replace(needle, "smoke-crates-cli.sh", 1))
+PY
+expect_fail "$FIXTURE" 'rejects a shared Linux smoke matrix that does not execute its selected smoke'
+
+make_fixture "$FIXTURE"
+python3 - "$FIXTURE/.github/workflows/release.yml" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text()
+needle = '      - run: bash scripts/release/smoke/smoke-pypi-wheel.sh "${{ steps.ver.outputs.version }}"\n'
+if text.count(needle) != 2:
+    raise SystemExit("test fixture no longer contains both direct Unix wheel-smoke commands")
+path.write_text(text.replace(needle, needle.replace("bash", "echo", 1), 1))
+PY
+expect_fail "$FIXTURE" 'rejects a direct platform smoke that merely mentions a wheel command'
 
 make_fixture "$FIXTURE"
 python3 - "$FIXTURE/.github/workflows/release.yml" <<'PY'
@@ -105,6 +147,20 @@ if text.count(needle) != 1:
 path.write_text(text.replace(needle, "", 1))
 PY
 expect_fail "$FIXTURE" 'rejects a missing platform promotion dependency'
+
+make_fixture "$FIXTURE"
+python3 - "$FIXTURE/.github/workflows/release.yml" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text()
+needle = 'run: npm dist-tag add "fathomdb@${RELEASE_TAG#v}" latest'
+if text.count(needle) != 1:
+    raise SystemExit("test fixture no longer contains exactly one main-package promotion command")
+path.write_text(text.replace(needle, needle.replace("fathomdb@", "fathomdb-linux-x64-gnu@", 1)))
+PY
+expect_fail "$FIXTURE" 'rejects a latest promotion of a platform package'
 
 make_fixture "$FIXTURE"
 python3 - "$FIXTURE/dev/platform-capabilities.json" <<'PY'
