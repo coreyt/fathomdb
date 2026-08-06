@@ -18,6 +18,9 @@
   "next_slice": 0,
   "remaining_ladder": [0, 5, 10, 15, 20, 25],
   "generated_views": [
-    {"id": "plan-landed-roll-up", "file": "dev/plans/plan-0.8.22.md", "location": "Landed release state", "renders": "every landed slice + its landing SHA, the SCHEMA version, and the remaining ladder"}
+    {"id": "plan-landed-roll-up", "file": "dev/plans/plan-0.8.22.md", "location": "Landed release state", "renders": "every landed slice + its landing SHA, the SCHEMA version, and the remaining ladder"},
+    {"id": "plan-immediate-next", "file": "dev/plans/plan-0.8.22.md", "location": "Immediate next slice", "renders": "the next commissioned slice and remaining ladder"},
+    {"id": "status-current-state", "file": "dev/plans/runs/STATUS-0.8.22.md", "location": "Current state", "renders": "the state-owned next-slice and landed evidence summary"},
+    {"id": "status-next-action", "file": "dev/plans/runs/STATUS-0.8.22.md", "location": "Immediate next action", "renders": "the state-owned next commissioning action and remaining ladder"}
   ]
 }

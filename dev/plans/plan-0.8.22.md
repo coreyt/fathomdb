@@ -64,5 +64,7 @@ prepares and verifies the release path; it does not authorize a registry write.
 
 ## Immediate next slice
 
-Land and review the prerequisite candidate work against `origin/main`, then
-run the non-publishing immutable-SHA release dry-run.
+<!-- BEGIN GENERATED release-state:0.8.22:plan-immediate-next -->
+**IMMEDIATE NEXT: Slice 0** (`CONTRACT`) — release contract, platform acceptance, and trusted-publishing runbook
+
+**Remaining ladder:** 0 → 5 → 10 → 15 → 20 → 25.<!-- END GENERATED release-state:0.8.22:plan-immediate-next -->
