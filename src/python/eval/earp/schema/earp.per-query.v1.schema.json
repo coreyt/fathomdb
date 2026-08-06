@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "earp.per-query.v1",
+  "title": "EARP per-query outcome (earp.per-query.v1)",
+  "description": "One JSON object per line of earp.per-query.v1.jsonl -- one line per (query, K). Only outcome=scored carries metric numbers; skipped, blocked, and error carry a reason and no score, and are never folded into a recall denominator as an ordinary miss.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "query_id", "k", "outcome"],
+  "properties": {
+    "schema_version": { "const": "earp.per-query.v1" },
+    "query_id": {
+      "type": "string",
+      "description": "Immutable gold query id. Comparison pairing keys on this."
+    },
+    "query_class": {
+      "enum": ["commitment", "action", "exact_fact", "preference", "exploratory", "negative"]
+    },
+    "k": { "type": "integer", "minimum": 1 },
+    "outcome": { "enum": ["scored", "skipped", "blocked", "error"] },
+    "reason": {
+      "type": ["string", "null"],
+      "description": "Required when outcome is not 'scored'."
+    },
+    "blocker_code": {
+      "type": ["string", "null"],
+      "description": "Set when outcome is 'blocked'; matches the result sidecar's blocker vocabulary."
+    },
+    "strict": { "type": ["number", "null"] },
+    "graded": { "type": ["number", "null"] },
+    "required_n": { "type": ["integer", "null"] },
+    "required_hits": { "type": ["integer", "null"] },
+    "supporting_coverage": {
+      "type": ["number", "null"],
+      "description": "null when the query has no supporting units -- the reference returns Option<f64>. null means inapplicable, NOT a zero score."
+    },
+    "abstained": {
+      "type": ["boolean", "null"],
+      "description": "Negative-class queries only: correct iff top-K returned nothing."
+    },
+    "retrieved_n": { "type": ["integer", "null"] },
+    "retrieved_doc_ids": {
+      "type": ["array", "null"],
+      "items": { "type": "string" }
+    },
+    "stratum": { "type": ["string", "null"] }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "outcome": { "const": "scored" } }, "required": ["outcome"] },
+      "then": { "required": ["strict", "graded", "required_n", "required_hits"] }
+    },
+    {
+      "if": {
+        "properties": { "outcome": { "enum": ["skipped", "blocked", "error"] } },
+        "required": ["outcome"]
+      },
+      "then": { "required": ["reason"] }
+    }
+  ]
+}

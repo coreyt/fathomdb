@@ -1,0 +1,166 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "earp.config.v1",
+  "title": "EARP campaign configuration (earp.v1)",
+  "description": "Strict, versioned campaign configuration. Unknown keys, absent required keys, and invalid knob values are hard errors. References data by identity; never embeds corpus payloads.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "campaign", "scenario"],
+  "properties": {
+    "schema_version": { "const": "earp.v1" },
+    "campaign": {
+      "enum": ["characterization", "comparison", "sweep", "replay", "diagnostic"]
+    },
+    "corpus": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["snapshot"],
+      "properties": {
+        "snapshot": {
+          "type": "string",
+          "description": "The GoldSet's identity (D-6.2)."
+        },
+        "manifest": {
+          "type": "string",
+          "description": "Raw-corpus provenance. Distinct from snapshot; never conflated."
+        },
+        "data_root": {
+          "type": "string",
+          "description": "Explicit root for gitignored corpus/gold data. Absence is a typed blocker, never a silent empty gold set."
+        }
+      }
+    },
+    "gold": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "corpus_hash", "qrels_version"],
+      "properties": {
+        "path": { "type": "string" },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "Full 64-hex content pin (D-6.1). A truncated hash cannot be matched."
+        },
+        "corpus_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "Must equal the frozen snapshot hash."
+        },
+        "qrels_version": {
+          "type": "string",
+          "description": "ir-c-reused-v1 is refused as stale (D-6.3)."
+        }
+      }
+    },
+    "scenario": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["query"],
+      "properties": {
+        "engine": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "use_default_embedder": {
+              "type": "boolean",
+              "description": "The only EngineConfig-adjacent setting reaching native open."
+            }
+          }
+        },
+        "store": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": { "mode": { "enum": ["canonical_docs"] } }
+        },
+        "query": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["call"],
+          "properties": {
+            "call": {
+              "enum": [
+                "Engine.search",
+                "Engine.search_projected_text",
+                "Engine.search_text_only"
+              ],
+              "description": "A named SDK call, never a symbolic label."
+            },
+            "mode": { "enum": ["fts_only", "vector_only", "hybrid"] },
+            "rerank_depth": { "type": "integer", "minimum": 0 },
+            "use_graph_arm": { "type": "boolean" },
+            "alpha": { "type": "number" },
+            "pool_n": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "CE-rerank pool size. NOT a result-depth control."
+            }
+          }
+        }
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "evidence_recall_k": {
+          "type": "array",
+          "items": { "type": "integer", "minimum": 1 },
+          "uniqueItems": true,
+          "description": "Mode-aware (D-5). vector_only/hybrid reject K>10 with metric_not_measurable until the fanout control lands; fts_only is unbounded."
+        },
+        "document_metrics": {
+          "type": "array",
+          "items": { "enum": ["mrr", "ndcg"] },
+          "uniqueItems": true,
+          "description": "ndcg requires graded relevance, which no gold set in this repo carries; requesting it yields not_applicable."
+        },
+        "integrity": {
+          "type": "array",
+          "items": { "enum": ["projection_coverage", "provenance"] },
+          "uniqueItems": true
+        }
+      }
+    },
+    "decision_rule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["metric", "direction", "threshold"],
+      "description": "Optional. Predeclared before the run (D-4). Absent means metrics may be reported but no better-than claim may be made.",
+      "properties": {
+        "metric": { "type": "string" },
+        "direction": { "enum": ["greater", "less"] },
+        "threshold": { "type": "number" }
+      }
+    },
+    "comparison": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["changed_knobs"],
+      "description": "Only a comparison campaign may claim a one-knob causal result; resolved arms must differ only at these paths.",
+      "properties": {
+        "changed_knobs": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1
+        },
+        "strata": { "type": "array", "items": { "type": "string" } },
+        "ci_method": { "enum": ["percentile_bootstrap", "paired_bootstrap"] },
+        "seed": { "type": "integer" },
+        "resamples": { "type": "integer", "minimum": 1 },
+        "min_n": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["estimated_usd"],
+      "properties": {
+        "estimated_usd": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Declared worst case. Summed against experiments/index.jsonl and refused if the cumulative projection exceeds the D-3 authorization."
+        }
+      }
+    }
+  }
+}
