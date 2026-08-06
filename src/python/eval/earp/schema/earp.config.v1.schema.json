@@ -5,16 +5,30 @@
   "description": "Strict, versioned campaign configuration. Unknown keys, absent required keys, and invalid knob values are hard errors. References data by identity; never embeds corpus payloads.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "campaign", "scenario"],
+  "required": [
+    "schema_version",
+    "campaign",
+    "scenario"
+  ],
   "properties": {
-    "schema_version": { "const": "earp.v1" },
+    "schema_version": {
+      "const": "earp.v1"
+    },
     "campaign": {
-      "enum": ["characterization", "comparison", "sweep", "replay", "diagnostic"]
+      "enum": [
+        "characterization",
+        "comparison",
+        "sweep",
+        "replay",
+        "diagnostic"
+      ]
     },
     "corpus": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["snapshot"],
+      "required": [
+        "snapshot"
+      ],
       "properties": {
         "snapshot": {
           "type": "string",
@@ -33,9 +47,16 @@
     "gold": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["path", "sha256", "corpus_hash", "qrels_version"],
+      "required": [
+        "path",
+        "sha256",
+        "corpus_hash",
+        "qrels_version"
+      ],
       "properties": {
-        "path": { "type": "string" },
+        "path": {
+          "type": "string"
+        },
         "sha256": {
           "type": "string",
           "pattern": "^[0-9a-f]{64}$",
@@ -55,7 +76,9 @@
     "scenario": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["query"],
+      "required": [
+        "query"
+      ],
       "properties": {
         "engine": {
           "type": "object",
@@ -70,12 +93,20 @@
         "store": {
           "type": "object",
           "additionalProperties": false,
-          "properties": { "mode": { "enum": ["canonical_docs"] } }
+          "properties": {
+            "mode": {
+              "enum": [
+                "canonical_docs"
+              ]
+            }
+          }
         },
         "query": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["call"],
+          "required": [
+            "call"
+          ],
           "properties": {
             "call": {
               "enum": [
@@ -85,14 +116,27 @@
               ],
               "description": "A named SDK call, never a symbolic label."
             },
-            "mode": { "enum": ["fts_only", "vector_only", "hybrid"] },
-            "rerank_depth": { "type": "integer", "minimum": 0 },
-            "use_graph_arm": { "type": "boolean" },
-            "alpha": { "type": "number" },
+            "rerank_depth": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "use_graph_arm": {
+              "type": "boolean"
+            },
+            "alpha": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1,
+              "description": "The engine CLAMPS an out-of-range alpha rather than refusing, so an unbounded value would run as something other than what the sidecar records. Bounded here instead."
+            },
             "pool_n": {
               "type": "integer",
               "minimum": 1,
               "description": "CE-rerank pool size. NOT a result-depth control."
+            },
+            "projection_name": {
+              "type": "string",
+              "description": "The projection to query. Required exactly when call is Engine.search_projected_text, which takes it as a required positional argument -- without it a config resolves cleanly and cannot run."
             }
           }
         }
@@ -104,19 +148,32 @@
       "properties": {
         "evidence_recall_k": {
           "type": "array",
-          "items": { "type": "integer", "minimum": 1 },
+          "items": {
+            "type": "integer",
+            "minimum": 1
+          },
           "uniqueItems": true,
           "description": "Mode-aware (D-5). vector_only/hybrid reject K>10 with metric_not_measurable until the fanout control lands; fts_only is unbounded."
         },
         "document_metrics": {
           "type": "array",
-          "items": { "enum": ["mrr", "ndcg"] },
+          "items": {
+            "enum": [
+              "mrr",
+              "ndcg"
+            ]
+          },
           "uniqueItems": true,
           "description": "ndcg requires graded relevance, which no gold set in this repo carries; requesting it yields not_applicable."
         },
         "integrity": {
           "type": "array",
-          "items": { "enum": ["projection_coverage", "provenance"] },
+          "items": {
+            "enum": [
+              "projection_coverage",
+              "provenance"
+            ]
+          },
           "uniqueItems": true
         }
       }
@@ -124,36 +181,73 @@
     "decision_rule": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["metric", "direction", "threshold"],
+      "required": [
+        "metric",
+        "direction",
+        "threshold"
+      ],
       "description": "Optional. Predeclared before the run (D-4). Absent means metrics may be reported but no better-than claim may be made.",
       "properties": {
-        "metric": { "type": "string" },
-        "direction": { "enum": ["greater", "less"] },
-        "threshold": { "type": "number" }
+        "metric": {
+          "type": "string"
+        },
+        "direction": {
+          "enum": [
+            "greater",
+            "less"
+          ]
+        },
+        "threshold": {
+          "type": "number"
+        }
       }
     },
     "comparison": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["changed_knobs"],
+      "required": [
+        "changed_knobs"
+      ],
       "description": "Only a comparison campaign may claim a one-knob causal result; resolved arms must differ only at these paths.",
       "properties": {
         "changed_knobs": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "minItems": 1
         },
-        "strata": { "type": "array", "items": { "type": "string" } },
-        "ci_method": { "enum": ["percentile_bootstrap", "paired_bootstrap"] },
-        "seed": { "type": "integer" },
-        "resamples": { "type": "integer", "minimum": 1 },
-        "min_n": { "type": "integer", "minimum": 1 }
+        "strata": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "ci_method": {
+          "enum": [
+            "percentile_bootstrap",
+            "paired_bootstrap"
+          ]
+        },
+        "seed": {
+          "type": "integer"
+        },
+        "resamples": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "min_n": {
+          "type": "integer",
+          "minimum": 1
+        }
       }
     },
     "budget": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["estimated_usd"],
+      "required": [
+        "estimated_usd"
+      ],
       "properties": {
         "estimated_usd": {
           "type": "number",

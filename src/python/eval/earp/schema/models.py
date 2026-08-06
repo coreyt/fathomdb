@@ -166,6 +166,21 @@ class BlockerCode(str, Enum):
     #: A run directory already exists for this run_id with a differing sidecar.
     RUN_ID_COLLISION = "run_id_collision"
 
+    # -- S3 config resolution. Distinct from the data/run codes above: these
+    # fire before anything is opened, read, or measured.
+    #: A key the schema does not define.
+    CONFIG_UNKNOWN_KEY = "config_unknown_key"
+    #: A required key is absent.
+    CONFIG_MISSING_KEY = "config_missing_key"
+    #: A defined key carrying an out-of-domain value.
+    CONFIG_INVALID_VALUE = "config_invalid_value"
+    #: A declared knob the named search call does not accept.
+    CONFIG_INAPPLICABLE_KNOB = "config_inapplicable_knob"
+    #: A declared key inapplicable to THIS config -- not "never consumed".
+    CONFIG_UNUSED_KEY = "config_unused_key"
+    #: A campaign kind `earp.v1` structurally cannot represent.
+    CONFIG_CAMPAIGN_INEXPRESSIBLE = "config_campaign_inexpressible"
+
 
 @dataclass(frozen=True)
 class Blocker:

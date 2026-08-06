@@ -1,0 +1,28 @@
+{
+  "schema_version": "earp.v1",
+  "campaign": "characterization",
+  "corpus": {
+    "snapshot": "tests/corpus/snapshot.json",
+    "manifest": "tests/corpus/scripts/manifest.json",
+    "data_root": "data/corpus-data"
+  },
+  "gold": {
+    "path": "eval/ir_gold/all.gold.json",
+    "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "corpus_hash": "fe973fcd49fbbda083158f69fe720f17858ab8528e171fa2188eec84131c7d4e",
+    "qrels_version": "ir-c-reused-v2"
+  },
+  "scenario": {
+    "engine": { "use_default_embedder": true },
+    "query": { "call": "Engine.search" }
+  },
+  "metrics": {
+    "evidence_recall_k": [5, 10],
+    "integrity": ["projection_coverage", "provenance"]
+  },
+  "decision_rule": {
+    "metric": "strict_evidence_recall@10",
+    "direction": "greater",
+    "threshold": 0.4
+  }
+}

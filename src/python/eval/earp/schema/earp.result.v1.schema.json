@@ -15,56 +15,103 @@
     "blockers"
   ],
   "properties": {
-    "schema_version": { "const": "earp.result.v1" },
+    "schema_version": {
+      "const": "earp.result.v1"
+    },
     "run_id": {
       "type": "string",
       "description": "Derived via _lib.make_run_id BEFORE staging, so write_record recomputes the identical id. Minute-resolution, so a collision with a differing sidecar is refused."
     },
     "campaign": {
-      "enum": ["characterization", "comparison", "sweep", "replay", "diagnostic"]
+      "enum": [
+        "characterization",
+        "comparison",
+        "sweep",
+        "replay",
+        "diagnostic"
+      ]
     },
     "verdict": {
-      "enum": ["complete", "blocked", "failed"],
+      "enum": [
+        "complete",
+        "blocked",
+        "failed"
+      ],
       "description": "Pinned tokens. Record.verdict is an untyped str, so the vocabulary is fixed here to stop 'blocked' being spelled three ways."
     },
     "scenario": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["config_sha256", "query_call"],
+      "required": [
+        "config_sha256",
+        "query_call"
+      ],
       "properties": {
-        "config_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
-        "query_call": { "type": "string" },
-        "retrieval_mode": { "enum": ["fts_only", "vector_only", "hybrid"] },
+        "config_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "query_call": {
+          "type": "string"
+        },
+        "retrieval_mode": {
+          "enum": [
+            "fts_only",
+            "vector_only",
+            "hybrid"
+          ]
+        },
         "fanout_used": {
           "type": "integer",
           "description": "The search fanout in effect. Recorded with every number per IR-B (c); equals the production rerank limit until the fanout control lands."
         },
-        "engine": { "type": "object" },
-        "projections": { "type": "array", "items": { "type": "object" } }
+        "engine": {
+          "type": "object"
+        },
+        "projections": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        }
       }
     },
-    "corpus": { "$ref": "#/$defs/corpus_identity" },
-    "gold": { "$ref": "#/$defs/gold_identity" },
+    "corpus": {
+      "$ref": "#/$defs/corpus_identity"
+    },
+    "gold": {
+      "$ref": "#/$defs/gold_identity"
+    },
     "metrics": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
         "per_k": {
           "type": "object",
-          "additionalProperties": { "$ref": "#/$defs/k_aggregate" },
+          "additionalProperties": {
+            "$ref": "#/$defs/k_aggregate"
+          },
           "description": "Keyed by K as a string."
         },
         "document_metrics": {
           "type": "object",
-          "additionalProperties": { "$ref": "#/$defs/metric_value" }
+          "additionalProperties": {
+            "$ref": "#/$defs/metric_value"
+          }
         },
         "negative_class": {
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "n": { "type": "integer" },
-            "abstention_correct": { "type": "integer" },
-            "abstention_rate": { "$ref": "#/$defs/metric_value" }
+            "n": {
+              "type": "integer"
+            },
+            "abstention_correct": {
+              "type": "integer"
+            },
+            "abstention_rate": {
+              "$ref": "#/$defs/metric_value"
+            }
           },
           "description": "Negative queries are scored by abstention correctness, never recall."
         }
@@ -72,69 +119,160 @@
     },
     "decision_rule": {
       "oneOf": [
-        { "type": "null" },
+        {
+          "type": "null"
+        },
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["metric", "direction", "threshold", "result"],
+          "required": [
+            "metric",
+            "direction",
+            "threshold",
+            "result"
+          ],
           "properties": {
-            "metric": { "type": "string" },
-            "direction": { "enum": ["greater", "less"] },
-            "threshold": { "type": "number" },
-            "result": { "enum": ["pass", "fail", "withheld", "underpowered"] }
+            "metric": {
+              "type": "string"
+            },
+            "direction": {
+              "enum": [
+                "greater",
+                "less"
+              ]
+            },
+            "threshold": {
+              "type": "number"
+            },
+            "result": {
+              "enum": [
+                "pass",
+                "fail",
+                "withheld",
+                "underpowered"
+              ]
+            }
           }
         }
       ]
     },
     "comparison": {
       "oneOf": [
-        { "type": "null" },
+        {
+          "type": "null"
+        },
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["n", "effect", "ci_low", "ci_high", "ci_method", "seed"],
+          "required": [
+            "n",
+            "effect",
+            "ci_low",
+            "ci_high",
+            "ci_method",
+            "seed"
+          ],
           "properties": {
-            "n": { "type": "integer" },
-            "effect": { "type": "number" },
-            "ci_low": { "type": "number" },
-            "ci_high": { "type": "number" },
-            "ci_method": { "enum": ["percentile_bootstrap", "paired_bootstrap"] },
-            "seed": { "type": "integer" },
-            "changed_knobs": { "type": "array", "items": { "type": "string" } },
-            "underpowered": { "type": "boolean" }
+            "n": {
+              "type": "integer"
+            },
+            "effect": {
+              "type": "number"
+            },
+            "ci_low": {
+              "type": "number"
+            },
+            "ci_high": {
+              "type": "number"
+            },
+            "ci_method": {
+              "enum": [
+                "percentile_bootstrap",
+                "paired_bootstrap"
+              ]
+            },
+            "seed": {
+              "type": "integer"
+            },
+            "changed_knobs": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "underpowered": {
+              "type": "boolean"
+            }
           }
         }
       ]
     },
     "witnesses": {
       "type": "array",
-      "items": { "$ref": "#/$defs/witness" }
+      "items": {
+        "$ref": "#/$defs/witness"
+      }
     },
     "blockers": {
       "type": "array",
-      "items": { "$ref": "#/$defs/blocker" }
+      "items": {
+        "$ref": "#/$defs/blocker"
+      }
     },
     "cost": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["authorized_usd", "cumulative_spent_usd", "estimated_usd"],
+      "required": [
+        "authorized_usd",
+        "cumulative_spent_usd",
+        "estimated_usd"
+      ],
       "properties": {
-        "authorized_usd": { "type": "number" },
-        "cumulative_spent_usd": { "type": "number" },
-        "estimated_usd": { "type": "number" },
-        "actual_usd": { "type": ["number", "null"] }
+        "authorized_usd": {
+          "type": "number"
+        },
+        "cumulative_spent_usd": {
+          "type": "number"
+        },
+        "estimated_usd": {
+          "type": "number"
+        },
+        "actual_usd": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
       }
     },
     "environment": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "open_report": { "type": "object" },
-        "embedder_identity": { "type": ["object", "null"] },
-        "embedder_download_ms": { "type": ["integer", "null"] },
-        "embedder_events": { "type": "array" },
-        "git_sha": { "type": "string" },
-        "dirty": { "type": "boolean" }
+        "open_report": {
+          "type": "object"
+        },
+        "embedder_identity": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "embedder_download_ms": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "embedder_events": {
+          "type": "array"
+        },
+        "git_sha": {
+          "type": "string"
+        },
+        "dirty": {
+          "type": "boolean"
+        }
       }
     },
     "per_query_path": {
@@ -146,22 +284,49 @@
     "metric_value": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["status"],
+      "required": [
+        "status"
+      ],
       "description": "A metric slot that can honestly be empty. value is null exactly when status is not_applicable; an inapplicable metric is never reported as zero.",
       "properties": {
-        "status": { "enum": ["emitted", "not_applicable"] },
-        "value": { "type": ["number", "null"] },
-        "reason": { "type": ["string", "null"] }
+        "status": {
+          "enum": [
+            "emitted",
+            "not_applicable"
+          ]
+        },
+        "value": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
       }
     },
     "k_aggregate": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["n", "strict_evidence_recall", "graded_evidence_recall"],
+      "required": [
+        "n",
+        "strict_evidence_recall",
+        "graded_evidence_recall"
+      ],
       "properties": {
-        "n": { "type": "integer" },
-        "strict_evidence_recall": { "$ref": "#/$defs/metric_value" },
-        "graded_evidence_recall": { "$ref": "#/$defs/metric_value" },
+        "n": {
+          "type": "integer"
+        },
+        "strict_evidence_recall": {
+          "$ref": "#/$defs/metric_value"
+        },
+        "graded_evidence_recall": {
+          "$ref": "#/$defs/metric_value"
+        },
         "supporting_coverage": {
           "$ref": "#/$defs/metric_value",
           "description": "Ported faithfully: the reference returns Option<f64> and serialises the unavailable case as null, which maps to not_applicable."
@@ -172,16 +337,25 @@
         },
         "per_class": {
           "type": "object",
-          "additionalProperties": { "type": "object" }
+          "additionalProperties": {
+            "type": "object"
+          }
         }
       }
     },
     "witness": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "source", "call_path", "status"],
+      "required": [
+        "name",
+        "source",
+        "call_path",
+        "status"
+      ],
       "properties": {
-        "name": { "type": "string" },
+        "name": {
+          "type": "string"
+        },
         "source": {
           "enum": [
             "open_report",
@@ -193,16 +367,33 @@
           ],
           "description": "Not interchangeable: vector_dense_readiness comes only from read_projections, vector_unsupported_kinds only from projection_delta, dense_disabled only from open_report."
         },
-        "call_path": { "type": "string" },
-        "status": { "enum": ["observed", "absent", "error"] },
+        "call_path": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "observed",
+            "absent",
+            "error"
+          ]
+        },
         "value": {},
-        "captured_at": { "type": ["string", "null"] }
+        "captured_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
       }
     },
     "blocker": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["code", "message", "stage"],
+      "required": [
+        "code",
+        "message",
+        "stage"
+      ],
       "properties": {
         "code": {
           "enum": [
@@ -219,37 +410,92 @@
             "vector_unsupported_kinds",
             "embedder_fetched",
             "budget_exceeded",
-            "run_id_collision"
+            "run_id_collision",
+            "config_unknown_key",
+            "config_missing_key",
+            "config_invalid_value",
+            "config_inapplicable_knob",
+            "config_unused_key",
+            "config_campaign_inexpressible"
           ]
         },
-        "message": { "type": "string" },
-        "stage": { "type": "string" },
-        "detail": { "type": "object" }
+        "message": {
+          "type": "string"
+        },
+        "stage": {
+          "type": "string"
+        },
+        "detail": {
+          "type": "object"
+        }
       }
     },
     "corpus_identity": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["snapshot_path", "snapshot_sha256"],
+      "required": [
+        "snapshot_path",
+        "snapshot_sha256"
+      ],
       "properties": {
-        "snapshot_path": { "type": "string" },
-        "snapshot_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
-        "manifest_path": { "type": ["string", "null"] },
-        "manifest_sha256": { "type": ["string", "null"] },
-        "data_root": { "type": ["string", "null"] }
+        "snapshot_path": {
+          "type": "string"
+        },
+        "snapshot_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "manifest_path": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "manifest_sha256": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "data_root": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
       }
     },
     "gold_identity": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["path", "sha256", "corpus_hash", "qrels_version", "query_count"],
+      "required": [
+        "path",
+        "sha256",
+        "corpus_hash",
+        "qrels_version",
+        "query_count"
+      ],
       "properties": {
-        "path": { "type": "string" },
-        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
-        "corpus_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
-        "qrels_version": { "type": "string" },
-        "query_count": { "type": "integer" },
-        "tier": { "type": "string" }
+        "path": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "corpus_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "qrels_version": {
+          "type": "string"
+        },
+        "query_count": {
+          "type": "integer"
+        },
+        "tier": {
+          "type": "string"
+        }
       }
     }
   }
