@@ -15,13 +15,13 @@ Design of record: `dev/design/earp-slice-3-design.md`.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import math
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
+from eval.earp._experiments import lib as _lib
 from eval.earp.depth import check_depth
 from eval.earp.schema import CONFIG_SCHEMA_PATH
 from eval.earp.schema.models import (
@@ -238,6 +238,12 @@ def _declared_paths_of(doc: Mapping[str, Any], prefix: str = "") -> set[str]:
 
 def resolve_config(doc: Mapping[str, Any]) -> ConfigResolution:
     """Resolve a config document, collecting every defect."""
+    # The signature accepts any Mapping, but the walker checks JSON `object` as
+    # `dict` and `_lib._resolved_dict` raises on anything else -- so normalise
+    # once, here, rather than letting a MappingProxyType surface as a bogus
+    # "must be object" defect or a TypeError from a function documented to
+    # return rather than raise.
+    doc = dict(doc)
     blockers: list[Blocker] = []
 
     for finding in validate(doc, _SCHEMA):
@@ -397,12 +403,17 @@ def resolve_config(doc: Mapping[str, Any]) -> ConfigResolution:
         for path in declared
         if path in CONSUMER_REGISTRY and CONSUMER_REGISTRY[path].slice_id != "S3"
     }
-    canonical = json.dumps(doc, sort_keys=True, separators=(",", ":"))
     assert mode is not None and isinstance(call, str)
     return ConfigResolution(
         scenario=ResolvedScenario(
             campaign=CampaignKind(campaign_raw),
-            config_sha256=hashlib.sha256(canonical.encode("utf-8")).hexdigest(),
+            # ONE canonicalisation. A second implementation here diverged from
+            # `_lib.canonical_json` on `ensure_ascii`, so any non-ASCII config
+            # would hash differently -- S4 would stage the sidecar into one run
+            # directory while write_record materialized into another. `dict()`
+            # because `_lib._resolved_dict` raises on a non-dict Mapping and
+            # this function documents that it returns rather than raises.
+            config_sha256=_lib.config_sha256(dict(doc)),
             query_call=call,
             retrieval_mode=mode,
             max_measurable_k=max_k,
