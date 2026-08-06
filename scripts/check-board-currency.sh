@@ -35,8 +35,11 @@
 #        not a wording heuristic. HARD fail.
 #     5. Vacuous-pass guard (fix-1): if step 2 matches ZERO commits for a live
 #        board's release, that board contributed zero checks in steps 3-4 and
-#        the loop would otherwise pass it by default. HARD fail instead — see
-#        the dedicated section below.
+#        the loop would otherwise pass it by default. HARD fail instead, except
+#        for a state-backed newly activated release whose `landed` is empty,
+#        whose `next_slice` is its earliest ladder slice, and whose complete
+#        ladder remains with no recorded landing evidence — see the dedicated
+#        section below.
 #     6. BOARD/STATE CROSS-READ (TC-133): steps 2-4 ask git a question. This
 #        step asks dev/plans/release-state-<version>.json — the single writer
 #        for landed slices, their SHAs and the remaining ladder — whether the
@@ -124,15 +127,21 @@
 # vacuous pass, not a real currency check, so it is itself a HARD failure:
 # every LIVE board must show at least one recognized land, or the gate must say
 # loudly that it could not vouch for it (see the "no landing merge matched"
-# message below), never report ok by default. This can only convert a silent
-# pass into a loud failure -- it never fires for a board with >=1 matched slice.
+# message below), never report ok by default. The only exception is a newly
+# activated state whose empty `landed`, first `next_slice`, and complete
+# `remaining_ladder` prove no merge can exist yet. Its earliest (`next`) entry
+# may be `IN_PROGRESS` or `NOT_STARTED`; every later entry must be
+# `NOT_STARTED`, and none may carry a landing SHA. Its STATUS ladder is
+# structurally validated by the unconditional TC-133 cross-read. This can only
+# convert a silent pass into a loud failure -- it never fires for a board with
+# >=1 matched slice.
 #
 # Usage:
 #   scripts/check-board-currency.sh [--tip <ref>] [--boards-dir <dir>]
 #
 # Exit codes: 0 = every live board's most-recent per-slice land is referenced
-#             by SHA (and every live board matched >=1 land), and every live
-#             board with a readable release-state file agrees with it; 1 = at
+#             by SHA (or is a state-backed newly activated release), and every
+#             live board with a readable release-state file agrees with it; 1 = at
 #             least one demonstrable board/git contradiction, OR a live board
 #             matched zero landing merges (vacuous-pass guard, fix-1), OR a
 #             board/state contradiction or unreadable state file (TC-133).
@@ -651,6 +660,77 @@ except Exception as exc:
 MACHINE_LANDS_PY
 }
 
+# Return the earliest next slice only for the exact state-backed shape in which
+# a release has just been activated and cannot yet have a landing merge. This is
+# deliberately stricter than TC-133's general structural validation: anything
+# malformed, partially landed, or progressed past the first slice must retain
+# the normal zero-merge hard failure.
+cbc_initial_release_next() {
+  local ver="$1" state="$2"
+  python3 - "$ver" "$state" <<'INITIAL_RELEASE_PY'
+import json
+import math
+import re
+import sys
+
+ver, path = sys.argv[1:]
+
+
+def slice_key(value):
+    if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+        raise ValueError("slice id has an unsupported type")
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise ValueError("slice id is not finite")
+        text = "%g" % value
+    else:
+        text = str(value)
+    if not re.fullmatch(r"[0-9]+(?:\.[0-9]+)*", text):
+        raise ValueError("slice id is not a dotted numeric id")
+    return text
+
+
+try:
+    with open(path, encoding="utf-8") as fh:
+        state = json.load(fh)
+    if not isinstance(state, dict):
+        raise ValueError("state is not an object")
+    if state.get("release") != ver:
+        raise ValueError("release does not match state filename")
+    if state.get("board") != "dev/plans/runs/STATUS-%s.md" % ver:
+        raise ValueError("board does not match state filename")
+    if state.get("landed") != []:
+        raise ValueError("release has landed slices")
+
+    ladder = state.get("ladder")
+    remaining = state.get("remaining_ladder")
+    if not isinstance(ladder, list) or not ladder or not isinstance(remaining, list):
+        raise ValueError("ladder or remaining_ladder is not a non-empty array")
+    ladder_slices = []
+    for index, entry in enumerate(ladder):
+        if not isinstance(entry, dict) or "slice" not in entry:
+            raise ValueError("ladder entry has no slice")
+        allowed_statuses = (
+            ("NOT_STARTED", "IN_PROGRESS") if index == 0 else ("NOT_STARTED",)
+        )
+        if entry.get("status") not in allowed_statuses:
+            raise ValueError("ladder records a non-initial status")
+        if entry.get("sha") not in (None, ""):
+            raise ValueError("ladder records a landing SHA")
+        ladder_slices.append(slice_key(entry["slice"]))
+    if len(set(ladder_slices)) != len(ladder_slices):
+        raise ValueError("ladder has duplicate slices")
+    if [slice_key(value) for value in remaining] != ladder_slices:
+        raise ValueError("remaining_ladder is not the complete ladder")
+    if slice_key(state.get("next_slice")) != ladder_slices[0]:
+        raise ValueError("next_slice is not the first ladder slice")
+except Exception:
+    raise SystemExit(1)
+
+print(ladder_slices[0])
+INITIAL_RELEASE_PY
+}
+
 STALE=0
 
 # Inputs are tracked paths, never a physical directory walk: stale nested
@@ -758,9 +838,14 @@ for board in "${FILTERED_BOARDS[@]}"; do
   done < <(git log "$TIP" --format='%H %s')
 
   if [ "${#SEEN_SLICE[@]}" -eq 0 ]; then
-    printf 'STALE  %s: no landing merge matched the convention '\''merge(%s): Slice[- ]N'\'' reachable from %s — either nothing has landed for this live board, or the merge-subject convention drifted; the board-currency gate cannot vouch for it.\n' \
-      "$ver" "$ver" "$TIP" >&2
-    STALE=1
+    if INITIAL_NEXT="$(cbc_initial_release_next "$ver" "dev/plans/release-state-${ver}.json")"; then
+      printf 'note   %s: no landing merge matched the convention, but release state records a newly activated initial release (landed: [], next_slice %s is the earliest ladder slice); the TC-133 cross-read will verify its STATUS ladder.\n' \
+        "$ver" "$INITIAL_NEXT" >&2
+    else
+      printf 'STALE  %s: no landing merge matched the convention '\''merge(%s): Slice[- ]N'\'' reachable from %s — either nothing has landed for this live board, or the merge-subject convention drifted; the board-currency gate cannot vouch for it.\n' \
+        "$ver" "$ver" "$TIP" >&2
+      STALE=1
+    fi
   fi
   unset SEEN_SLICE
   fi

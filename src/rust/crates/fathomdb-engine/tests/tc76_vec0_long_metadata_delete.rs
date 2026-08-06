@@ -1,58 +1,6 @@
-//! TC-76 / sqlite-vec issue **#99** — vec0 `DELETE` of a row carrying a TEXT
-//! metadata value longer than 12 bytes.
-//!
-//! Commissioned as a CHARACTERIZATION PROBE ("does #99 bite us?"). It did: the
-//! probe went RED against the shipped erasure verbs, so this file is now BOTH a
-//! characterization pin of the upstream mechanism AND the regression test for the
-//! engine-side remediation.
-//!
-//! # The upstream mechanism (sqlite-vec `=0.1.7`, `sqlite-vec.c`)
-//!
-//! A vec0 plain-TEXT metadata column stores a 16-byte inline view per row
-//! (`VEC0_METADATA_TEXT_VIEW_BUFFER_LENGTH`): a 4-byte length plus the first 12
-//! bytes of the value (`VEC0_METADATA_TEXT_VIEW_DATA_LENGTH`). A value LONGER
-//! than those 12 bytes additionally gets a row in the `<tbl>_metadatatext<NN>`
-//! shadow table.
-//!
-//! `vec0Update_Delete_ClearMetadata` (`sqlite-vec.c:8888`) deletes that shadow row
-//! (`sqlite-vec.c:8934-8952`) and leaves `rc` holding `sqlite3_step`'s
-//! `SQLITE_DONE` (101) — it never resets `rc` to `SQLITE_OK`. Its epilogue then
-//! returns `rc` verbatim, so a SUCCESSFUL shadow delete is reported to
-//! `vec0Update_Delete` (`sqlite-vec.c:9027-9030`) as `101 != SQLITE_OK` and the
-//! whole `DELETE` is aborted. The INSERT/UPDATE twin of that code
-//! (`sqlite-vec.c:8258-8320`) is saved by an unconditional
-//! `rc = sqlite3_blob_close(...)` after the switch — which is why only DELETE
-//! carries the defect.
-//!
-//! # Why FathomDB is exposed
-//!
-//! `vector_default` (`vector_partition_create_sql`) carries three plain-TEXT
-//! metadata columns: `kind`, `status`, and one `attr_<hex>` per declared
-//! `filterable` projection (0.8.20 Slice 15e). Of those only `attr_*` VALUES are
-//! caller-supplied and unbounded. They are stored marker-encoded as `\x01 || V`,
-//! so a raw attribute value of **12 or more UTF-8 bytes** crosses the 12-byte
-//! threshold — and every by-rowid `DELETE FROM vector_default` (erasure, purge,
-//! edge supersession, open-path orphan sweep, mean-vec re-quantize) fails.
-//!
-//! `kind` and `status` are NOT exposed: `kind` is gated at every vec0 enrolment
-//! door by `kind_is_vector_committable` -> `resolve_source_type`, whose whole
-//! output domain is `{email, article, paper, meeting, note, todo, edge_fact}`
-//! (max 9 bytes), and `status` ships the `''` sentinel. `source_type` is a vec0
-//! PARTITION KEY, a different storage mechanism entirely, and shares that <= 9
-//! byte domain.
-//!
-//! Note the attribute-column NAME axis is a red herring: `attr_vec0_column`
-//! renders `attr_ + hex(name)`, so ANY name of >= 4 characters already produces an
-//! identifier longer than 12 characters and the shipped Slice-15e corpus exercises
-//! that shape today. #99 is about the stored VALUE's byte length, not the column
-//! identifier's.
-//!
-//! # Tripwire
-//!
-//! [`bare_vec0_delete_pins_the_upstream_length_boundary`] asserts the upstream
-//! defect is STILL PRESENT. When `sqlite-vec` is bumped past a release that fixes
-//! #99 that test goes red on purpose — which is the signal to delete the
-//! engine-side neutralize step in `delete_vector_partition_row`.
+//! TC-76 verifies sqlite-vec 0.1.9 deletes vec0 rows whose TEXT metadata spills
+//! out of the inline representation. It covers the direct vec0 operation and
+//! the FathomDB erasure paths that rely on it.
 
 use std::collections::BTreeSet;
 use std::sync::Arc;
@@ -66,9 +14,6 @@ use rusqlite::Connection;
 use tempfile::TempDir;
 
 const DIM: usize = 8;
-
-/// The upstream inline-view payload width. A stored value of MORE than this many
-/// bytes spills into the `_metadatatext<NN>` shadow table — the branch #99 breaks.
 const VEC0_TEXT_INLINE_BYTES: usize = 12;
 
 #[derive(Clone, Debug)]
@@ -141,7 +86,7 @@ fn vector_row_count(engine: &Engine) -> i64 {
 
 // ===========================================================================
 // (1) The upstream boundary, on a BARE vec0 table — no engine involved.
-//     TRIPWIRE: goes red when sqlite-vec fixes #99.
+//     TRIPWIRE: long metadata must remain deletable in sqlite-vec 0.1.9.
 // ===========================================================================
 
 #[test]
@@ -170,35 +115,10 @@ fn bare_vec0_delete_pins_the_upstream_length_boundary() {
             .query_row("SELECT COUNT(*) FROM t WHERE rowid = ?1", [rowid], |r| r.get(0))
             .expect("residue count");
 
-        if len <= VEC0_TEXT_INLINE_BYTES {
-            assert!(
-                deleted.is_ok(),
-                "a {len}-byte value fits the {VEC0_TEXT_INLINE_BYTES}-byte inline view, \
-                 so DELETE must succeed: {deleted:?}"
-            );
-            assert_eq!(residue, 0, "a {len}-byte-valued row must be gone after DELETE");
-        } else {
-            // UPSTREAM DEFECT PIN, not desired behaviour. sqlite-vec 0.1.7
-            // returns SQLITE_DONE (101) out of `vec0Update_Delete_ClearMetadata`
-            // and aborts the DELETE, leaving the row (and its shadow value) at
-            // rest. See the module doc; delete the engine-side workaround when
-            // this assertion starts failing.
-            let err = deleted.expect_err(
-                "sqlite-vec 0.1.7 #99: DELETE of a >12-byte TEXT metadata value must still fail \
-                 — if this now SUCCEEDS the dependency has been fixed, so remove the \
-                 `delete_vector_partition_row` neutralize step",
-            );
-            assert!(
-                format!("{err:?}").contains("101"),
-                "the spurious failure is SQLITE_DONE (101) leaking as an error: {err:?}"
-            );
-            assert_eq!(residue, 1, "the spurious failure leaves the row behind: len={len}");
-            // Clean up through the same workaround the engine uses, so the loop
-            // can continue on a table with no residue for this rowid.
-            conn.execute("UPDATE t SET m = '' WHERE rowid = ?1", [rowid]).expect("neutralize");
-            conn.execute("DELETE FROM t WHERE rowid = ?1", [rowid])
-                .expect("neutralized DELETE must succeed");
-        }
+        deleted.unwrap_or_else(|err| {
+            panic!("sqlite-vec 0.1.9 must delete a {len}-byte TEXT metadata value: {err}")
+        });
+        assert_eq!(residue, 0, "a {len}-byte-valued row must be gone after DELETE");
     }
 }
 

@@ -1,0 +1,10 @@
+Codex §9 focused re-review record — 0.8.22 candidate
+
+Candidate reviewed: b6532f16
+Reviewer session: 019fd45d-4ea7-7211-87f8-e1861593b705
+Scope: the one-line ShellCheck remediation in
+scripts/tests/test_npm_inject_optional_deps.sh.
+Precondition: npm_config_cache=/tmp/fathomdb-npm-cache ./scripts/agent-verify.sh
+completed successfully.
+
+Final verdict: PASS.

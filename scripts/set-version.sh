@@ -2,9 +2,10 @@
 # scripts/set-version.sh — two-axis version single source of truth.
 #
 # Axis W (workspace lockstep): Cargo.toml [workspace.package].version,
-# src/python/pyproject.toml [project].version, src/ts/package.json
-# top-level "version". Inherited by every workspace crate via
-# `version.workspace = true`.
+# src/python/pyproject.toml [project].version, Python runtime `__version__`,
+# src/ts/package.json + package-lock metadata, Cargo.lock's internal package
+# entries, and the npm platform packages. Inherited by every workspace crate
+# via `version.workspace = true`.
 #
 # Axis E (embedder-api independent semver):
 # src/rust/crates/fathomdb-embedder-api/Cargo.toml [package].version.
@@ -17,7 +18,7 @@ usage() {
 Usage: scripts/set-version.sh <mode> [args]
 
 Modes:
-  --workspace <new-w-version>     Set Axis W (Cargo workspace + python + ts).
+  --workspace <new-w-version>     Set Axis W (manifests, runtimes, lockfiles).
   --embedder-api <new-e-version>  Set Axis E (fathomdb-embedder-api only).
   --check-files                   Verify both axes are internally consistent.
 
@@ -40,6 +41,9 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CARGO="$REPO_ROOT/Cargo.toml"
 PYPROJ="$REPO_ROOT/src/python/pyproject.toml"
 NPMPKG="$REPO_ROOT/src/ts/package.json"
+NPMLOCK="$REPO_ROOT/src/ts/package-lock.json"
+PYRUNTIME="$REPO_ROOT/src/python/fathomdb/__init__.py"
+CARGOLOCK="$REPO_ROOT/Cargo.lock"
 EMB_API_DIR="$REPO_ROOT/src/rust/crates/fathomdb-embedder-api"
 EMB_API="$EMB_API_DIR/Cargo.toml"
 CRATES_DIR="$REPO_ROOT/src/rust/crates"
@@ -138,6 +142,22 @@ set_pyproject_version() {
   '
 }
 
+# Set the public Python runtime version. Packaging reads pyproject.toml, but
+# consumers and release smoke diagnostics read `fathomdb.__version__`; these
+# two facts must never diverge at a release cut.
+set_python_runtime_version() {
+  local new="$1"
+  awk_inplace "$PYRUNTIME" '
+    {
+      if ($0 ~ /^__version__[[:space:]]*=/) {
+        print "__version__ = \"'"$new"'\""
+      } else {
+        print
+      }
+    }
+  '
+}
+
 # Set the top-level "version" field in package.json.
 # Constraint: only rewrite the first occurrence so a nested "version" inside
 # devDependencies cannot be touched.
@@ -156,6 +176,69 @@ set_npm_version() {
     }
   ' "$NPMPKG" >"$tmp"
   mv "$tmp" "$NPMPKG"
+}
+
+# package-lock.json carries both the root lockfile version and the root package
+# metadata. npm pack/install reports these values, so a stale lockfile makes a
+# release candidate internally contradictory even when package.json is right.
+set_npm_lock_versions() {
+  local new="$1"
+  node - "$NPMLOCK" "$new" <<'NODE'
+const fs = require("fs");
+const [file, version] = process.argv.slice(2);
+const lock = JSON.parse(fs.readFileSync(file, "utf8"));
+if (!lock.packages || !lock.packages[""]) {
+  throw new Error(`${file}: missing root package metadata`);
+}
+lock.version = version;
+lock.packages[""].version = version;
+fs.writeFileSync(file, `${JSON.stringify(lock, null, 2)}\n`);
+NODE
+}
+
+# Cargo.lock records workspace packages as package blocks with explicit
+# versions. Cargo does not infer a manifest-only release bump into this lockfile
+# until a later resolver operation, so set-version owns the Axis-W entries
+# directly. Axis E remains independent and is intentionally not listed here.
+set_cargo_lock_axis_w_versions() {
+  local new="$1"
+  python3 - "$CARGOLOCK" "$new" <<'PY'
+from pathlib import Path
+import re
+import sys
+
+path = Path(sys.argv[1])
+version = sys.argv[2]
+axis_w = {
+    "fathomdb",
+    "fathomdb-cli",
+    "fathomdb-embedder",
+    "fathomdb-engine",
+    "fathomdb-napi",
+    "fathomdb-py",
+    "fathomdb-query",
+    "fathomdb-schema",
+}
+text = path.read_text()
+pieces = re.split(r"(?=^\[\[package\]\]$)", text, flags=re.MULTILINE)
+changed = set()
+for index, piece in enumerate(pieces):
+    name = re.search(r'^name = "([^"]+)"$', piece, flags=re.MULTILINE)
+    if not name or name.group(1) not in axis_w:
+        continue
+    updated, count = re.subn(
+        r'^version = "[^"]+"$', f'version = "{version}"', piece,
+        count=1, flags=re.MULTILINE,
+    )
+    if count != 1:
+        raise SystemExit(f"{path}: {name.group(1)} has no package version")
+    pieces[index] = updated
+    changed.add(name.group(1))
+missing = axis_w - changed
+if missing:
+    raise SystemExit(f"{path}: missing Axis-W package block(s): {', '.join(sorted(missing))}")
+path.write_text("".join(pieces))
+PY
 }
 
 # Set the top-level "version" in each src/ts/npm/<triple>/package.json (the
@@ -226,6 +309,10 @@ read_pyproject_version() {
   ' "$PYPROJ"
 }
 
+read_python_runtime_version() {
+  sed -n 's/^__version__[[:space:]]*=[[:space:]]*"\([^"]*\)"/\1/p' "$PYRUNTIME"
+}
+
 # NOT `sed … | head -1`: `head` closes the pipe at line 1 while `sed` is still
 # reading the rest of the file, so sed can die of SIGPIPE and `pipefail` makes
 # that the rc of the function. The producer stops ITSELF instead — the address
@@ -239,6 +326,39 @@ read_npm_version() {
 # Read the first "version" from an arbitrary package.json (platform pkgs).
 read_npm_version_file() {
   sed -n '/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/{s//\1/p;q;}' "$1"
+}
+
+read_npm_lock_version() {
+  local field="$1"
+  node -e '
+const fs = require("fs");
+const lock = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+const value = process.argv[2] === "root" ? lock.packages?.[""]?.version : lock.version;
+process.stdout.write(value || "");
+' "$NPMLOCK" "$field"
+}
+
+read_cargo_lock_package_version() {
+  local target="$1"
+  awk -v target="$target" '
+    BEGIN { RS = ""; FS = "\n" }
+    {
+      name = ""; version = ""
+      for (i = 1; i <= NF; i++) {
+        if ($i ~ /^name = "/) {
+          name = $i
+          sub(/^name = "/, "", name)
+          sub(/"$/, "", name)
+        }
+        if ($i ~ /^version = "/) {
+          version = $i
+          sub(/^version = "/, "", version)
+          sub(/"$/, "", version)
+        }
+      }
+      if (name == target) { print version }
+    }
+  ' "$CARGOLOCK"
 }
 
 # Returns the literal text of the version line inside [package] of the
@@ -288,6 +408,24 @@ _json_version_line() {
   grep -n -m1 '"version"' "$1" | cut -d: -f1
 }
 
+_python_runtime_version_line() {
+  grep -n -m1 '^__version__[[:space:]]*=' "$PYRUNTIME" | cut -d: -f1
+}
+
+_cargo_lock_package_version_line() {
+  local target="$1"
+  awk -v target="$target" '
+    /^name = "/ {
+      name = $0
+      sub(/^name = "/, "", name)
+      sub(/"$/, "", name)
+      wanted = (name == target)
+      next
+    }
+    wanted && /^version = "/ { print NR; exit }
+  ' "$CARGOLOCK"
+}
+
 # Emit a structured drift diagnostic: `<file>:<line>: version drift —
 # observed "X", expected "Y"`. Centralized so every drift site has the
 # same shape (parseable by tooling, asserted in test_set_version.sh).
@@ -298,10 +436,13 @@ _drift() {
 }
 
 check_files() {
-  local ws py npm emb
+  local ws py runtime npm npm_lock_top npm_lock_root emb
   ws="$(read_workspace_version)"
   py="$(read_pyproject_version)"
+  runtime="$(read_python_runtime_version)"
   npm="$(read_npm_version)"
+  npm_lock_top="$(read_npm_lock_version top)"
+  npm_lock_root="$(read_npm_lock_version root)"
   emb="$(embedder_api_version_value)"
 
   local rc=0
@@ -320,6 +461,36 @@ check_files() {
     _drift "$NPMPKG" "$(_json_version_line "$NPMPKG")" "$npm" "$ws"
     rc=1
   fi
+
+  if [ "$runtime" != "$ws" ]; then
+    _drift "$PYRUNTIME" "$(_python_runtime_version_line)" "$runtime" "$ws"
+    rc=1
+  fi
+
+  if [ "$npm_lock_top" != "$ws" ]; then
+    _drift "$NPMLOCK" "$(_json_version_line "$NPMLOCK")" "$npm_lock_top" "$ws"
+    rc=1
+  fi
+
+  if [ "$npm_lock_root" != "$ws" ]; then
+    _drift "$NPMLOCK" "$(_json_version_line "$NPMLOCK")" "$npm_lock_root" "$ws"
+    rc=1
+  fi
+
+  # Cargo.lock's internal workspace package versions are part of the release
+  # candidate, not disposable resolver output. Axis E deliberately remains
+  # independent and is excluded from this Axis-W loop.
+  local lock_crate lock_ver lock_line
+  for lock_crate in \
+    fathomdb fathomdb-cli fathomdb-embedder fathomdb-engine \
+    fathomdb-napi fathomdb-py fathomdb-query fathomdb-schema; do
+    lock_ver="$(read_cargo_lock_package_version "$lock_crate")"
+    if [ "$lock_ver" != "$ws" ]; then
+      lock_line="$(_cargo_lock_package_version_line "$lock_crate")"
+      _drift "$CARGOLOCK" "${lock_line:-1}" "$lock_ver" "$ws"
+      rc=1
+    fi
+  done
 
   # Each src/ts/npm/<triple>/package.json (platform binary package) must be at
   # Axis W too — they publish in lockstep with the main package.
@@ -438,8 +609,11 @@ case "$mode" in
     set_workspace_version "$new"
     set_workspace_dep_axis_w_versions "$new"
     set_pyproject_version "$new"
+    set_python_runtime_version "$new"
     set_npm_version "$new"
+    set_npm_lock_versions "$new"
     set_npm_platform_pkg_versions "$new"
+    set_cargo_lock_axis_w_versions "$new"
     check_files
     ;;
   --embedder-api)

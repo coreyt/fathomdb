@@ -8,9 +8,6 @@ keywords = ["database", "embedded", "sqlite", "vector-search", "full-text-search
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-# 0.8.20 Slice 39 (R-20-DOC): ships the repo-root MIT LICENSE inside this
-# crate's `.crate` tarball. Path is resolved relative to the workspace root.
-license-file.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 
@@ -19,11 +16,11 @@ fathomdb-embedder.workspace = true
 fathomdb-embedder-api.workspace = true
 fathomdb-query.workspace = true
 fathomdb-schema.workspace = true
-rusqlite = { version = "0.31", features = ["bundled"] }
+rusqlite = { version = "0.40", features = ["bundled", "fallible_uint"] }
 jsonschema = { version = "0.18", default-features = false }
 serde_json = "1"
 sha2 = "0.11"
-sqlite-vec = "=0.1.7"
+sqlite-vec = "=0.1.9"
 
 [features]
 default = []
@@ -160,7 +157,7 @@ name = "pr_e2_rerank_nonfinite"
 [dev-dependencies]
 libc = "0.2"
 proptest = "1"
-rusqlite = { version = "0.31", features = ["bundled"] }
+rusqlite = { version = "0.40", features = ["bundled", "fallible_uint"] }
 serde_json = "1"
 sha2 = "0.11"
 tempfile = "3"

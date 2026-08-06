@@ -21,6 +21,7 @@
 #     3.  PASSES a citation whose symbol DOES occur.
 #     3b. FAILS a citation naming a file that does not exist.
 #     3c. FAILS a citation whose path is AMBIGUOUS (resolves to >1 file).
+#     3c1. Ignores an untracked nested worktree when resolving a citation.
 #     3d. FAILS a citation containing an elision placeholder (`…`/`...`) — an
 #         unverifiable citation is failed, never skipped.
 #     3e. Is WRAP-AWARE: a bad citation split across a line break (with or
@@ -221,6 +222,18 @@ if [ "$RC" -ne 0 ] && grep -qi 'AMBIGUOUS' <<<"$OUT"; then
   pass "citation path resolving to >1 file -> FAIL as ambiguous (not silently picked)"
 else
   fail "arm 3c (ambiguous path): rc=$RC out=$OUT"
+fi
+
+# --- Arm 3c1: untracked nested worktrees are not part of this checkout ----
+setup_fixture; baseline_plan
+mkdir -p "$FIX/repo/.claude/worktrees/stale/src/rust/crates/widget/src"
+cp "$FIX/repo/src/rust/crates/widget/src/lib.rs" \
+  "$FIX/repo/.claude/worktrees/stale/src/rust/crates/widget/src/lib.rs"
+run_lint
+if [ "$RC" -eq 0 ]; then
+  pass "untracked nested worktree copy does not make a current-checkout citation ambiguous"
+else
+  fail "arm 3c1 (nested worktree exclusion): rc=$RC out=$OUT"
 fi
 
 # --- Arm 3d: elision placeholder -> FAIL, never skip --------------------

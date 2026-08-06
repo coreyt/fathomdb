@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
 # scripts/tests/test_release_version_surfaces.sh — release-cut manifest contract.
 #
-# `set-version.sh --check-files` owns Axis W's Cargo, Python project, and
-# package.json surfaces.  The npm lockfile root metadata and Python runtime
-# __version__ are intentionally maintained separately, so assert that they
-# cannot silently lag a release cut.
+# `set-version.sh --check-files` owns Axis W's Cargo, Python project/runtime,
+# npm manifest/lockfile, and Cargo.lock internal-package surfaces. Assert the
+# shipped files cannot silently lag a release cut.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

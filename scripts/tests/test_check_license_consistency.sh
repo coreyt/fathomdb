@@ -92,7 +92,6 @@ resolver = "2"
 version = "0.0.1"
 edition = "2021"
 license = "MIT"
-license-file = "LICENSE"
 EOF
 
   cat >"$d/crates/foo/Cargo.toml" <<'EOF'
@@ -101,9 +100,9 @@ name = "foo"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-license-file.workspace = true
 EOF
   printf 'pub fn foo() {}\n' >"$d/crates/foo/src/lib.rs"
+  cp "$REPO_ROOT/LICENSE" "$d/crates/foo/LICENSE"
 
   cat >"$d/src/python/pyproject.toml" <<'EOF'
 [project]
@@ -167,21 +166,35 @@ FIX="$(mkfix green)"
 run_checker --root "$FIX" --skip-packaging
 expect 0 "check-license-consistency: OK (MIT)" "arm 1: an in-order fixture passes the declaration half"
 
-# ===================== arms 2-11 — every declaration RED ======================
+# Cargo accepts `license-file` as an artifact-inclusion mechanism, but it warns
+# whenever a standard SPDX `license` field is also present. MIT is a standard
+# SPDX expression, so publishable crates must use that field alone and carry a
+# regular package-root LICENSE file instead.
+FIX="$(mkfix dual-cargo-license-metadata)"
+sub "$FIX/Cargo.toml" 'license = "MIT"' $'license = "MIT"\nlicense-file = "LICENSE"'
+run_checker --root "$FIX" --skip-packaging
+expect 1 "must not declare \`license-file\` when SPDX \`license\` is available" "arm 1b: dual Cargo license metadata is rejected"
+
+# ===================== arms 2-13 — every declaration RED =====================
 FIX="$(mkfix ws-license)"
 sub "$FIX/Cargo.toml" 'license = "MIT"' 'license = "Apache-2.0"'
 run_checker --root "$FIX" --skip-packaging
 expect 1 "[workspace.package].license is 'Apache-2.0'" "arm 2: workspace license disagreeing with LICENSE fails"
 
-FIX="$(mkfix ws-no-license-file)"
-sub "$FIX/Cargo.toml" 'license-file = "LICENSE"' ''
+FIX="$(mkfix ws-dual-license-metadata)"
+sub "$FIX/Cargo.toml" 'license = "MIT"' $'license = "MIT"\nlicense-file = "LICENSE"'
 run_checker --root "$FIX" --skip-packaging
-expect 1 "has no \`license-file\`" "arm 3: a workspace with no license-file fails (no crate would ship the text)"
+expect 1 "must not declare \`license-file\` when SPDX \`license\` is available" "arm 3: dual workspace Cargo license metadata fails"
 
-FIX="$(mkfix crate-no-license-file)"
-sub "$FIX/crates/foo/Cargo.toml" 'license-file.workspace = true' ''
+FIX="$(mkfix crate-dual-license-metadata)"
+sub "$FIX/crates/foo/Cargo.toml" 'license.workspace = true' $'license.workspace = true\nlicense-file = "LICENSE"'
 run_checker --root "$FIX" --skip-packaging
-expect 1 "is PUBLISHABLE but declares no \`license-file\`" "arm 4: a publishable crate not opting in fails"
+expect 1 "must not declare \`license-file\` when SPDX \`license\` is available" "arm 4: dual crate Cargo license metadata fails"
+
+FIX="$(mkfix crate-no-license-text)"
+rm "$FIX/crates/foo/LICENSE"
+run_checker --root "$FIX" --skip-packaging
+expect 1 "is PUBLISHABLE but has no regular package-root LICENSE" "arm 4b: a publishable crate without a local license text fails"
 
 FIX="$(mkfix py-legacy-table)"
 sub "$FIX/src/python/pyproject.toml" 'license = "MIT"' 'license = { text = "MIT" }'

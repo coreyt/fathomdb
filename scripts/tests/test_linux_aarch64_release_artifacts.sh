@@ -38,11 +38,11 @@ def entry(job, target):
 
 
 python_arm = entry("build-python", "aarch64-unknown-linux-gnu")
-if python_arm != {
+if not {
     "runner": "ubuntu-24.04-arm",
     "target": "aarch64-unknown-linux-gnu",
     "manylinux": "2_28",
-}:
+}.items() <= python_arm.items():
     fail(f"build-python AArch64 entry is wrong: {python_arm!r}")
 
 napi_arm = entry("build-napi", "aarch64-unknown-linux-gnu")
@@ -91,9 +91,12 @@ smoke_text = json.dumps(smoke_arm)
 if "smoke-pypi-wheel.sh" not in smoke_text or "smoke-npm-package.sh" not in smoke_text:
     fail("AArch64 post-publish smoke must exercise both registry bindings")
 
+promotion = jobs.get("promote-npm-latest")
+if promotion is None or "post-publish-smoke-aarch64" not in promotion.get("needs", []):
+    fail("npm latest promotion must wait for AArch64 registry smokes")
 release_needs = jobs["github-release"].get("needs", [])
-if "post-publish-smoke-aarch64" not in release_needs:
-    fail("GitHub release must wait for AArch64 registry smokes")
+if "promote-npm-latest" not in release_needs:
+    fail("GitHub release must wait for npm latest promotion")
 
 if not Path(preflight_path).is_file():
     fail("AArch64 release preflight workflow is missing")
@@ -144,9 +147,9 @@ cp "$REPO_ROOT/src/ts/package.json" "$scratch/package.json"
 bash "$REPO_ROOT/scripts/release/npm-inject-optional-deps.sh" "$scratch" "$REPO_ROOT/src/ts/npm" >/dev/null
 injected="$(node -e 'process.stdout.write(JSON.stringify(require(process.argv[1]).optionalDependencies))' "$scratch/package.json")"
 version="$(node -e 'process.stdout.write(require(process.argv[1]).version)' "$REPO_ROOT/src/ts/package.json")"
-expected="{\"fathomdb-linux-arm64-gnu\":\"$version\",\"fathomdb-linux-x64-gnu\":\"$version\"}"
+expected="{\"fathomdb-darwin-arm64\":\"$version\",\"fathomdb-darwin-x64\":\"$version\",\"fathomdb-linux-arm64-gnu\":\"$version\",\"fathomdb-linux-x64-gnu\":\"$version\",\"fathomdb-win32-x64-msvc\":\"$version\"}"
 if [ "$injected" != "$expected" ]; then
-  printf 'FAIL  main npm package must inject both Linux platform dependencies, got: %s\n' "$injected" >&2
+  printf 'FAIL  main npm package must inject every stable platform dependency, got: %s\n' "$injected" >&2
   exit 1
 fi
-printf 'PASS  main npm package injects both Linux platform dependencies\n'
+printf 'PASS  main npm package injects every stable platform dependency\n'

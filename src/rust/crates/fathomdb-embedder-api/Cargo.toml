@@ -11,9 +11,6 @@ keywords = ["embeddings", "embedder", "trait", "vector-search", "plugin"]
 version = "0.6.1"
 edition.workspace = true
 license.workspace = true
-# 0.8.20 Slice 39 (R-20-DOC): ships the repo-root MIT LICENSE inside this
-# crate's `.crate` tarball. Path is resolved relative to the workspace root.
-license-file.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 

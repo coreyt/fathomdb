@@ -1651,6 +1651,50 @@ else
   fail "arm R6 (all-live current-state pointers): rc=$LIVE_POINTER_RC errors=$LIVE_POINTER_ERRORS"
 fi
 
+# --- Arm R6b: a release with no landings says so explicitly -----------------
+# A newly opened release legitimately has `landed: []`. Both roll-up renderers
+# used the ordinary "Slices %s" template, yielding the malformed "Slices ."
+# in the plan and an equally empty master claim. The fixture writes the desired
+# bytes independently; it is RED against the old renderer because the bytes do
+# not match, then GREEN only once both renderers name the factual empty set.
+setup_fixture
+python3 - "$FIX/dev/plans/release-state-9.9.9.json" <<'PY'
+import json, sys
+p = sys.argv[1]
+s = json.load(open(p))
+s["landed"] = []
+s["generated_views"] = [
+    {"id": "master-ladder-progress", "file": "dev/plans/master.md"},
+    {"id": "plan-landed-roll-up", "file": "dev/plans/plan-9.9.9.md"},
+]
+json.dump(s, open(p, "w"), indent=2)
+PY
+git -C "$FIX" rm -q -- dev/plans/runs/board.md dev/plans/runs/handoff.md
+cat >"$FIX/dev/plans/master.md" <<EOF
+# Master
+
+| Release | Notes |
+|---|---|
+| **9.9.9** | ${B_MASTER}No slices are LANDED on \`origin/main\`; SCHEMA is 42; remaining ladder = 10 → 20 → 30 → 40.${E_MASTER} |
+EOF
+B_PLANROLL='<!-- BEGIN GENERATED release-state:9.9.9:plan-landed-roll-up -->'
+E_PLANROLL='<!-- END GENERATED release-state:9.9.9:plan-landed-roll-up -->'
+cat >"$FIX/dev/plans/plan-9.9.9.md" <<EOF
+# Plan
+
+${B_PLANROLL}
+**LANDED on \`origin/main\`, in full:** no slices. SCHEMA is 42; remaining ladder = 10 → 20 → 30 → 40.${E_PLANROLL}
+EOF
+run_gate
+if [ "$RC" -eq 0 ] \
+   && grep -qF 'No slices are LANDED on `origin/main`' "$FIX/dev/plans/master.md" \
+   && grep -qF '**LANDED on `origin/main`, in full:** no slices.' "$FIX/dev/plans/plan-9.9.9.md" \
+   && ! grep -qF 'Slices .' "$FIX/dev/plans/master.md" "$FIX/dev/plans/plan-9.9.9.md"; then
+  pass "empty landed set renders truthful no-slices roll-ups, never malformed Slices ."
+else
+  fail "arm R6b (empty landed set): rc=$RC out=$OUT"
+fi
+
 # --- Arm R7: terminalness is derived from the remaining ladder, not asserted ---
 setup_fixture
 perl -0777 -pi -e 's/"next_slice": 10/"next_slice": null/' \

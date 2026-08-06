@@ -8,9 +8,6 @@ keywords = ["cli", "database", "sqlite", "diagnostics", "embedded"]
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-# 0.8.20 Slice 39 (R-20-DOC): ships the repo-root MIT LICENSE inside this
-# crate's `.crate` tarball. Path is resolved relative to the workspace root.
-license-file.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 
@@ -51,5 +48,5 @@ default-embedder = ["fathomdb-embedder/default-embedder"]
 # shapes the erasure verbs cannot reach (NULL `source_id`), which no supported
 # write path can produce. Raw SQL is the only way to build that fixture, and
 # design §3 Rule 1 requires erasure witnesses to assert on RAW table contents.
-rusqlite = { version = "0.31", features = ["bundled"] }
+rusqlite = { version = "0.40", features = ["bundled", "fallible_uint"] }
 tempfile = "3"

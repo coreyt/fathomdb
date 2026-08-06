@@ -11,16 +11,20 @@ and `require`s the matching platform package, throwing a clear
 `UnsupportedPlatformError` when none is present — never a silent runtime
 segfault (R-REL-4f, `dev/design/0.8.18-slice-20-publish-pipeline.md`).
 
-## Linux packages
+## Supported packages for 0.8.22
 
 - `linux-x64-gnu/` — `fathomdb-linux-x64-gnu`
 - `linux-arm64-gnu/` — `fathomdb-linux-arm64-gnu`
+- `darwin-x64/` — `fathomdb-darwin-x64`
+- `darwin-arm64/` — `fathomdb-darwin-arm64`
+- `win32-x64-msvc/` — `fathomdb-win32-x64-msvc`
 
 The `.node` binary is NOT committed; the release workflow's `build-napi` job
 stages it into this directory before publishing.
 
-## Deferred to the follow-on orchestrator (R-REL-4d)
+## Unsupported targets
 
-`darwin-x64`, `darwin-arm64`, `win32-x64-msvc`, `linux-x64-musl`, … — added
-here (each a sibling directory) when the follow-on
-completes the cross-platform matrix and promotes the main package to `latest`.
+Linux musl, Windows ARM/32-bit, and other targets deliberately have no
+platform package. Their loader error is part of the public install contract;
+they must not be described as supported until an artifact, registry smoke, and
+compatibility documentation land together.

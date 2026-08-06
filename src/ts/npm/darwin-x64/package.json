@@ -1,0 +1,14 @@
+{
+  "name": "fathomdb-darwin-x64",
+  "version": "0.8.22",
+  "description": "Prebuilt FathomDB native binding for darwin-x64 (napi-rs). Installed automatically as an optionalDependency of the `fathomdb` package on matching hosts.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/coreyt/fathomdb"
+  },
+  "os": ["darwin"],
+  "cpu": ["x64"],
+  "main": "fathomdb.darwin-x64.node",
+  "files": ["fathomdb.darwin-x64.node"]
+}

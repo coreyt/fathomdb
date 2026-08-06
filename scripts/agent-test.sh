@@ -130,6 +130,7 @@ run_tier_suite fast test-set-version bash scripts/tests/test_set_version.sh
 # Scripts (bash): release-cut fields deliberately outside set-version.sh.
 run_tier_suite fast test-release-version-surfaces bash scripts/tests/test_release_version_surfaces.sh
 run_tier_suite fast test-platform-capabilities bash scripts/tests/test_platform_capabilities.sh
+run_tier_suite fast test-sqlite-dependency-contract bash scripts/tests/test_sqlite_dependency_contract.sh
 run_tier_suite fast test-public-doc-truth bash scripts/tests/test_public_doc_truth.sh
 
 # The partition gate itself is intentionally early: if a registration is
@@ -282,6 +283,11 @@ run_tier_suite fast test-smoke-scripts bash scripts/tests/test_smoke_scripts.sh
 # assertions (matrix gated to x86_64-linux, tiered ordering, non-latest npm
 # dist-tag). Pure python3+PyYAML parse; never runs the workflow.
 run_tier_suite fast test-release-workflow-scope bash scripts/tests/test_release_workflow_scope.sh
+
+# Fast mutation coverage for the manifest-derived release-ready native matrix.
+# This standard-library checker guards matrix, package, smoke, and promotion
+# drift without interpreting public documentation.
+run_tier_suite fast test-release-contract-truth bash scripts/tests/test_release_contract_truth.sh
 
 # Slice 40 / seq-234: Linux x86_64 is the 0.8.20 native-artifact scope.
 # Static assertions here complement actionlint's workflow syntax/schema check.

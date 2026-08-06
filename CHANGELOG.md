@@ -8,7 +8,26 @@ AC-050c) gates merges against this invariant.
 
 ## [Unreleased]
 
-(rolls into the next cut after 0.8.21.)
+(rolls into the next cut after 0.8.22.)
+
+## 0.8.22 — 2026-08-05
+
+### Added
+
+- Native Python wheels and npm binaries for macOS x64/ARM64 and Windows x64,
+  alongside the supported Linux glibc x64/ARM64 targets.
+- Actual-runner native build and registry-smoke coverage for the supported
+  five-target matrix. Linux musl and Windows ARM/32-bit remain unsupported.
+
+### Changed
+
+- The npm main package is released under `next` before promotion to `latest`;
+  promotion requires every platform registry smoke and co-tagging check.
+- Updated the SQLite stack to `rusqlite` 0.40 and `sqlite-vec` 0.1.9.
+
+### Removed
+
+None.
 
 ## 0.8.21 — 2026-08-05
 

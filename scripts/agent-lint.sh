@@ -76,6 +76,7 @@ run_capped lint-rustfmt cargo fmt --all --check
 # Migration authoring policy
 run_capped lint-migrations "$SCRIPT_DIR/agent-lint-migrations.sh"
 run_capped platform-capabilities "$SCRIPT_DIR/check-platform-capabilities.sh"
+run_capped release-contract-truth "$SCRIPT_DIR/check-release-contract-truth.py"
 run_capped public-doc-truth "$SCRIPT_DIR/check-public-doc-truth.py"
 run_capped pinned-override-rot "$SCRIPT_DIR/check-pinned-override-rot.sh"
 

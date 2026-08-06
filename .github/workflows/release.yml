@@ -11,9 +11,12 @@ on:
         type: boolean
         default: true
       release_version:
-        description: "Required semver version for a recovery dispatch; derives the canonical v-tag for every release consumer."
+        description: "Required semver version; must match Axis W and derives the prospective dry-run or canonical publish tag."
         type: string
         required: true
+      candidate_commit:
+        description: "Dry-run only: required immutable full 40-hex commit SHA. Every release job checks out exactly this candidate; no v-tag is needed."
+        type: string
       confirm_release_version:
         description: "Required when dry_run is unchecked: type the exact Axis-W version to confirm a real publish."
         type: string
@@ -32,20 +35,16 @@ env:
   RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && format('v{0}', inputs.release_version) || github.ref_name }}
   RELEASE_DISPATCH_VERSION: ${{ inputs.release_version || '' }}
   RELEASE_CONFIRM_VERSION: ${{ inputs.confirm_release_version || '' }}
-  # Before its tag exists, a dry-run dispatch must exercise the commit selected
-  # in the UI. Real tag pushes and non-dry-run recovery dispatches must use the
-  # immutable canonical tag instead.
-  RELEASE_CHECKOUT_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run == true && github.sha || github.event_name == 'workflow_dispatch' && format('refs/tags/v{0}', inputs.release_version) || github.ref }}
+  RELEASE_GATES_CANDIDATE_COMMIT: ${{ inputs.candidate_commit || '' }}
+  # A dry-run dispatch must exercise its explicitly selected immutable commit,
+  # never the mutable UI branch tip or a v-tag whose push would publish. Real
+  # tag pushes and non-dry-run recovery dispatches use the canonical v-tag.
+  RELEASE_CHECKOUT_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run == true && inputs.candidate_commit || github.event_name == 'workflow_dispatch' && format('refs/tags/v{0}', inputs.release_version) || github.ref }}
   RELEASE_GATES_REQUIRE_TAG_CHECKOUT: ${{ (github.event_name != 'workflow_dispatch' || inputs.dry_run != true) && '1' || '0' }}
-  # Linux-first platform coverage is partial: x64 and AArch64 glibc are
-  # supported, while macOS, Windows, and musl remain deferred.
-  # Publishing under `latest` would serve unsupported users an
-  # install-incompatible package as the default. So the main
-  # `fathomdb` package + both Linux binary packages publish under a
-  # NON-`latest` dist-tag. HITL confirms the exact
-  # label. macOS/Windows native artifacts and validation are deferred to 0.8.22;
-  # that release may complete the platform matrix and then promote
-  # `latest`.
+  # 0.8.22 supports Linux glibc x64/ARM64, macOS x64/ARM64, and Windows x64.
+  # Musl and every other target remain unsupported. Every package first
+  # publishes under `next`; only the main `fathomdb` package is promoted to
+  # `latest` after all five actual-runner registry smokes and co-tagging pass.
   NPM_DIST_TAG: "next"
 
 jobs:
@@ -59,7 +58,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0, canonical release tag
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0, candidate SHA or canonical release tag
         with:
           ref: ${{ env.RELEASE_CHECKOUT_REF }}
           fetch-depth: 0  # need refs/heads/main for HEAD-reach check
@@ -80,9 +79,9 @@ jobs:
       - name: Validate workflow YAML
         run: actionlint .github/workflows/*.yml
       - name: Run release gates
-        # Runs on push (tag-format + version-axis enforced) and
-        # workflow_dispatch (tag check skipped, all other gates enforced;
-        # dry_run=false also needs a matching typed confirmation).
+        # Runs on push (tag-format + version-axis enforced) and dispatch.
+        # Dry runs require and verify the selected full candidate SHA; non-dry
+        # recovery remains canonical-tag-only and needs typed confirmation.
         #
           # RELEASE_GATES_HEAD_REF points at the remote-tracking main ref,
           # because checkout can be either the selected dry-run commit or a tag.
@@ -91,6 +90,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_GATES_HEAD_REF: refs/remotes/origin/main
           RELEASE_GATES_TAG: ${{ env.RELEASE_TAG }}
+          RELEASE_GATES_CANDIDATE_COMMIT: ${{ env.RELEASE_GATES_CANDIDATE_COMMIT }}
           RELEASE_DISPATCH_VERSION: ${{ env.RELEASE_DISPATCH_VERSION }}
           RELEASE_GATES_REQUIRE_TAG_CHECKOUT: ${{ env.RELEASE_GATES_REQUIRE_TAG_CHECKOUT }}
       - name: Axis-E published-API drift guard
@@ -107,9 +107,8 @@ jobs:
   # Native Linux Python wheels via PyO3/maturin-action. The
   # working-directory must be `src/python` so maturin reads our pyproject.toml
   # there (manifest-path = ../rust/crates/fathomdb-py/Cargo.toml).
-  # Linux x86_64 and AArch64 are the supported native-artifact routes. macOS
-  # and Windows native artifacts and validation remain deferred; do not add
-  # their matrix entries to this release.
+  # 0.8.22's stable native-artifact matrix is Linux glibc x64/ARM64, macOS
+  # x64/ARM64, and Windows x64. Musl and other targets remain unsupported.
   build-python:
     needs: verify-release
     strategy:
@@ -122,6 +121,19 @@ jobs:
           - runner: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
             manylinux: "2_28"
+            interpreters: "python3.10 python3.11 python3.12"
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+            manylinux: "auto"
+            interpreters: "python3.10 python3.11 python3.12"
+          - runner: macos-14
+            target: aarch64-apple-darwin
+            manylinux: "auto"
+            interpreters: "python3.10 python3.11 python3.12"
+          - runner: windows-latest
+            target: x86_64-pc-windows-msvc
+            manylinux: "auto"
+            interpreters: "python"
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0, canonical release tag
@@ -146,7 +158,7 @@ jobs:
           # `dev/design/0.7.1-EU-6-FIX-1-design.md` D1: `default-embedder`
           # ON (so `use_default_embedder=True` works on the published
           # wheel), `test-hooks` deliberately absent (dev-only surface).
-          args: --release --out dist --features pyo3/extension-module,default-embedder -i python3.10 python3.11 python3.12
+          args: --release --out dist --features pyo3/extension-module,default-embedder -i ${{ matrix.interpreters || 'python3.10 python3.11 python3.12' }}
           manylinux: ${{ matrix.manylinux || 'auto' }}
           working-directory: src/python
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -160,8 +172,8 @@ jobs:
   # because the platform-label convention lives in the napi-rs CLI, not in
   # us. Binary lands flat at src/ts/fathomdb.<label>.node (NO prebuilds/
   # subdir; that was the pre-0.6.0 layout).
-  # Linux x86_64 and AArch64 are native build routes. macOS and Windows native
-  # artifacts and validation remain deferred.
+  # Keep this identical to the Python stable matrix so the npm package
+  # topology and actual native build coverage cannot drift apart.
   build-napi:
     needs: verify-release
     if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.recovery_skip_npm == true && inputs.release_version == '0.8.20') }}
@@ -175,6 +187,15 @@ jobs:
           - runner: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
             label: linux-arm64-gnu
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+            label: darwin-x64
+          - runner: macos-14
+            target: aarch64-apple-darwin
+            label: darwin-arm64
+          - runner: windows-latest
+            target: x86_64-pc-windows-msvc
+            label: win32-x64-msvc
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0, canonical release tag
@@ -603,9 +624,104 @@ jobs:
               --tag "${NPM_DIST_TAG}" -- --access public --provenance
           fi
 
+  # Platform packages must all publish before the thin main package injects
+  # their exact optionalDependency versions. Trusted publishing is configured
+  # manually in npm for each new package; these jobs use GitHub OIDC only.
+  publish-npm-platform-darwin-x64:
+    runs-on: macos-15-intel
+    if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.recovery_skip_npm == true && inputs.release_version == '0.8.20') }}
+    needs: all-builds-passed
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0, candidate SHA or canonical release tag
+        with:
+          ref: ${{ env.RELEASE_CHECKOUT_REF }}
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "25.9.0"
+          registry-url: "https://registry.npmjs.org"
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: napi-darwin-x64
+          path: src/ts/npm/darwin-x64
+      - name: Publish fathomdb-darwin-x64
+        working-directory: src/ts/npm/darwin-x64
+        env:
+          NPM_BIN: "npm"
+        run: |
+          if [ "${DRY_RUN}" = "true" ]; then
+            bash "$GITHUB_WORKSPACE/scripts/release/npm-publish-if-new.sh" --dry-run --tag "${NPM_DIST_TAG}" -- --access public --provenance
+          else
+            bash "$GITHUB_WORKSPACE/scripts/release/npm-publish-if-new.sh" --tag "${NPM_DIST_TAG}" -- --access public --provenance
+          fi
+
+  publish-npm-platform-darwin-arm64:
+    runs-on: macos-14
+    if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.recovery_skip_npm == true && inputs.release_version == '0.8.20') }}
+    needs: all-builds-passed
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0, candidate SHA or canonical release tag
+        with:
+          ref: ${{ env.RELEASE_CHECKOUT_REF }}
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "25.9.0"
+          registry-url: "https://registry.npmjs.org"
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: napi-darwin-arm64
+          path: src/ts/npm/darwin-arm64
+      - name: Publish fathomdb-darwin-arm64
+        working-directory: src/ts/npm/darwin-arm64
+        env:
+          NPM_BIN: "npm"
+        run: |
+          if [ "${DRY_RUN}" = "true" ]; then
+            bash "$GITHUB_WORKSPACE/scripts/release/npm-publish-if-new.sh" --dry-run --tag "${NPM_DIST_TAG}" -- --access public --provenance
+          else
+            bash "$GITHUB_WORKSPACE/scripts/release/npm-publish-if-new.sh" --tag "${NPM_DIST_TAG}" -- --access public --provenance
+          fi
+
+  publish-npm-platform-win32-x64-msvc:
+    runs-on: windows-latest
+    if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.recovery_skip_npm == true && inputs.release_version == '0.8.20') }}
+    needs: all-builds-passed
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0, candidate SHA or canonical release tag
+        with:
+          ref: ${{ env.RELEASE_CHECKOUT_REF }}
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "25.9.0"
+          registry-url: "https://registry.npmjs.org"
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: napi-win32-x64-msvc
+          path: src/ts/npm/win32-x64-msvc
+      - name: Publish fathomdb-win32-x64-msvc
+        shell: bash
+        working-directory: src/ts/npm/win32-x64-msvc
+        env:
+          NPM_BIN: "npm"
+        run: |
+          if [ "${DRY_RUN}" = "true" ]; then
+            bash "$GITHUB_WORKSPACE/scripts/release/npm-publish-if-new.sh" --dry-run --tag "${NPM_DIST_TAG}" -- --access public --provenance
+          else
+            bash "$GITHUB_WORKSPACE/scripts/release/npm-publish-if-new.sh" --tag "${NPM_DIST_TAG}" -- --access public --provenance
+          fi
+
   # Thin main `fathomdb` package: ships dist/ only (NO .node — the platform
   # packages carry the binaries as optionalDependencies). Idempotent publish
-  # under the NON-latest NPM_DIST_TAG while platform coverage is partial.
+  # under the staged `next` dist-tag until all registry smokes permit only the
+  # main package's promotion to `latest`.
   publish-npm:
     runs-on: ubuntu-latest
     if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.recovery_skip_npm == true && inputs.release_version == '0.8.20') }}
@@ -613,6 +729,9 @@ jobs:
       - publish-rust-t5-engine
       - publish-npm-platform-linux-x64-gnu
       - publish-npm-platform-linux-arm64-gnu
+      - publish-npm-platform-darwin-x64
+      - publish-npm-platform-darwin-arm64
+      - publish-npm-platform-win32-x64-msvc
     permissions:
       contents: read
       id-token: write
@@ -719,6 +838,66 @@ jobs:
       - name: Smoke AArch64 npm package
         run: bash scripts/release/smoke/smoke-npm-package.sh "${{ steps.ver.outputs.version }}"
 
+  post-publish-smoke-darwin-x64:
+    runs-on: macos-15-intel
+    if: ${{ inputs.dry_run != true && !(github.event_name == 'workflow_dispatch' && inputs.recovery_skip_npm == true && inputs.release_version == '0.8.20') }}
+    needs: [publish-rust-t7-cli, publish-pypi, publish-npm]
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0, candidate SHA or canonical release tag
+        with:
+          ref: ${{ env.RELEASE_CHECKOUT_REF }}
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "25.9.0"
+      - id: ver
+        run: echo "version=${RELEASE_TAG#v}" >> "$GITHUB_OUTPUT"
+      - run: bash scripts/release/smoke/smoke-pypi-wheel.sh "${{ steps.ver.outputs.version }}"
+      - run: bash scripts/release/smoke/smoke-npm-package.sh "${{ steps.ver.outputs.version }}"
+
+  post-publish-smoke-darwin-arm64:
+    runs-on: macos-14
+    if: ${{ inputs.dry_run != true && !(github.event_name == 'workflow_dispatch' && inputs.recovery_skip_npm == true && inputs.release_version == '0.8.20') }}
+    needs: [publish-rust-t7-cli, publish-pypi, publish-npm]
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0, candidate SHA or canonical release tag
+        with:
+          ref: ${{ env.RELEASE_CHECKOUT_REF }}
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "25.9.0"
+      - id: ver
+        run: echo "version=${RELEASE_TAG#v}" >> "$GITHUB_OUTPUT"
+      - run: bash scripts/release/smoke/smoke-pypi-wheel.sh "${{ steps.ver.outputs.version }}"
+      - run: bash scripts/release/smoke/smoke-npm-package.sh "${{ steps.ver.outputs.version }}"
+
+  post-publish-smoke-win32-x64:
+    runs-on: windows-latest
+    if: ${{ inputs.dry_run != true && !(github.event_name == 'workflow_dispatch' && inputs.recovery_skip_npm == true && inputs.release_version == '0.8.20') }}
+    needs: [publish-rust-t7-cli, publish-pypi, publish-npm]
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0, candidate SHA or canonical release tag
+        with:
+          ref: ${{ env.RELEASE_CHECKOUT_REF }}
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "25.9.0"
+      - id: ver
+        shell: pwsh
+        run: '"version=$($env:RELEASE_TAG.Substring(1))" | Out-File -FilePath $env:GITHUB_OUTPUT -Append'
+      - shell: pwsh
+        run: ./scripts/release/smoke/smoke-pypi-wheel.ps1 "${{ steps.ver.outputs.version }}"
+      - shell: pwsh
+        run: ./scripts/release/smoke/smoke-npm-package.ps1 "${{ steps.ver.outputs.version }}"
+
   # AC-052: sibling triple (fathomdb + fathomdb-embedder + fathomdb-embedder-
   # api) must all exist in the registry at the expected versions after the
   # tier 1..7 publishes complete. Skipped on dry-run since no real publish
@@ -742,6 +921,30 @@ jobs:
       - name: Assert sibling-package co-tagging
         run: bash scripts/release/assert-co-tagging.sh "${{ steps.ver.outputs.version }}"
 
+  # Every native registry smoke must be green before the *main* package moves
+  # from next to latest. Platform packages intentionally remain on next: users
+  # resolve them through the version-pinned optionalDependencies of fathomdb.
+  promote-npm-latest:
+    runs-on: ubuntu-latest
+    if: ${{ inputs.dry_run != true && !(github.event_name == 'workflow_dispatch' && inputs.recovery_skip_npm == true && inputs.release_version == '0.8.20') }}
+    needs:
+      - post-publish-smoke
+      - post-publish-smoke-aarch64
+      - post-publish-smoke-darwin-x64
+      - post-publish-smoke-darwin-arm64
+      - post-publish-smoke-win32-x64
+      - co-tagging-assert
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "25.9.0"
+          registry-url: "https://registry.npmjs.org"
+      - name: Promote only the main fathomdb package to latest
+        run: npm dist-tag add "fathomdb@${RELEASE_TAG#v}" latest
+
   # AC-054 partial: only this job marks the release complete by creating the
   # GitHub Release. If any smoke or co-tagging job is red, this job does not
   # run, so the release is never marked done. Skipped on dry-run.
@@ -749,9 +952,7 @@ jobs:
     runs-on: ubuntu-latest
     if: ${{ inputs.dry_run != true && !(github.event_name == 'workflow_dispatch' && inputs.recovery_skip_npm == true && inputs.release_version == '0.8.20') }}
     needs:
-      - post-publish-smoke
-      - post-publish-smoke-aarch64
-      - co-tagging-assert
+      - promote-npm-latest
     steps:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:

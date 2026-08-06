@@ -68,6 +68,8 @@ check_common() {
 CRATES="$SMOKE_DIR/smoke-crates-cli.sh"
 PYPI="$SMOKE_DIR/smoke-pypi-wheel.sh"
 NPM="$SMOKE_DIR/smoke-npm-package.sh"
+PYPI_WINDOWS="$SMOKE_DIR/smoke-pypi-wheel.ps1"
+NPM_WINDOWS="$SMOKE_DIR/smoke-npm-package.ps1"
 
 check_common "$CRATES" "smoke-crates-cli"
 # Version-pinned cargo install (--version "$VERSION", not "latest").
@@ -102,6 +104,14 @@ assert_contains "smoke-npm-package: close call" "$NPM" 'await e.close()'
 # smoke fixture's provenance, not caller content.
 assert_contains "smoke-npm-package: write carries sourceId" "$NPM" \
   'sourceId: "smoke:npm-package"'
+
+# Windows uses PowerShell rather than assuming a Unix shell. Its scripts retain
+# the same registry-pinned open/write/search/close contract as the bash legs.
+assert_contains "windows PyPI smoke: creates a fresh venv" "$PYPI_WINDOWS" 'python -m venv'
+assert_contains "windows PyPI smoke: pinned install" "$PYPI_WINDOWS" '"fathomdb==$Version"'
+assert_contains "windows PyPI smoke: closes engine" "$PYPI_WINDOWS" 'engine.close()'
+assert_contains "windows npm smoke: pinned install" "$NPM_WINDOWS" '"fathomdb@$Version"'
+assert_contains "windows npm smoke: closes engine" "$NPM_WINDOWS" 'await engine.close()'
 
 # Run each smoke with a bad version arg — must exit non-zero BEFORE doing
 # any network work, with a usage-shaped diagnostic.

@@ -1,0 +1,18 @@
+Codex §9 review record — 0.8.22 candidate
+
+Base: 4fb43b9ad199233801288725135fa5783a15f08c
+Candidate reviewed: 18d8b44a
+Reviewer session: 019fd45d-4ea7-7211-87f8-e1861593b705
+Invocation: dev/agent-tools/codex-nostdin.sh exec review --base <base> --dangerously-bypass-approvals-and-sandbox
+
+Initial verdict: FAIL; P1.
+P1: Release version surfaces remained at 0.8.21 in Cargo.lock,
+src/ts/package-lock.json, and src/python/fathomdb/__init__.py instead of
+0.8.22.
+
+Remediation reviewed: 9a8365ed plus the regenerated lock/runtime commit
+18d8b44a. Focused verification: bash scripts/tests/test_release_version_surfaces.sh
+passed for every Axis-W Cargo.lock package, both npm lockfile fields, and the
+Python runtime version.
+
+Final verdict: PASS.

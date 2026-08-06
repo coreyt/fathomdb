@@ -8,9 +8,6 @@ keywords = ["sqlite", "migrations", "schema", "database", "embedded"]
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-# 0.8.20 Slice 39 (R-20-DOC): ships the repo-root MIT LICENSE inside this
-# crate's `.crate` tarball. Path is resolved relative to the workspace root.
-license-file.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 
@@ -18,7 +15,7 @@ rust-version.workspace = true
 path = "src/lib.rs"
 
 [dependencies]
-rusqlite = { version = "0.31", features = ["bundled"] }
+rusqlite = { version = "0.40", features = ["bundled", "fallible_uint"] }
 
 [dev-dependencies]
 proptest = "1"
@@ -31,4 +28,4 @@ sha2 = "0.11"
 # Pack 1 migration step 9 creates a vec0 virtual table; the schema
 # crate's migration tests need the extension loaded to exercise it.
 # Pin matches fathomdb-engine.
-sqlite-vec = "=0.1.7"
+sqlite-vec = "=0.1.9"

@@ -170,9 +170,15 @@ done
 shopt -u nullglob
 
 # --- worktree file index, for citation path resolution --------------------
+#
+# A linked checkout can itself live beneath `.claude/worktrees/`. It is a
+# separate repository whose duplicate paths must not make this checkout's
+# citations ambiguous; unlike normal untracked files here, it is not source
+# this lint is responsible for. Keep the physical-tree index so untracked work
+# in the current checkout remains reviewable, but prune nested worktrees.
 INDEX="$(mktemp)"
 trap 'rm -f "$INDEX"' EXIT
-find . \( -name .git -o -name node_modules -o -name target -o -name .venv \) -prune \
+find . \( -name .git -o -path './.claude/worktrees' -o -name node_modules -o -name target -o -name .venv \) -prune \
   -o -type f -print 2>/dev/null | sed 's|^\./||' | sort >"$INDEX"
 
 # Resolve a cited path to exactly one worktree file.

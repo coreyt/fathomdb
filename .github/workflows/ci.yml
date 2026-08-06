@@ -429,9 +429,8 @@ jobs:
   #     and recorded in the job summary so accidental dependency creep
   #     on the minimal-deps build path is still visible — but not gated.
   #
-  # For 0.8.20 the matrix is the shipped x86_64 Linux artifact only.
-  # macOS/Windows native validation and artifacts are deferred to 0.8.22
-  # by the HITL's Linux-first scope ruling (steward seq-234).
+  # 0.8.22 validates the shipped Python wheel on Linux glibc x64/ARM64,
+  # macOS x64/ARM64, and Windows x64. Musl and other targets remain unsupported.
   wheel-size-gate:
     needs: changes
     if: needs.changes.outputs.docs_only != 'true'
@@ -448,6 +447,26 @@ jobs:
             # = with-feature + ~20% headroom so Cargo.lock churn does
             # not whip the gate; the 20 MB regression budget on top of
             # this absorbs intentional dependency bumps.
+            baseline_bytes: 7400000
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            label: linux-arm64
+            manylinux: "2_28"
+            baseline_bytes: 7400000
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+            label: darwin-x64
+            manylinux: "auto"
+            baseline_bytes: 7400000
+          - runner: macos-14
+            target: aarch64-apple-darwin
+            label: darwin-arm64
+            manylinux: "auto"
+            baseline_bytes: 7400000
+          - runner: windows-latest
+            target: x86_64-pc-windows-msvc
+            label: win32-x64
+            manylinux: "auto"
             baseline_bytes: 7400000
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30

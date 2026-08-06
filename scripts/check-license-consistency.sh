@@ -67,10 +67,11 @@
 #     So the npm and Python legs require a REGULAR FILE and assert byte-equality
 #     with the root LICENSE — the copy is the drift risk, byte-equality is the
 #     mitigation.
-#   * CARGO NEEDS NO COPY. `[workspace.package] license-file = "LICENSE"` +
-#     `license-file.workspace = true` in each crate resolves the path relative
-#     to the WORKSPACE ROOT, and cargo copies the file into each `.crate` as
-#     `LICENSE`. One real file, seven artifacts, nothing to drift.
+#   * CARGO'S SPDX METADATA AND LICENSE TEXT ARE SEPARATE. Cargo warns when a
+#     package declares both `license` and `license-file`. MIT is a standard
+#     SPDX expression, so every publishable crate inherits `license = "MIT"`
+#     only and carries a regular package-root `LICENSE` copy. Cargo includes
+#     that conventional file in the `.crate`; byte equality prevents drift.
 #
 # VACUOUS-PASS GUARD (this repo's named failure class, TC-37): every "cannot
 # determine" path exits 2, never 0. Missing LICENSE, unrecognised license type,
@@ -282,9 +283,8 @@ print("license-consistency: root LICENSE = %s (sha256 %s)" % (SPDX, LICENSE_SHA[
 def assert_same_bytes(path, label):
     """A shipped license COPY must stay byte-identical to the authoritative one.
 
-    Copies are the drift risk that the symlink/`license-file` mechanisms avoid;
-    where a copy is unavoidable (npm and PEP-639 both refuse to reach outside
-    the package root) this is the mitigation.
+    Copies are the drift risk; where package formats need a package-root file
+    (Cargo, npm, and PEP-639) this is the mitigation.
     """
     if not os.path.exists(path):
         fail("%s: %s does not exist" % (label, path))
@@ -316,7 +316,7 @@ def assert_same_bytes(path, label):
 
 
 # ------------------------------------------------------------- cargo leg -----
-publishable = []  # (name, crate_dir, license_file_basename) — packaging-checkable
+publishable = []  # (name, crate_dir) — packaging-checkable
 publishable_declared = 0  # members without `publish = false`, pass or fail
 
 if "cargo" in legs:
@@ -331,18 +331,12 @@ if "cargo" in legs:
             % (ws_license, SPDX)
         )
 
-    ws_license_file = wp.get("license-file")
-    if not ws_license_file:
+    if "license-file" in wp:
         fail(
-            "Cargo.toml [workspace.package] has no `license-file`. Without it no "
-            "`.crate` carries the license text: `cargo package --list` shipped no "
-            "license file for any crate through the whole 0.8.x line."
+            "Cargo.toml [workspace.package] must not declare `license-file` when "
+            "SPDX `license` is available. Use the SPDX license field alone and "
+            "a regular LICENSE in every publishable crate root."
         )
-    else:
-        # Inherited license-file paths resolve relative to the WORKSPACE root.
-        wlf = p(ws_license_file)
-        if os.path.realpath(wlf) != os.path.realpath(LICENSE_PATH):
-            assert_same_bytes(wlf, "Cargo.toml [workspace.package].license-file")
 
     members = ws.get("workspace", {}).get("members", [])
     if not members:
@@ -374,24 +368,24 @@ if "cargo" in legs:
 
         publishable_declared += 1
 
-        lf = pkg.get("license-file")
-        if isinstance(lf, dict) and lf.get("workspace") is True:
-            if not ws_license_file:
-                fail("%s: license-file.workspace = true but the workspace sets none" % cpath)
-                continue
-            basename = os.path.basename(ws_license_file)
-        elif isinstance(lf, str):
-            basename = os.path.basename(lf)
-            assert_same_bytes(os.path.join(cdir, lf), "%s license-file" % cpath)
-        else:
+        if "license-file" in pkg:
             fail(
-                "%s is PUBLISHABLE but declares no `license-file`, so its .crate "
-                "tarball will carry no license text. Add "
-                "`license-file.workspace = true`." % cpath
+                "%s must not declare `license-file` when SPDX `license` is "
+                "available. Use the SPDX license field alone and a regular "
+                "package-root LICENSE." % cpath
             )
             continue
 
-        publishable.append((name, cdir, basename))
+        crate_license = os.path.join(cdir, "LICENSE")
+        if not os.path.isfile(crate_license) or os.path.islink(crate_license):
+            fail(
+                "%s is PUBLISHABLE but has no regular package-root LICENSE. "
+                "Cargo SPDX metadata describes the license; this file ships its "
+                "text inside the .crate." % cpath
+            )
+            continue
+        if assert_same_bytes(crate_license, "%s package-root LICENSE" % cpath):
+            publishable.append((name, cdir))
 
     # Vacuous-pass guard: a workspace where EVERY member is `publish = false`
     # means the cargo leg had nothing to assert, which is an environment fault,
@@ -487,7 +481,7 @@ if not SKIP_PACKAGING:
     if "cargo" in legs:
         if subprocess.run(["sh", "-c", "command -v cargo >/dev/null 2>&1"]).returncode != 0:
             die_env("cargo is not on PATH — cannot read any .crate file list")
-        for name, cdir, basename in publishable:
+        for name, cdir in publishable:
             res = run(
                 ["cargo", "package", "--list", "--allow-dirty", "-p", name], cwd=ROOT
             )
@@ -499,14 +493,14 @@ if not SKIP_PACKAGING:
                 )
                 continue
             listed = res.stdout.splitlines()
-            if basename not in listed:
+            if "LICENSE" not in listed:
                 fail(
-                    "crate %s: `cargo package --list` does NOT contain %r — the "
+                    "crate %s: `cargo package --list` does NOT contain LICENSE — the "
                     "published .crate would carry no license text. Listed %d files."
-                    % (name, basename, len(listed))
+                    % (name, len(listed))
                 )
             else:
-                print("  ok  crate %s ships %s" % (name, basename))
+                print("  ok  crate %s ships LICENSE" % name)
 
     if "npm" in legs:
         if subprocess.run(["sh", "-c", "command -v npm >/dev/null 2>&1"]).returncode != 0:

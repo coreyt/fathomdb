@@ -77,6 +77,11 @@
 #       * the todos fold's `unfoldable (no id)` bucket, printed `no-id`: zero is
 #         fine (and the
 #         count is always printed, so it can never be confused with "no data").
+#       * landed slices: an exactly state-backed newly activated release has no
+#         landed slices yet. Its `landed` is empty, `next_slice` is the first
+#         complete `remaining_ladder` entry, only that entry may be
+#         `IN_PROGRESS`, and no ladder entry has a landing SHA. Any other empty
+#         landed result remains a hard failure.
 # (4) The resolver uses the same header CLOSED marker as board-currency. Its
 #     result, rather than a local reimplementation, is the release authority for
 #     this briefing.
@@ -290,7 +295,10 @@ else
     add "RELEASE (resolver returned incomplete metadata)"
   else
     if STATE_OUT="$(python3 - "$STATE" "$VER" "$BOARD" <<'PY'
-import json, sys
+import json
+import math
+import re
+import sys
 
 path, ver, board = sys.argv[1], sys.argv[2], sys.argv[3]
 try:
@@ -299,6 +307,52 @@ except Exception as exc:  # a corrupt single writer must be loud, never empty
     print(f"RELEASE {ver}  state file UNREADABLE: {exc}")
     print(f"#EMPTY:release state ({path} is not parseable)")
     raise SystemExit(0)
+
+
+def slice_key(value):
+    if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+        raise ValueError("slice id has an unsupported type")
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise ValueError("slice id is not finite")
+        text = "%g" % value
+    else:
+        text = str(value)
+    if not re.fullmatch(r"[0-9]+(?:\.[0-9]+)*", text):
+        raise ValueError("slice id is not a dotted numeric id")
+    return text
+
+
+def is_initial_release(state):
+    """Return whether this is the one valid no-land release-state shape."""
+    try:
+        if state.get("release") != ver or state.get("board") != board:
+            return False
+        if state.get("landed") != []:
+            return False
+        ladder = state.get("ladder")
+        remaining = state.get("remaining_ladder")
+        if not isinstance(ladder, list) or not ladder or not isinstance(remaining, list):
+            return False
+        slices = []
+        for index, entry in enumerate(ladder):
+            if not isinstance(entry, dict) or "slice" not in entry:
+                return False
+            allowed_statuses = (
+                ("NOT_STARTED", "IN_PROGRESS") if index == 0 else ("NOT_STARTED",)
+            )
+            if entry.get("status") not in allowed_statuses:
+                return False
+            if entry.get("sha") not in (None, ""):
+                return False
+            slices.append(slice_key(entry["slice"]))
+        if len(set(slices)) != len(slices):
+            return False
+        if [slice_key(value) for value in remaining] != slices:
+            return False
+        return slice_key(state.get("next_slice")) == slices[0]
+    except Exception:
+        return False
 
 ladder = d.get("ladder") or []
 landed = [e for e in ladder if e.get("status") == "LANDED"]
@@ -316,9 +370,7 @@ if landed:
     print(f"  LANDED {cells}")
 else:
     print("  LANDED (none)")
-    # A foundation release has a legitimate pre-first-land state. Its explicit
-    # release kind distinguishes that from an accidentally-empty normal ladder.
-    if "foundation" not in str(d.get("release_kind", "")).casefold():
+    if not is_initial_release(d):
         print(f"#EMPTY:landed slices (no ladder entry in {path} has status LANDED)")
 
 # The state file also carries a flat `landed` list; if its own two fields
@@ -326,6 +378,7 @@ else:
 flat = d.get("landed")
 if flat is not None and sorted(flat) != sorted(e.get("slice") for e in landed):
     print(f"  !! state file self-inconsistent: landed={flat} vs ladder LANDED")
+    print(f"#EMPTY:release state ({path} has inconsistent landed evidence)")
 
 nxt_entry = next((e for e in ladder if e.get("slice") == nxt), None)
 title = ""
