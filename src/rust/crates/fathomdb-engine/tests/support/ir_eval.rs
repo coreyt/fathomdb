@@ -374,8 +374,9 @@ pub struct PerQueryRecall {
     /// SAME required-only denominator as `strict` (directly comparable).
     pub graded: f64,
     /// `|supporting ∩ retrieved@K| / |supporting|` — separate diagnostic, never
-    /// in a recall number. NaN-free: 0.0 when there are no supporting units.
-    pub supporting_coverage: f64,
+    /// in a recall number. `None` when the query has no supporting units, so an
+    /// inapplicable diagnostic is never represented as a failed one.
+    pub supporting_coverage: Option<f64>,
     pub required_n: usize,
     pub required_hits: usize,
 }
@@ -398,7 +399,7 @@ pub fn evidence_recall_at_k(
 
     let sup_hits = supporting.iter().filter(|d| topk.contains(d)).count();
     let supporting_coverage =
-        if supporting.is_empty() { 0.0 } else { sup_hits as f64 / supporting.len() as f64 };
+        (!supporting.is_empty()).then(|| sup_hits as f64 / supporting.len() as f64);
 
     PerQueryRecall { strict, graded, supporting_coverage, required_n, required_hits }
 }
@@ -418,6 +419,9 @@ pub struct ClassAgg {
     pub strict_sum: f64,
     pub graded_sum: f64,
     pub supporting_sum: f64,
+    /// Number of queries with a supporting-evidence denominator. This is the
+    /// denominator for [`Self::supporting`], distinct from all positive queries.
+    pub supporting_query_n: usize,
 }
 
 impl ClassAgg {
@@ -425,7 +429,10 @@ impl ClassAgg {
         self.n += 1;
         self.strict_sum += m.strict;
         self.graded_sum += m.graded;
-        self.supporting_sum += m.supporting_coverage;
+        if let Some(supporting_coverage) = m.supporting_coverage {
+            self.supporting_sum += supporting_coverage;
+            self.supporting_query_n += 1;
+        }
     }
     pub fn strict(&self) -> f64 {
         if self.n == 0 {
@@ -441,12 +448,10 @@ impl ClassAgg {
             self.graded_sum / self.n as f64
         }
     }
-    pub fn supporting(&self) -> f64 {
-        if self.n == 0 {
-            0.0
-        } else {
-            self.supporting_sum / self.n as f64
-        }
+    /// Average supporting coverage across only support-bearing queries.
+    /// `None` means no query in this aggregate has supporting evidence.
+    pub fn supporting(&self) -> Option<f64> {
+        (self.supporting_query_n > 0).then(|| self.supporting_sum / self.supporting_query_n as f64)
     }
 }
 
@@ -781,7 +786,8 @@ pub fn experiment_to_json(gold: &GoldSet, result: &ExperimentResult) -> Value {
                                     "n": agg.n,
                                     "strict_evidence_recall": round4(agg.strict()),
                                     "graded_evidence_recall": round4(agg.graded()),
-                                    "supporting_coverage": round4(agg.supporting()),
+                                    "supporting_coverage": agg.supporting().map(round4),
+                                    "supporting_query_n": agg.supporting_query_n,
                                 }),
                             )
                         })
@@ -793,7 +799,8 @@ pub fn experiment_to_json(gold: &GoldSet, result: &ExperimentResult) -> Value {
                                 "n": r.overall.n,
                                 "strict_evidence_recall": round4(r.overall.strict()),
                                 "graded_evidence_recall": round4(r.overall.graded()),
-                                "supporting_coverage": round4(r.overall.supporting()),
+                                "supporting_coverage": r.overall.supporting().map(round4),
+                                "supporting_query_n": r.overall.supporting_query_n,
                             },
                             "per_class": per_class,
                             "negative_class": {
