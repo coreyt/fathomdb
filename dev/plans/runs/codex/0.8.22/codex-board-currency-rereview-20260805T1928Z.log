@@ -1,0 +1,14 @@
+Codex §9 focused re-review record — initial-release board activation
+
+Candidate reviewed: ee34ae46-equivalent follow-up on the 0.8.22 candidate.
+Reviewer session: 019fd45d-4ea7-7211-87f8-e1861593b705
+
+Initial review verdict: FAIL.
+P1: the initial-release exception permitted a ladder entry marked LANDED while
+the state’s landed list was empty.
+
+Remediation: the exception now permits only the earliest next slice to be
+IN_PROGRESS or NOT_STARTED; later entries must be NOT_STARTED, and every
+entry must carry no SHA. Focused board-currency tests passed.
+
+Final verdict: PASS.
