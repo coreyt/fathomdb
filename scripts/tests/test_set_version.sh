@@ -10,6 +10,9 @@ SV="$REPO_ROOT/scripts/set-version.sh"
 CARGO="$REPO_ROOT/Cargo.toml"
 PYPROJ="$REPO_ROOT/src/python/pyproject.toml"
 NPMPKG="$REPO_ROOT/src/ts/package.json"
+NPMLOCK="$REPO_ROOT/src/ts/package-lock.json"
+PYRUNTIME="$REPO_ROOT/src/python/fathomdb/__init__.py"
+CARGOLOCK="$REPO_ROOT/Cargo.lock"
 EMBAPI="$REPO_ROOT/src/rust/crates/fathomdb-embedder-api/Cargo.toml"
 # napi per-platform binary packages (R-REL-4f) — set-version.sh keeps their
 # `version` in lockstep with Axis W, so the test must snapshot/restore them too.
@@ -25,6 +28,9 @@ mkdir -p "$SNAP"
 cp "$CARGO" "$SNAP/Cargo.toml"
 cp "$PYPROJ" "$SNAP/pyproject.toml"
 cp "$NPMPKG" "$SNAP/package.json"
+cp "$NPMLOCK" "$SNAP/package-lock.json"
+cp "$PYRUNTIME" "$SNAP/python-init.py"
+cp "$CARGOLOCK" "$SNAP/Cargo.lock"
 cp "$EMBAPI" "$SNAP/embedder-api.toml"
 if [ -d "$NPM_PLATFORM_DIR" ]; then
   cp -r "$NPM_PLATFORM_DIR" "$SNAP/npm"
@@ -34,6 +40,9 @@ restore() {
   cp "$SNAP/Cargo.toml" "$CARGO" 2>/dev/null || true
   cp "$SNAP/pyproject.toml" "$PYPROJ" 2>/dev/null || true
   cp "$SNAP/package.json" "$NPMPKG" 2>/dev/null || true
+  cp "$SNAP/package-lock.json" "$NPMLOCK" 2>/dev/null || true
+  cp "$SNAP/python-init.py" "$PYRUNTIME" 2>/dev/null || true
+  cp "$SNAP/Cargo.lock" "$CARGOLOCK" 2>/dev/null || true
   cp "$SNAP/embedder-api.toml" "$EMBAPI" 2>/dev/null || true
   if [ -d "$SNAP/npm" ]; then
     cp -r "$SNAP/npm/." "$NPM_PLATFORM_DIR/" 2>/dev/null || true
@@ -85,6 +94,41 @@ npm_version() {
   sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$NPMPKG" | head -1
 }
 
+npm_lock_top_version() {
+  jq -r '.version // empty' "$NPMLOCK"
+}
+
+npm_lock_root_version() {
+  jq -r '.packages[""].version // empty' "$NPMLOCK"
+}
+
+python_runtime_version() {
+  sed -n 's/^__version__[[:space:]]*=[[:space:]]*"\([^"]*\)"/\1/p' "$PYRUNTIME"
+}
+
+cargo_lock_package_version() {
+  local target="$1"
+  awk -v target="$target" '
+    BEGIN { RS = ""; FS = "\n" }
+    {
+      name = ""; version = ""
+      for (i = 1; i <= NF; i++) {
+        if ($i ~ /^name = "/) {
+          name = $i
+          sub(/^name = "/, "", name)
+          sub(/"$/, "", name)
+        }
+        if ($i ~ /^version = "/) {
+          version = $i
+          sub(/^version = "/, "", version)
+          sub(/"$/, "", version)
+        }
+      }
+      if (name == target) { print version }
+    }
+  ' "$CARGOLOCK"
+}
+
 # 1. --check-files clean tree → 0.
 restore
 if "$SV" --check-files >/dev/null 2>&1; then
@@ -111,6 +155,29 @@ if "$SV" --check-files >/dev/null 2>&1; then
   pass "check-files clean after --workspace 9.9.9"
 else
   fail "check-files should be clean after --workspace 9.9.9"
+fi
+
+# 2b. A release cut owns the runtime and lockfile version surfaces consumed by
+# package tooling, not just the source manifests. A partial bump used to leave
+# all of these at the old release while --check-files still passed.
+restore
+"$SV" --workspace 9.9.8 >/dev/null
+surface_bad=0
+for observed in "$(python_runtime_version)" "$(npm_lock_top_version)" "$(npm_lock_root_version)"; do
+  [ "$observed" = "9.9.8" ] || surface_bad=1
+done
+for package in fathomdb fathomdb-cli fathomdb-embedder fathomdb-engine fathomdb-napi fathomdb-py fathomdb-query fathomdb-schema; do
+  [ "$(cargo_lock_package_version "$package")" = "9.9.8" ] || surface_bad=1
+done
+if [ "$surface_bad" -eq 0 ]; then
+  pass "workspace 9.9.8 updates Python runtime, npm lockfile, and Axis-W Cargo.lock packages"
+else
+  fail "workspace 9.9.8 left a runtime or lockfile version surface stale"
+fi
+if "$SV" --check-files >/dev/null 2>&1; then
+  pass "check-files clean after workspace runtime and lockfile update"
+else
+  fail "check-files should cover and accept updated runtime and lockfile surfaces"
 fi
 
 # 3. --embedder-api 8.8.8 updates only Axis E; Axis W untouched.
@@ -170,6 +237,55 @@ if out="$("$SV" --check-files 2>&1)"; then
 else
   assert_drift_line "check-files: package.json drift structured diagnostic" \
     "$out" "package.json" "7.7.7" "$WS_BEFORE"
+fi
+
+# 4c. Runtime and lockfile surfaces are release contract, not manual post-cut
+# chores. Each independently drifting surface must make --check-files red.
+restore
+WS_BEFORE="$(ws_version)"
+sed -i 's/^__version__[[:space:]]*=[[:space:]]*"[^"]*"/__version__ = "7.7.7"/' "$PYRUNTIME"
+if out="$("$SV" --check-files 2>&1)"; then
+  fail "check-files should fail on drifted Python runtime version"
+else
+  assert_drift_line "check-files: Python runtime drift structured diagnostic" \
+    "$out" "fathomdb/__init__.py" "7.7.7" "$WS_BEFORE"
+fi
+
+restore
+WS_BEFORE="$(ws_version)"
+node - "$NPMLOCK" <<'NODE'
+const fs = require("fs");
+const file = process.argv[2];
+const lock = JSON.parse(fs.readFileSync(file, "utf8"));
+lock.version = "7.7.7";
+fs.writeFileSync(file, `${JSON.stringify(lock, null, 2)}\n`);
+NODE
+if out="$("$SV" --check-files 2>&1)"; then
+  fail "check-files should fail on drifted npm lockfile top-level version"
+else
+  assert_drift_line "check-files: npm lockfile drift structured diagnostic" \
+    "$out" "package-lock.json" "7.7.7" "$WS_BEFORE"
+fi
+
+restore
+WS_BEFORE="$(ws_version)"
+python3 - "$CARGOLOCK" "$WS_BEFORE" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+old = f'name = "fathomdb"\nversion = "{sys.argv[2]}"'
+new = 'name = "fathomdb"\nversion = "7.7.7"'
+text = path.read_text()
+if old not in text:
+    raise SystemExit("fathomdb Cargo.lock package block not found")
+path.write_text(text.replace(old, new, 1))
+PY
+if out="$("$SV" --check-files 2>&1)"; then
+  fail "check-files should fail on drifted Axis-W Cargo.lock package"
+else
+  assert_drift_line "check-files: Cargo.lock Axis-W drift structured diagnostic" \
+    "$out" "Cargo.lock" "7.7.7" "$WS_BEFORE"
 fi
 
 # 5. Idempotent: --workspace <current> twice in a row → no second-pass change.
