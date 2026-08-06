@@ -1,0 +1,10 @@
+Codex §9 focused review record — steward-orient initial-release handling
+
+Candidate reviewed: 09c83142.
+Reviewer session: 019fd45d-4ea7-7211-87f8-e1861593b705
+Scope: state-backed empty initial release orientation and its negative controls.
+
+Verification: bash scripts/tests/test_steward_orient.sh passed, including the
+real-repository orientation arm.
+
+Final verdict: PASS.
