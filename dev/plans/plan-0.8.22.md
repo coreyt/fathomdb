@@ -55,6 +55,32 @@ publication.
 | 20 | Ordered publish and real registry smokes | 15 |
 | 25 | `next` → `latest` promotion and release truth | 20 |
 
+### Slice 12 — DOC-BASELINE
+
+Run the existing two-phase `repo-prune` classifier against the candidate and
+commit a bounded inventory of current authority, historical records, and
+document debt. The inventory must identify each proposed follow-up's owner and
+release home. Historical records stay in place; this slice neither deletes nor
+moves documents, rewrites their content, or broadens Markdown/link validation.
+
+Acceptance is a reproducible classifier command, a versioned inventory with
+source revision/provenance, and a reviewable distinction between current
+authority, historical record, and unresolved debt. It must be useful to the
+0.8.23 architecture/contract-baseline work without pre-deciding that work.
+
+### Slice 17 — SCALE-PROTOCOL
+
+Pre-register, but do not execute, the 0.8.23 supported-scale characterization.
+The protocol must pin the candidate revision and corpus/fixture identity;
+record dependency-lock, schema, toolchain, CPU/GPU, and host-capacity evidence;
+specify repetitions, warm/cold treatment, metrics and percentile summaries;
+and define the result-artifact schema and interpretation rules.
+
+It must state that the protocol has no measured result, creates no supported
+scale limit, and cannot satisfy either the 0.8.23 advisory or 0.8.24 firm
+scale-bound outcome. Execution remains after the complete 0.8.22 dependency
+stack, including the coupled vector migration.
+
 ## Landed release state
 
 <!-- BEGIN GENERATED release-state:0.8.22:plan-landed-roll-up -->
