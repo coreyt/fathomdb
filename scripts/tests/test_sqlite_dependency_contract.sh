@@ -22,8 +22,11 @@ for manifest in \
   fi
 done
 
-if ! rg -q 'TC-76' "$root/src/rust/crates/fathomdb-engine"; then
-  printf 'FAIL  TC-76 sqlite-vec upstream-behaviour tripwire disappeared\n' >&2
+tc76="$root/src/rust/crates/fathomdb-engine/tests/tc76_vec0_long_metadata_delete.rs"
+if ! rg -q 'fn bare_vec0_delete_pins_the_upstream_length_boundary' "$tc76" \
+  || ! rg -q 'sqlite-vec 0\.1\.9 must delete a' "$tc76" \
+  || ! rg -q 'assert_eq!\(residue, 0' "$tc76"; then
+  printf 'FAIL  TC-76 must prove sqlite-vec 0.1.9 deletes long vec0 metadata without residue\n' >&2
   exit 1
 fi
-printf 'PASS  0.8.22 sqlite dependency contract and TC-76 tripwire\n'
+printf 'PASS  0.8.22 sqlite dependency contract and long-metadata TC-76 delete tripwire\n'

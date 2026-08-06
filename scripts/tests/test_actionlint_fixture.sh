@@ -31,8 +31,7 @@ printf 'PASS  actionlint rejects deliberately-broken fixture\n'
 # napi-rs only resolves prebuilt binaries by the exact platform-label triples
 # enumerated in src/ts/src/binding.ts; if release.yml uploads under a
 # non-canonical label, install-from-npm silently falls back to "no native
-# addon found" at runtime. Linux-first ships x64 and AArch64; reject deferred
-# non-Linux labels so the scope cannot drift.
+# addon found" at runtime. 0.8.22 ships exactly five supported labels.
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 RELEASE_YML="${RELEASE_YML:-$REPO_ROOT/.github/workflows/release.yml}"
 CI_YML="${CI_YML:-$REPO_ROOT/.github/workflows/ci.yml}"
@@ -49,20 +48,20 @@ NODE_VERSION_FILE="$REPO_ROOT/.nvmrc"
 # ensures every failing label/tier is reported in one pass.
 FIXTURE_FAILED=0
 
-for label in linux-x64-gnu linux-arm64-gnu; do
+for label in linux-x64-gnu linux-arm64-gnu darwin-x64 darwin-arm64 win32-x64-msvc; do
   if ! grep -qE "label:[[:space:]]+${label}\$" "$RELEASE_YML"; then
     printf 'FAIL  release.yml missing shipped napi label: %s\n' "$label" >&2
     FIXTURE_FAILED=$((FIXTURE_FAILED + 1))
   fi
 done
-for label in darwin-x64 darwin-arm64 win32-x64-msvc; do
+for label in linux-x64-musl linux-arm64-musl darwin-arm win32-arm64 win32-ia32; do
   if grep -qE "label:[[:space:]]+${label}\$" "$RELEASE_YML"; then
-    printf 'FAIL  release.yml carries deferred napi label: %s\n' "$label" >&2
+    printf 'FAIL  release.yml carries unsupported napi label: %s\n' "$label" >&2
     FIXTURE_FAILED=$((FIXTURE_FAILED + 1))
   fi
 done
 if [ "$FIXTURE_FAILED" -eq 0 ]; then
-  printf 'PASS  release.yml carries the supported Linux-first napi labels\n'
+  printf 'PASS  release.yml carries exactly the five supported napi labels\n'
 fi
 
 confirmation_input_block() {
@@ -246,7 +245,8 @@ fi
 # Node's exact version is part of the release test environment: npm and native
 # N-API behavior must match the locally verified Node 25.9.0, not float on a
 # runner-provided major. Every setup-node use in the two CI entry points must
-# carry that exact pin.
+# carry that exact pin. The cross-platform release has one setup per N-API
+# build, platform publish, registry smoke, and promotion job.
 NODE_PIN_FAILED=0
 setup_node_total=0
 for workflow in "$CI_YML" "$RELEASE_YML"; do
@@ -254,7 +254,7 @@ for workflow in "$CI_YML" "$RELEASE_YML"; do
   node_pin_count="$(grep -c 'node-version: "25.9.0"' "$workflow" || true)"
   case "$workflow" in
     "$CI_YML") expected_setup_node_count=4 ;;
-    "$RELEASE_YML") expected_setup_node_count=6 ;;
+    "$RELEASE_YML") expected_setup_node_count=13 ;;
   esac
   setup_node_total=$((setup_node_total + setup_node_count))
   if [ "$setup_node_count" -ne "$expected_setup_node_count" ] || [ "$setup_node_count" -ne "$node_pin_count" ]; then
@@ -267,8 +267,8 @@ for workflow in "$CI_YML" "$RELEASE_YML"; do
     NODE_PIN_FAILED=$((NODE_PIN_FAILED + 1))
   fi
 done
-if [ "$setup_node_total" -ne 10 ]; then
-  printf 'FAIL  ci.yml and release.yml must contain exactly ten setup-node steps total (got %s)\n' \
+if [ "$setup_node_total" -ne 17 ]; then
+  printf 'FAIL  ci.yml and release.yml must contain exactly seventeen setup-node steps total (got %s)\n' \
     "$setup_node_total" >&2
   NODE_PIN_FAILED=$((NODE_PIN_FAILED + 1))
 fi

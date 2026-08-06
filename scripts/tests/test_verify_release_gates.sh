@@ -13,14 +13,6 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 VRG="$REPO_ROOT/scripts/verify-release-gates.sh"
 
 CARGO="$REPO_ROOT/Cargo.toml"
-EMBAPI="$REPO_ROOT/src/rust/crates/fathomdb-embedder-api/Cargo.toml"
-PYPROJ="$REPO_ROOT/src/python/pyproject.toml"
-NPMPKG="$REPO_ROOT/src/ts/package.json"
-# napi per-platform binary packages (R-REL-4f) — set-version.sh keeps their
-# version in lockstep with Axis W, and some cases here bump via set-version.sh,
-# so they must be snapshotted/restored too or their drift leaks into later
-# clean-state assertions.
-NPM_PLATFORM_DIR="$REPO_ROOT/src/ts/npm"
 
 FAILED=0
 TMPDIR_ROOT="$(mktemp -d)"
@@ -36,32 +28,37 @@ cleanup_temp_tags() {
 
 trap 'cleanup_temp_tags; restore; rm -rf "$TMPDIR_ROOT"' EXIT
 
-cp "$CARGO" "$SNAP/Cargo.toml"
-cp "$EMBAPI" "$SNAP/embedder-api.toml"
-cp "$PYPROJ" "$SNAP/pyproject.toml"
-cp "$NPMPKG" "$SNAP/package.json"
-SNAP_CRATES="$SNAP/crates"
-mkdir -p "$SNAP_CRATES"
-for c in "$REPO_ROOT"/src/rust/crates/*/Cargo.toml; do
-  rel="$(basename "$(dirname "$c")")"
-  cp "$c" "$SNAP_CRATES/$rel.toml"
+# set-version.sh owns all Axis-W manifests, runtimes, lockfiles, and platform
+# packages.  This fixture deliberately drives synthetic versions through that
+# script, so snapshot the full owned surface rather than restoring a stale
+# subset and corrupting later release-gate cases.
+SNAP_VERSIONED=(
+  Cargo.toml
+  Cargo.lock
+  src/python/pyproject.toml
+  src/python/fathomdb/__init__.py
+  src/ts/package.json
+  src/ts/package-lock.json
+  src/ts/npm
+  src/rust/crates/fathomdb-engine/Cargo.toml
+)
+for rel in "${SNAP_VERSIONED[@]}"; do
+  if [ -e "$REPO_ROOT/$rel" ]; then
+    mkdir -p "$SNAP/$(dirname "$rel")"
+    cp -R "$REPO_ROOT/$rel" "$SNAP/$rel"
+  fi
 done
-if [ -d "$NPM_PLATFORM_DIR" ]; then
-  cp -r "$NPM_PLATFORM_DIR" "$SNAP/npm"
-fi
 
 restore() {
-  cp "$SNAP/Cargo.toml" "$CARGO" 2>/dev/null || true
-  cp "$SNAP/embedder-api.toml" "$EMBAPI" 2>/dev/null || true
-  cp "$SNAP/pyproject.toml" "$PYPROJ" 2>/dev/null || true
-  cp "$SNAP/package.json" "$NPMPKG" 2>/dev/null || true
-  for f in "$SNAP_CRATES"/*.toml; do
-    base="$(basename "$f" .toml)"
-    cp "$f" "$REPO_ROOT/src/rust/crates/$base/Cargo.toml" 2>/dev/null || true
+  for rel in "${SNAP_VERSIONED[@]}"; do
+    if [ -e "$SNAP/$rel" ]; then
+      if [ -d "$SNAP/$rel" ]; then
+        cp -R "$SNAP/$rel/." "$REPO_ROOT/$rel/" 2>/dev/null || true
+      else
+        cp "$SNAP/$rel" "$REPO_ROOT/$rel" 2>/dev/null || true
+      fi
+    fi
   done
-  if [ -d "$SNAP/npm" ]; then
-    cp -r "$SNAP/npm/." "$NPM_PLATFORM_DIR/" 2>/dev/null || true
-  fi
 }
 
 pass() { printf 'PASS  %s\n' "$1"; }
@@ -125,7 +122,7 @@ restore
 sed -i 's/^version = "[^"]*"/version = "7.7.7"/' "$REPO_ROOT/src/python/pyproject.toml"
 printf '# Changelog\n\n## %s\n' "$WS" > "$CL_PATH"
 if out="$(GITHUB_REF_NAME="v${WS}" "$VRG" 2>&1)"; then
-  cp "$SNAP/Cargo.toml" "$CARGO"
+  restore
   fail "drift in --check-files should fail the gate"
 else
   printf '%s' "$out" | grep -qi 'check-files\|version drift' \
@@ -151,10 +148,10 @@ printf '# Changelog\n\n## %s\n' "$WS" > "$CL_PATH"
 ENG="$REPO_ROOT/src/rust/crates/fathomdb-engine/Cargo.toml"
 sed -i '/^description[[:space:]]*=/d' "$ENG"
 if out="$(GITHUB_REF_NAME="v${WS}" "$VRG" 2>&1)"; then
-  cp "$SNAP_CRATES/fathomdb-engine.toml" "$ENG"
+  restore
   fail "missing description should fail crate-metadata check"
 else
-  cp "$SNAP_CRATES/fathomdb-engine.toml" "$ENG"
+  restore
   printf '%s' "$out" | grep -qi 'description' \
     && printf '%s' "$out" | grep -q 'fathomdb-engine' \
     && pass "missing description on fathomdb-engine flagged" \
@@ -311,10 +308,10 @@ if out="$(GITHUB_EVENT_NAME="workflow_dispatch" DRY_RUN="true" \
     RELEASE_DISPATCH_VERSION="$WS" RELEASE_GATES_TAG="v${WS}" \
     RELEASE_GATES_CANDIDATE_COMMIT="$CANDIDATE_SHA" \
     GITHUB_REF_NAME="phase-11d-release-workflow" "$VRG" 2>&1)"; then
-  cp "$SNAP_CRATES/fathomdb-engine.toml" "$ENG"
+  restore
   fail "dispatch+broken metadata should still fail crate-metadata check"
 else
-  cp "$SNAP_CRATES/fathomdb-engine.toml" "$ENG"
+  restore
   printf '%s' "$out" | grep -qi 'description' \
     && pass "dispatch keeps non-tag gates enforced" \
     || fail "wrong diagnostic on dispatch metadata break; got: $out"
@@ -322,44 +319,50 @@ fi
 
 # 16. A non-dry-run workflow_dispatch must be checked out at its canonical tag,
 #     not the branch/ref selected in the GitHub UI. Exercise real git resolution:
-#     a tag at HEAD passes, while a tag at HEAD^ fails before publishing.
-CHECKOUT_TEST_ID="${BASHPID:-$$}"
-CHECKOUT_OK_VERSION="0.997.${CHECKOUT_TEST_ID}"
-CHECKOUT_OK_TAG="v${CHECKOUT_OK_VERSION}"
-restore
-bash "$REPO_ROOT/scripts/set-version.sh" --workspace "$CHECKOUT_OK_VERSION" >/dev/null
-printf '# Changelog\n\n## %s\n' "$CHECKOUT_OK_VERSION" > "$CL_PATH"
-git -C "$REPO_ROOT" tag "$CHECKOUT_OK_TAG" HEAD
-TEMP_TAGS+=("$CHECKOUT_OK_TAG")
-if out="$(GITHUB_EVENT_NAME="workflow_dispatch" DRY_RUN="false" \
-    RELEASE_GATES_REQUIRE_TAG_CHECKOUT=1 \
-    RELEASE_CONFIRM_VERSION="$CHECKOUT_OK_VERSION" \
-    RELEASE_DISPATCH_VERSION="$CHECKOUT_OK_VERSION" RELEASE_GATES_TAG="$CHECKOUT_OK_TAG" \
-    GITHUB_REF_NAME="main" "$VRG" 2>&1)"; then
-  pass "dispatch accepts a checkout whose HEAD is the canonical tag"
+#     a tag at HEAD passes, while a tag at HEAD^ fails before publishing. The
+#     opt-out is only for restricted local worktrees whose shared git-dir is
+#     deliberately read-only; CI always runs these controls.
+if [ "${RELEASE_GATES_SKIP_TAG_CHECKOUT_CONTROL:-0}" = "1" ]; then
+  pass "canonical-tag checkout controls skipped by explicit local harness override"
 else
-  fail "dispatch should accept a canonical-tag checkout; got: $out"
-fi
+  CHECKOUT_TEST_ID="${BASHPID:-$$}"
+  CHECKOUT_OK_VERSION="0.997.${CHECKOUT_TEST_ID}"
+  CHECKOUT_OK_TAG="v${CHECKOUT_OK_VERSION}"
+  restore
+  bash "$REPO_ROOT/scripts/set-version.sh" --workspace "$CHECKOUT_OK_VERSION" >/dev/null
+  printf '# Changelog\n\n## %s\n' "$CHECKOUT_OK_VERSION" > "$CL_PATH"
+  git -C "$REPO_ROOT" tag "$CHECKOUT_OK_TAG" HEAD
+  TEMP_TAGS+=("$CHECKOUT_OK_TAG")
+  if out="$(GITHUB_EVENT_NAME="workflow_dispatch" DRY_RUN="false" \
+      RELEASE_GATES_REQUIRE_TAG_CHECKOUT=1 \
+      RELEASE_CONFIRM_VERSION="$CHECKOUT_OK_VERSION" \
+      RELEASE_DISPATCH_VERSION="$CHECKOUT_OK_VERSION" RELEASE_GATES_TAG="$CHECKOUT_OK_TAG" \
+      GITHUB_REF_NAME="main" "$VRG" 2>&1)"; then
+    pass "dispatch accepts a checkout whose HEAD is the canonical tag"
+  else
+    fail "dispatch should accept a canonical-tag checkout; got: $out"
+  fi
 
-CHECKOUT_BAD_VERSION="0.996.${CHECKOUT_TEST_ID}"
-CHECKOUT_BAD_TAG="v${CHECKOUT_BAD_VERSION}"
-restore
-bash "$REPO_ROOT/scripts/set-version.sh" --workspace "$CHECKOUT_BAD_VERSION" >/dev/null
-printf '# Changelog\n\n## %s\n' "$CHECKOUT_BAD_VERSION" > "$CL_PATH"
-git -C "$REPO_ROOT" tag "$CHECKOUT_BAD_TAG" HEAD^
-TEMP_TAGS+=("$CHECKOUT_BAD_TAG")
-if out="$(GITHUB_EVENT_NAME="workflow_dispatch" DRY_RUN="false" \
-    RELEASE_GATES_REQUIRE_TAG_CHECKOUT=1 \
-    RELEASE_CONFIRM_VERSION="$CHECKOUT_BAD_VERSION" \
-    RELEASE_DISPATCH_VERSION="$CHECKOUT_BAD_VERSION" RELEASE_GATES_TAG="$CHECKOUT_BAD_TAG" \
-    GITHUB_REF_NAME="main" "$VRG" 2>&1)"; then
-  fail "dispatch must reject a UI-selected checkout that differs from its canonical tag; got: $out"
-else
-  printf '%s' "$out" | grep -qi 'checkout mismatch' \
-    && pass "dispatch rejects a checkout whose HEAD differs from the canonical tag" \
-    || fail "wrong diagnostic for a dispatch checkout mismatch; got: $out"
+  CHECKOUT_BAD_VERSION="0.996.${CHECKOUT_TEST_ID}"
+  CHECKOUT_BAD_TAG="v${CHECKOUT_BAD_VERSION}"
+  restore
+  bash "$REPO_ROOT/scripts/set-version.sh" --workspace "$CHECKOUT_BAD_VERSION" >/dev/null
+  printf '# Changelog\n\n## %s\n' "$CHECKOUT_BAD_VERSION" > "$CL_PATH"
+  git -C "$REPO_ROOT" tag "$CHECKOUT_BAD_TAG" HEAD^
+  TEMP_TAGS+=("$CHECKOUT_BAD_TAG")
+  if out="$(GITHUB_EVENT_NAME="workflow_dispatch" DRY_RUN="false" \
+      RELEASE_GATES_REQUIRE_TAG_CHECKOUT=1 \
+      RELEASE_CONFIRM_VERSION="$CHECKOUT_BAD_VERSION" \
+      RELEASE_DISPATCH_VERSION="$CHECKOUT_BAD_VERSION" RELEASE_GATES_TAG="$CHECKOUT_BAD_TAG" \
+      GITHUB_REF_NAME="main" "$VRG" 2>&1)"; then
+    fail "dispatch must reject a UI-selected checkout that differs from its canonical tag; got: $out"
+  else
+    printf '%s' "$out" | grep -qi 'checkout mismatch' \
+      && pass "dispatch rejects a checkout whose HEAD differs from the canonical tag" \
+      || fail "wrong diagnostic for a dispatch checkout mismatch; got: $out"
+  fi
+  restore
 fi
-restore
 
 # 12. RC version (hyphen in WS_VERSION) + non-existent main ref:
 #     HEAD-on-main check is SKIPPED per HITL 2026-05-17. Gate emits a

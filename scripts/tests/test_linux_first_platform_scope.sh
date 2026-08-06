@@ -1,186 +1,172 @@
 #!/usr/bin/env bash
-# Static contract guard for the HITL's 0.8.20 Linux-first native scope
-# (steward seq-234).  It deliberately uses text assertions only: actionlint
-# remains the workflow YAML syntax/schema authority.
+# Static contract guard for 0.8.22's five-target stable native scope. The
+# filename is retained because agent-test.sh registers it; the assertions are
+# deliberately no longer Linux-first. actionlint remains YAML's authority.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="${REPO_ROOT:-$(cd "$SCRIPT_DIR/../.." && pwd)}"
 CI="$REPO_ROOT/.github/workflows/ci.yml"
 RELEASE="$REPO_ROOT/.github/workflows/release.yml"
-BRIEF="$REPO_ROOT/dev/plans/runs/0.8.20-slice-40-commission-brief.md"
-PLAN="$REPO_ROOT/dev/plans/plan-0.8.20.md"
-MASTER="$REPO_ROOT/dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md"
-STATUS="$REPO_ROOT/dev/plans/runs/STATUS-0.8.20.md"
+PLAN="$REPO_ROOT/dev/plans/plan-0.8.22.md"
 
 FAILED=0
 pass() { printf 'PASS  %s\n' "$1"; }
 fail() { printf 'FAIL  %s\n' "$1" >&2; FAILED=$((FAILED + 1)); }
 
-# Text-only runner/matrix contract (not a YAML parser): every active literal
-# `runs-on` must select Ubuntu; every `${{ matrix.runner }}` route must derive
-# from an active Ubuntu `runner` value; and active CI/release native `target`
-# and `label` values must be the sole Linux x86_64 routes. Expressions that
-# *consume* matrix.target/label are deliberately excluded so they cannot be
-# mistaken for matrix input values. actionlint remains workflow validation.
-active_matrix_values() {
-  local workflow="$1"
-  local field="$2"
-  grep -hE "^[[:space:]]*(-[[:space:]]+)?${field}:[[:space:]]+" "$workflow" \
-    | sed -E "s/^[[:space:]]*(-[[:space:]]+)?${field}:[[:space:]]*//; s/[[:space:]]+#.*$//" \
-    | grep -vE "^\\$\\{\\{[[:space:]]*matrix\\.${field}[[:space:]]*\\}\\}$" || true
+job_block() {
+  awk -v job="$2" '
+    $0 == "  " job ":" { in_job = 1 }
+    in_job && /^  [[:alnum:]_-]+:$/ && $0 != "  " job ":" { exit }
+    in_job { print }
+  ' "$1"
 }
 
-assert_only_active_values() {
-  local workflow="$1"
-  local field="$2"
-  local allowed="$3"
-  local description="$4"
-  local values bad
-  values="$(active_matrix_values "$workflow" "$field")"
-  bad="$(printf '%s\n' "$values" | sed '/^$/d' | grep -vE "$allowed" || true)"
-  if [ -n "$bad" ]; then
-    fail "$description: $bad"
-  else
+matrix_rows() {
+  local rows="$1" with_label="$2"
+  awk -v with_label="$with_label" '
+    /^[[:space:]]*-[[:space:]]+runner:[[:space:]]+/ {
+      runner = $3; target = ""; label = ""; next
+    }
+    /^[[:space:]]+target:[[:space:]]+/ { target = $2 }
+    /^[[:space:]]+label:[[:space:]]+/ {
+      label = $2
+      if (with_label && runner != "" && target != "") {
+        print runner "|" target "|" label
+      }
+      next
+    }
+    !with_label && target != "" && runner != "" {
+      print runner "|" target
+      runner = ""; target = ""
+    }
+  ' <<<"$rows"
+}
+
+assert_exact_rows() {
+  local actual="$1" expected="$2" description="$3"
+  local got want
+  got="$(printf '%s\n' "$actual" | sed '/^$/d' | sort -u)"
+  want="$(printf '%s\n' "$expected" | sed '/^$/d' | sort -u)"
+  if [ "$got" = "$want" ]; then
     pass "$description"
+  else
+    printf 'FAIL  %s\nexpected:\n%s\nactual:\n%s\n' "$description" "$want" "$got" >&2
+    FAILED=$((FAILED + 1))
   fi
 }
 
-require_active_values() {
-  local workflow="$1"
-  local field="$2"
-  local description="$3"
-  local values
-  values="$(active_matrix_values "$workflow" "$field")"
-  if [ -n "$values" ]; then
+assert_job_runner() {
+  local job="$1" runner="$2" description="$3" block
+  block="$(job_block "$RELEASE" "$job")"
+  if grep -Fqx "    runs-on: $runner" <<<"$block"; then
     pass "$description"
   else
     fail "$description"
   fi
 }
 
-for workflow in "$CI" "$RELEASE"; do
-  name="$(basename "$workflow")"
-  literal_runners="$(grep -hE '^[[:space:]]*runs-on:[[:space:]]+' "$workflow" \
-    | sed -E 's/^[[:space:]]*runs-on:[[:space:]]*//; s/[[:space:]]+#.*$//' \
-    | grep -vE '^\$\{\{[[:space:]]*matrix\.runner[[:space:]]*\}\}$' || true)"
-  bad_literal_runners="$(printf '%s\n' "$literal_runners" | sed '/^$/d' \
-    | grep -vE '^ubuntu(-[[:alnum:].-]+)?$' || true)"
-  if [ -n "$bad_literal_runners" ]; then
-    fail "$name has a non-Linux literal runs-on value: $bad_literal_runners"
+assert_matrix_runner_route() {
+  local workflow="$1" job="$2" description="$3" block
+  block="$(job_block "$workflow" "$job")"
+  if grep -Fqx '    runs-on: ${{ matrix.runner }}' <<<"$block"; then
+    pass "$description"
   else
-    pass "$name has only Linux literal runs-on values"
+    fail "$description"
   fi
+}
 
-  matrix_runs_on="$(grep -hE '^[[:space:]]*runs-on:[[:space:]]*\$\{\{[[:space:]]*matrix\.' "$workflow" || true)"
-  unguarded_matrix_runs_on="$(printf '%s\n' "$matrix_runs_on" | grep -vF '${{ matrix.runner }}' || true)"
-  if [ -n "$unguarded_matrix_runs_on" ]; then
-    fail "$name routes runs-on through an unguarded matrix field"
-  else
-    pass "$name has no unguarded matrix runs-on route"
-  fi
+five_python_rows=$'ubuntu-latest|x86_64-unknown-linux-gnu\nubuntu-24.04-arm|aarch64-unknown-linux-gnu\nmacos-15-intel|x86_64-apple-darwin\nmacos-14|aarch64-apple-darwin\nwindows-latest|x86_64-pc-windows-msvc'
+ci_wheel_rows=$'ubuntu-latest|x86_64-unknown-linux-gnu|linux-x64\nubuntu-24.04-arm|aarch64-unknown-linux-gnu|linux-arm64\nmacos-15-intel|x86_64-apple-darwin|darwin-x64\nmacos-14|aarch64-apple-darwin|darwin-arm64\nwindows-latest|x86_64-pc-windows-msvc|win32-x64'
+release_napi_rows=$'ubuntu-latest|x86_64-unknown-linux-gnu|linux-x64-gnu\nubuntu-24.04-arm|aarch64-unknown-linux-gnu|linux-arm64-gnu\nmacos-15-intel|x86_64-apple-darwin|darwin-x64\nmacos-14|aarch64-apple-darwin|darwin-arm64\nwindows-latest|x86_64-pc-windows-msvc|win32-x64-msvc'
 
-  runner_values="$(active_matrix_values "$workflow" runner)"
-  if grep -qE '^[[:space:]]*runs-on:[[:space:]]*\$\{\{[[:space:]]*matrix\.runner[[:space:]]*\}\}' "$workflow" && \
-    [ -z "$runner_values" ]; then
-    fail "$name routes runs-on through matrix.runner without active runner values"
-  else
-    pass "$name matrix.runner routes have active runner values"
-  fi
+ci_wheel_block="$(job_block "$CI" wheel-size-gate)"
+release_python_block="$(job_block "$RELEASE" build-python)"
+release_napi_block="$(job_block "$RELEASE" build-napi)"
+ci_wheel_actual="$(matrix_rows "$ci_wheel_block" 1)"
+release_python_actual="$(matrix_rows "$release_python_block" 0)"
+release_napi_actual="$(matrix_rows "$release_napi_block" 1)"
 
-  assert_only_active_values "$workflow" runner '^ubuntu(-[[:alnum:].-]+)?$' \
-    "$name matrix runner values are Linux"
-  if [ "$name" = "ci.yml" ]; then
-    assert_only_active_values "$workflow" target '^x86_64-unknown-linux-gnu$' \
-      "$name native artifact target values remain Linux x86_64 only"
-  else
-    assert_only_active_values "$workflow" target '^(x86_64|aarch64)-unknown-linux-gnu$' \
-      "$name native artifact target values are supported Linux architectures"
-  fi
+assert_matrix_runner_route "$CI" wheel-size-gate \
+  "ci.yml wheel-size matrix runs on each selected target runner"
+assert_matrix_runner_route "$RELEASE" build-python \
+  "release.yml Python matrix runs on each selected target runner"
+assert_matrix_runner_route "$RELEASE" build-napi \
+  "release.yml N-API matrix runs on each selected target runner"
+assert_exact_rows "$ci_wheel_actual" "$ci_wheel_rows" \
+  "ci.yml wheel-size gate covers exactly the five supported actual runners"
+assert_exact_rows "$release_python_actual" "$five_python_rows" \
+  "release.yml Python build covers exactly the five supported actual runners"
+assert_exact_rows "$release_napi_actual" "$release_napi_rows" \
+  "release.yml N-API build covers exactly the five supported actual runners and labels"
+
+for mapping in \
+  'publish-npm-platform-linux-x64-gnu:ubuntu-latest' \
+  'publish-npm-platform-linux-arm64-gnu:ubuntu-24.04-arm' \
+  'publish-npm-platform-darwin-x64:macos-15-intel' \
+  'publish-npm-platform-darwin-arm64:macos-14' \
+  'publish-npm-platform-win32-x64-msvc:windows-latest' \
+  'post-publish-smoke:ubuntu-latest' \
+  'post-publish-smoke-aarch64:ubuntu-24.04-arm' \
+  'post-publish-smoke-darwin-x64:macos-15-intel' \
+  'post-publish-smoke-darwin-arm64:macos-14' \
+  'post-publish-smoke-win32-x64:windows-latest'; do
+  job="${mapping%%:*}"
+  runner="${mapping#*:}"
+  assert_job_runner "$job" "$runner" "$job runs on its supported target runner"
 done
 
-require_active_values "$CI" target "ci.yml retains an active Linux x86_64 artifact target"
-require_active_values "$CI" label "ci.yml retains an active Linux x86_64 artifact label"
-require_active_values "$RELEASE" target "release.yml retains an active Linux x86_64 native target"
-require_active_values "$RELEASE" label "release.yml retains an active Linux x86_64 native label"
-assert_only_active_values "$CI" label '^linux-x64$' \
-  "ci.yml artifact label values are Linux x86_64 only"
-assert_only_active_values "$RELEASE" label '^linux-(x64|arm64)-gnu$' \
-  "release.yml native artifact label values are supported Linux architectures"
-
-if grep -qE '^[[:space:]]*target:[[:space:]]*x86_64-unknown-linux-gnu[[:space:]]*$' "$RELEASE" && \
-  grep -qE '^[[:space:]]*target:[[:space:]]*aarch64-unknown-linux-gnu[[:space:]]*$' "$RELEASE" && \
-  grep -qE '^[[:space:]]*label:[[:space:]]*linux-x64-gnu[[:space:]]*$' "$RELEASE" && \
-  grep -qE '^[[:space:]]*label:[[:space:]]*linux-arm64-gnu[[:space:]]*$' "$RELEASE"; then
-  pass "release retains Linux x86_64 and AArch64 Python and N-API artifact paths"
+if rg -q 'unknown-linux-musl|apple-ios|aarch64-pc-windows|i686-pc-windows|win32-arm64' "$CI" "$RELEASE"; then
+  fail "CI or release workflow declares an unsupported musl or platform target"
 else
-  fail "release must retain Linux x86_64 and AArch64 Python and N-API artifact paths"
+  pass "CI and release workflow exclude musl and other unsupported target triples"
 fi
 
-for required_job in changes verify security; do
-  if grep -qE "^[[:space:]]{2}${required_job}:" "$CI"; then
-    pass "CI retains the Linux ${required_job} safety gate"
-  else
-    fail "CI must retain the Linux ${required_job} safety gate"
+promotion_block="$(job_block "$RELEASE" promote-npm-latest)"
+for required_need in \
+  post-publish-smoke \
+  post-publish-smoke-aarch64 \
+  post-publish-smoke-darwin-x64 \
+  post-publish-smoke-darwin-arm64 \
+  post-publish-smoke-win32-x64 \
+  co-tagging-assert; do
+  if ! grep -Fqx "      - $required_need" <<<"$promotion_block"; then
+    fail "latest promotion waits for $required_need"
   fi
 done
-
-if grep -qiE 'macOS/Windows.*0\.8\.22|0\.8\.22.*macOS/Windows' "$RELEASE"; then
-  pass "release workflow explicitly defers macOS/Windows native work to 0.8.22"
+if grep -Fqx '        run: npm dist-tag add "fathomdb@${RELEASE_TAG#v}" latest' <<<"$promotion_block"; then
+  pass "only the main fathomdb package is promoted after all five smokes"
 else
-  fail "release workflow must explicitly defer macOS/Windows native work to 0.8.22"
+  fail "promotion must add latest only to the main fathomdb package"
 fi
 
-for doc in "$BRIEF" "$PLAN" "$MASTER" "$STATUS"; do
-  if grep -qiE 'B4.*(cancelled|canceled).*0\.8\.22|0\.8\.22.*B4.*(cancelled|canceled)' "$doc"; then
-    pass "$(basename "$doc") records B4 as cancelled and deferred to 0.8.22"
-  else
-    fail "$(basename "$doc") must record B4 as cancelled and deferred to 0.8.22"
-  fi
-  if grep -qiE 'five.*(relevant )?Linux CI.*TC-91|TC-91.*five.*(relevant )?Linux CI' "$doc"; then
-    pass "$(basename "$doc") requires five relevant Linux CI TC-91 greens"
-  else
-    fail "$(basename "$doc") must require five relevant Linux CI TC-91 greens"
-  fi
-done
-
-if grep -Fq 'seq-233' "$BRIEF"; then
-  pass "brief preserves the unresolved B5 binding-route authority"
+if grep -Fqx '  NPM_DIST_TAG: "next"' "$RELEASE" \
+  && grep -q 'Linux musl, Windows ARM/32-bit' "$PLAN"; then
+  pass "platform packages publish under next and the plan keeps unsupported targets explicit"
 else
-  fail "brief must preserve B5 seq-233 authority"
-fi
-if grep -Fq 'gate (ii)' "$BRIEF"; then
-  pass "brief preserves the explicit publish gate (ii) stop"
-else
-  fail "brief must preserve the explicit publish gate (ii) stop"
+  fail "release truth must retain next-first publication and explicit unsupported targets"
 fi
 
-# Matrix-runner regression fixture. The contract covers literal `runs-on`
-# labels, `${{ matrix.runner }}` routes and their include values, CI artifact
-# target/label values, and release native artifact target/label values. This
-# fixture specifically proves that a macOS or Windows matrix runner cannot hide
-# behind the otherwise-valid `runs-on: ${{ matrix.runner }}` expression.
-if [ "${LINUX_FIRST_SCOPE_MATRIX_FIXTURE:-0}" != "1" ]; then
-  MATRIX_RUNNER_FIXTURE="$SCRIPT_DIR/fixtures/linux_first_matrix_runner_macos_windows.yml"
-  matrix_fixture_root="$(mktemp -d)"
-  trap 'rm -rf "$matrix_fixture_root"' EXIT
-  mkdir -p "$matrix_fixture_root/.github/workflows" \
-    "$matrix_fixture_root/dev/plans/runs" \
-    "$matrix_fixture_root/scripts/tests/fixtures"
-  cp "$CI" "$matrix_fixture_root/.github/workflows/ci.yml"
-  cp "$RELEASE" "$matrix_fixture_root/.github/workflows/release.yml"
-  cp "$BRIEF" "$matrix_fixture_root/dev/plans/runs/"
-  cp "$PLAN" "$matrix_fixture_root/dev/plans/"
-  cp "$MASTER" "$matrix_fixture_root/dev/plans/"
-  cp "$STATUS" "$matrix_fixture_root/dev/plans/runs/"
-  cp "$0" "$matrix_fixture_root/scripts/tests/"
-  cat "$MATRIX_RUNNER_FIXTURE" >> "$matrix_fixture_root/.github/workflows/ci.yml"
-
-  if LINUX_FIRST_SCOPE_MATRIX_FIXTURE=1 \
-    bash "$matrix_fixture_root/scripts/tests/test_linux_first_platform_scope.sh"; then
-    fail "guard accepts macOS/Windows values routed through matrix.runner"
+# The runner route must reject a sixth unsupported matrix entry rather than
+# merely accepting the three non-Linux runners now intentionally in scope.
+if [ "${CROSS_PLATFORM_SCOPE_MATRIX_FIXTURE:-0}" != "1" ]; then
+  fixture_root="$(mktemp -d)"
+  trap 'rm -rf "$fixture_root"' EXIT
+  mkdir -p "$fixture_root/.github/workflows" "$fixture_root/dev/plans" "$fixture_root/scripts/tests"
+  cp "$CI" "$fixture_root/.github/workflows/ci.yml"
+  cp "$RELEASE" "$fixture_root/.github/workflows/release.yml"
+  cp "$PLAN" "$fixture_root/dev/plans/plan-0.8.22.md"
+  cp "$0" "$fixture_root/scripts/tests/"
+  cat >> "$fixture_root/.github/workflows/ci.yml" <<'EOF'
+          - runner: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            label: linux-x64-musl
+EOF
+  if CROSS_PLATFORM_SCOPE_MATRIX_FIXTURE=1 \
+    bash "$fixture_root/scripts/tests/test_linux_first_platform_scope.sh"; then
+    fail "five-target guard accepts an unsupported sixth matrix row"
   else
-    pass "guard rejects macOS/Windows values routed through matrix.runner"
+    pass "five-target guard rejects an unsupported sixth matrix row"
   fi
 fi
 
@@ -188,4 +174,4 @@ if [ "$FAILED" -gt 0 ]; then
   printf '\n%d test(s) failed\n' "$FAILED" >&2
   exit 1
 fi
-printf '\nAll Linux-first platform-scope tests passed\n'
+printf '\nAll five-target platform-scope tests passed\n'
