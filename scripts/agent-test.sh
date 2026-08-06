@@ -289,6 +289,10 @@ run_tier_suite fast test-release-workflow-scope bash scripts/tests/test_release_
 # drift without interpreting public documentation.
 run_tier_suite fast test-release-contract-truth bash scripts/tests/test_release_contract_truth.sh
 
+# Slice 15: each release-ready runner must consume its locally built wheel and
+# matching N-API platform package before the later registry smoke gate.
+run_tier_suite fast test-native-artifact-runtime-validation bash scripts/tests/test_native_artifact_runtime_validation.sh
+
 # Slice 40 / seq-234: Linux x86_64 is the 0.8.20 native-artifact scope.
 # Static assertions here complement actionlint's workflow syntax/schema check.
 run_tier_suite fast test-linux-first-platform-scope bash scripts/tests/test_linux_first_platform_scope.sh
