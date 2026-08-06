@@ -84,7 +84,7 @@ stack, including the coupled vector migration.
 ## Landed release state
 
 <!-- BEGIN GENERATED release-state:0.8.22:plan-landed-roll-up -->
-**LANDED on `origin/main`, in full:** Slices 0 (`55792858b2adce00d3d87193d02b23a5d8d52dd7`) · 5 (`55792858b2adce00d3d87193d02b23a5d8d52dd7`) · 10 (`4c7bb26b`). SCHEMA is 25; remaining ladder = 12 → 17 → 15 → 20 → 25.<!-- END GENERATED release-state:0.8.22:plan-landed-roll-up -->
+**LANDED on `origin/main`, in full:** Slices 0 (`55792858b2adce00d3d87193d02b23a5d8d52dd7`) · 5 (`55792858b2adce00d3d87193d02b23a5d8d52dd7`) · 10 (`4c7bb26b`) · 12 (`72a83049`). SCHEMA is 25; remaining ladder = 17 → 15 → 20 → 25.<!-- END GENERATED release-state:0.8.22:plan-landed-roll-up -->
 
 ## Reserved-gap policy
 
@@ -109,6 +109,6 @@ prepares and verifies the release path; it does not authorize a registry write.
 ## Immediate next slice
 
 <!-- BEGIN GENERATED release-state:0.8.22:plan-immediate-next -->
-**IMMEDIATE NEXT: Slice 12** (`DOC-BASELINE`) — current-authority and document-debt inventory via the two-phase repo-prune classifier
+**IMMEDIATE NEXT: Slice 17** (`SCALE-PROTOCOL`) — pre-register the 0.8.23 scale-bound measurement protocol without running it
 
-**Remaining ladder:** 12 → 17 → 15 → 20 → 25.<!-- END GENERATED release-state:0.8.22:plan-immediate-next -->
+**Remaining ladder:** 17 → 15 → 20 → 25.<!-- END GENERATED release-state:0.8.22:plan-immediate-next -->
