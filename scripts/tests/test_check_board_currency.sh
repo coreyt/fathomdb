@@ -376,6 +376,69 @@ write_state() {
     "$ver" "$landed" "$ladder" "$remaining" >"$dir/dev/plans/release-state-$ver.json"
 }
 
+# A release may legitimately have no landing merge only at activation: its
+# state starts with no landed slices, the next slice is the first ladder entry,
+# and the entire ladder remains. The board still has to expose the structural
+# ladder which the unconditional TC-133 cross-read validates below.
+make_initial_release_fixture() {
+  local dir="$1" ver="$2" state="$3"
+  init_repo "$dir"
+  mkdir -p "$dir/dev/plans/runs" "$dir/dev/plans" "$dir/src" "$dir/scripts"
+  printf 'fixture\n' >"$dir/src/keep.txt"
+  {
+    printf '# STATUS — %s fixture\n\n' "$ver"
+    printf '| Slice | Title | Depends-on | Status |\n'
+    printf '|------:|-------|------------|--------|\n'
+    printf '| 5 | first release slice | — | not started |\n'
+    printf '| 40 | release gate | 5 | not started |\n\n'
+    printf '**Ladder remaining: 5 → 40.**\n'
+  } >"$dir/dev/plans/runs/STATUS-$ver.md"
+  printf '%s\n' "$state" >"$dir/dev/plans/release-state-$ver.json"
+  commit_all "$dir" 'fixture: newly activated release'
+}
+
+INITIAL_RELEASE_STATE='{
+  "release": "0.8.81",
+  "board": "dev/plans/runs/STATUS-0.8.81.md",
+  "landed": [],
+  "ladder": [{"slice": 5, "status": "NOT_STARTED"}, {"slice": 40, "status": "NOT_STARTED"}],
+  "remaining_ladder": [5, 40],
+  "next_slice": 5
+}'
+INITIAL_REPO="$TMPROOT/initial-release"
+make_initial_release_fixture "$INITIAL_REPO" 0.8.81 "$INITIAL_RELEASE_STATE"
+
+INITIAL_NO_TABLE_REPO="$TMPROOT/initial-no-table"
+make_initial_release_fixture "$INITIAL_NO_TABLE_REPO" 0.8.81 "$INITIAL_RELEASE_STATE"
+printf '# STATUS — 0.8.81 fixture\n\nInitial release, no ladder table.\n' \
+  >"$INITIAL_NO_TABLE_REPO/dev/plans/runs/STATUS-0.8.81.md"
+commit_all "$INITIAL_NO_TABLE_REPO" 'fixture: remove initial release ladder table'
+
+INITIAL_NONFIRST_STATE='{
+  "release": "0.8.80",
+  "board": "dev/plans/runs/STATUS-0.8.80.md",
+  "landed": [],
+  "ladder": [{"slice": 5, "status": "NOT_STARTED"}, {"slice": 40, "status": "NOT_STARTED"}],
+  "remaining_ladder": [5, 40],
+  "next_slice": 40
+}'
+INITIAL_NONFIRST_REPO="$TMPROOT/initial-nonfirst"
+make_initial_release_fixture "$INITIAL_NONFIRST_REPO" 0.8.80 "$INITIAL_NONFIRST_STATE"
+
+INITIAL_LANDED_NO_SHA_STATE='{
+  "release": "0.8.79",
+  "board": "dev/plans/runs/STATUS-0.8.79.md",
+  "landed": [5],
+  "ladder": [{"slice": 5, "status": "LANDED"}, {"slice": 40, "status": "NOT_STARTED"}],
+  "remaining_ladder": [40],
+  "next_slice": 40
+}'
+INITIAL_LANDED_NO_SHA_REPO="$TMPROOT/initial-landed-no-sha"
+make_initial_release_fixture "$INITIAL_LANDED_NO_SHA_REPO" 0.8.79 "$INITIAL_LANDED_NO_SHA_STATE"
+
+INITIAL_MALFORMED_REPO="$TMPROOT/initial-malformed"
+make_initial_release_fixture "$INITIAL_MALFORMED_REPO" 0.8.78 '{not valid JSON'
+
 # --- Fixture J (TC-133 RECURRENCE): the board CONTRADICTS its own state file --
 # Release 0.8.93. Slice 5 landed via a recognized `merge(0.8.93): Slice 5`
 # subject; the state file records it LANDED with that short SHA; the short SHA
@@ -1023,6 +1086,50 @@ if printf '%s' "$OUT" | grep -q 'STALE.*no landing merge matched the convention'
   pass "vacuous-pass failure names the convention + cannot-vouch reason"
 else
   fail "expected a STALE line naming the unmatched convention; got: $OUT"
+fi
+
+# --- Arm 4ba: state-backed initial release — zero matches are expected ---------
+# This is intentionally RED before the activation exception: the board has no
+# land yet, but its single-writer state proves this is the first slice of a
+# newly activated release and TC-133 can structurally cross-read the ladder.
+run_checker "$INITIAL_REPO"
+if [ "$RC" -eq 0 ] \
+   && grep -q 'note.*newly activated initial release' <<<"$OUT" \
+   && ! grep -q 'STALE.*no landing merge matched the convention' <<<"$OUT"; then
+  pass "a state-backed newly activated initial release may have zero landing merges"
+else
+  fail "initial release must pass only through the explicit state-backed exception; rc=$RC, out: $OUT"
+fi
+
+run_checker "$INITIAL_NO_TABLE_REPO"
+if [ "$RC" -ne 0 ] && grep -q 'STALE.*carries no ladder table' <<<"$OUT"; then
+  pass "a state-backed initial release without a STATUS ladder still HARD-fails"
+else
+  fail "initial release needs a STATUS ladder for the state-backed exception; rc=$RC, out: $OUT"
+fi
+
+# The exception is deliberately narrow: a later `next_slice`, malformed state,
+# or any recorded landed slice stays a hard failure when no landing evidence is
+# reachable. NOMATCH_REPO above already supplies the no-state case.
+run_checker "$INITIAL_NONFIRST_REPO"
+if [ "$RC" -ne 0 ] && grep -q 'STALE.*no landing merge matched the convention' <<<"$OUT"; then
+  pass "a zero-land state whose next slice is not first still HARD-fails"
+else
+  fail "non-first initial state must retain the vacuous-pass failure; rc=$RC, out: $OUT"
+fi
+
+run_checker "$INITIAL_MALFORMED_REPO"
+if [ "$RC" -ne 0 ] && grep -q 'STALE.*no landing merge matched the convention' <<<"$OUT"; then
+  pass "a malformed initial state still HARD-fails"
+else
+  fail "malformed state must not qualify for the initial-release exception; rc=$RC, out: $OUT"
+fi
+
+run_checker "$INITIAL_LANDED_NO_SHA_REPO"
+if [ "$RC" -ne 0 ] && grep -q 'STALE.*no landing merge matched the convention' <<<"$OUT"; then
+  pass "a landed state missing its expected merge/SHA still HARD-fails"
+else
+  fail "landed state must not qualify for the initial-release exception; rc=$RC, out: $OUT"
 fi
 
 # --- Arm 4c (fix-1): regression guard — a live board WITH >=1 matched land ------
