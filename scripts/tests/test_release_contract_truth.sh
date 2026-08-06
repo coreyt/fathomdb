@@ -163,6 +163,25 @@ PY
 expect_fail "$FIXTURE" 'rejects a latest promotion of a platform package'
 
 make_fixture "$FIXTURE"
+python3 - "$FIXTURE/.github/workflows/release.yml" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text()
+needle = '        run: npm dist-tag add "fathomdb@${RELEASE_TAG#v}" latest\n'
+if text.count(needle) != 1:
+    raise SystemExit("test fixture no longer contains exactly one direct main-package promotion")
+extra = (
+    "      - name: Mutant platform promotion\n"
+    "        run: |\n"
+    '          npm dist-tag add "fathomdb-darwin-x64@${RELEASE_TAG#v}" latest\n'
+)
+path.write_text(text.replace(needle, needle + extra, 1))
+PY
+expect_fail "$FIXTURE" 'rejects a block-style extra platform-package promotion'
+
+make_fixture "$FIXTURE"
 python3 - "$FIXTURE/dev/platform-capabilities.json" <<'PY'
 import json
 from pathlib import Path

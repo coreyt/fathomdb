@@ -312,8 +312,8 @@ def main() -> None:
         fail("promote-npm-latest must depend on every release-ready platform smoke")
     if "co-tagging-assert" not in promotion_needs:
         fail("promote-npm-latest must depend on co-tagging-assert")
-    promotion_commands = re.findall(r"^        run: npm dist-tag add .+$", promotion, re.MULTILINE)
-    if len(promotion_commands) != 1 or not PROMOTION_COMMAND.search(promotion):
+    promotion_command_count = promotion.count("npm dist-tag add")
+    if promotion_command_count != 1 or not PROMOTION_COMMAND.search(promotion):
         fail("promote-npm-latest must promote only fathomdb@${RELEASE_TAG#v} to latest")
 
     print(f"ok    release-contract-truth: {release} has {len(ready)} release-ready native triples")
