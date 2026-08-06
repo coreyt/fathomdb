@@ -5,8 +5,8 @@ status: PROPOSED
 # EARP Slice 3 — strict resolver and knob catalog
 
 Design of record for S3 of `dev/plans/earp-foundation.md`. Depends on S2
-(`check_depth`) and the S0 lock. **Revision 2** — the first revision was
-returned **REWORK**; § Review records what changed and why.
+(`check_depth`) and the S0 lock. **Revision 3** — revision 1 was returned
+**REWORK**, and revision 2 **REWORK (narrow)**; § Review records both rounds.
 
 ## Contract
 
@@ -25,7 +25,7 @@ file and EARP's own packaged schema.
 | missing | a required key absent | `config_missing_key` |
 | invalid | a defined key with an out-of-domain value | `config_invalid_value` |
 | inapplicable | a declared knob the named call does not accept | `config_inapplicable_knob` |
-| unused | a declared key no slice will ever consume | `config_unused_key` |
+| unused | a declared key inapplicable to *this* config — not "never consumed" | `config_unused_key` |
 | inexpressible | a campaign kind `earp.v1` cannot represent | `config_campaign_inexpressible` |
 
 All rejections are **collected**, not first-failure. This deliberately differs
@@ -50,6 +50,21 @@ interprets the exact keyword subset this schema uses: `type`, `enum`, `const`,
 `if`/`then`, no `allOf`/`anyOf`/`oneOf`**, and a maximum nesting depth of 3.
 (The `$defs`/`oneOf` nesting exists only in the *result* schema, which S3 does
 not consume.)
+
+`$schema`, `$id`, `title`, and `description` are **explicitly ignored** as
+annotations; any keyword outside the union of interpreted and ignored is a hard
+error, which is what makes the totality claim load-bearing rather than
+decorative.
+
+Two semantics the walker must pin, because the config is YAML:
+
+- **`type: integer` must reject `bool`.** PyYAML yields Python `bool`, and
+  `isinstance(True, int)` is `True`, so `rerank_depth: true` would resolve as
+  `1`. The SDK rejects bools explicitly everywhere; the walker must too.
+- **`minimum`/`maximum` cannot catch NaN.** `nan < 0.0` and `nan > 1.0` are
+  both `False`, so `alpha: .nan` passes bounds. The non-finite rule is a
+  resolver rule *outside* the walker and runs regardless of walker outcome.
+  (`.inf` and `-inf` are caught by the bounds.)
 
 So the known-key set is **derived from the schema**, unknown/missing/invalid
 fall out mechanically, and the hand-written tables carry only cross-field
@@ -86,6 +101,12 @@ Consumption is instead tracked at **declaration site**, and split:
 Paths are marked at leaf nodes, with arrays marked at the array node and never
 per element.
 
+**Precedence, where the two rules collide.** An inexpressible-campaign refusal
+outranks carrying. `comparison.*` is owned by S8 *and* has a false predicate for
+every campaign v1 admits, because `comparison` as a kind is itself refused; it
+is therefore `config_unused_key` with the reason that the only campaign able to
+consume it is inexpressible in `earp.v1`, not silently carried.
+
 Two paths are genuinely unconsumed by any slice today — `scenario.store.mode`
 and `metrics.integrity`. They are registered with their owning slice (S5, S6)
 and carried. (The first revision cited `gold.corpus_hash`/`qrels_version` as
@@ -104,12 +125,36 @@ declared. Three problems, all fatal as written:
 - **`RetrievalMode.VECTOR_ONLY` has no SDK entry point at all.** There are
   exactly three search verbs and none is vector-only.
 
-So the mode is derived from `call` through an explicit `CALL_MODE` table,
-`scenario.query.mode` is **removed from the schema**, and a config naming
-`vector_only` is refused with the reason that no vector-only SDK entry point
-exists. Depth is then checked per `evidence_recall_k` entry against the derived
-mode, at validation time, so a config asking @20 on hybrid is refused before it
-can produce three copies of the @10 number.
+And a fourth problem the re-review caught, which no reading of `call` alone
+would surface: **`Engine.search` is hybrid only when an embedder is
+configured.** `use_default_embedder` defaults to `False`, and with no embedder
+the vector branch is skipped entirely and the run is pure node FTS. Deriving
+`hybrid` from the call alone would record a mode the run did not use *and*
+refuse depths it could honestly measure.
+
+So the resolver derives `(mode, max_k)` from **`(call, use_default_embedder)`**:
+
+| `call` | embedder | mode | max K |
+| --- | --- | --- | ---: |
+| `Engine.search_text_only` | either | `fts_only` | unbounded |
+| `Engine.search` | absent | `fts_only` | unbounded |
+| `Engine.search` | present | `hybrid` | 10 |
+| `Engine.search_projected_text` | either | `fts_only` | **10** |
+
+`search_projected_text` is the exception that proves depth is a *call-site*
+property, not a mode property: it is FTS by mechanism, yet its reader breaks at
+`results.len() >= limit` with `limit = max(override, SEARCH_RERANK_LIMIT)`, so
+it truncates at 10. `MAX_MEASURABLE_K` remains the mode table; this call
+overrides it downward, and the design records why so nobody "fixes" the
+override later.
+
+`scenario.query.mode` is **removed from the schema**.
+`RetrievalMode.VECTOR_ONLY` is **retained** — it is live in `MAX_MEASURABLE_K`,
+in the result schema's `retrieval_mode` enum, and in S2's landed parity tests —
+but it becomes unreachable from any config by construction, which is the point.
+Because the key is gone, `mode: vector_only` surfaces as `config_unknown_key`
+on a removed key; the resolver carries a named legacy-key rule so that message
+says "removed in favour of derivation from `call`" rather than a bare unknown.
 
 ## Knobs the call actually accepts
 
@@ -145,8 +190,9 @@ The first revision required gold for a "retrieval-quality campaign" and never
 defined the term. The decidable rule is not campaign-keyed: **any config
 declaring `metrics.evidence_recall_k` or `metrics.document_metrics` requires
 `gold` and `corpus`**, whatever its kind. It catches the real error — asking
-for recall with no gold — and needs no taxonomy. A `diagnostic` campaign may
-additionally not declare `evidence_recall_k` at all.
+for recall with no gold — and needs no taxonomy. A `diagnostic` campaign
+**MUST NOT** declare `evidence_recall_k` at all — it runs without gold, so a
+recall request is a contradiction, refused as `config_inapplicable_knob`.
 
 ## Campaign kinds v1 cannot express
 
@@ -168,11 +214,33 @@ cannot emit" was prose. S3 lands the namespace as a real artifact:
   result schema's own field names: `strict_evidence_recall`,
   `graded_evidence_recall`, `supporting_coverage`, `abstention_rate`, plus
   `mrr` and `ndcg`.
-- A `<metric>@<k>` grammar, stated explicitly, where `k` must appear in the
-  campaign's `evidence_recall_k`.
-- `emits(name, scenario) -> bool`, which AC-5 calls. `ndcg` is always false;
-  `<name>@20` under a hybrid call is false via `check_depth`;
-  `abstention_rate` is false when gold carries no negatives.
+- A `<metric>@<k>` grammar, where `k` must appear in the campaign's
+  `evidence_recall_k`. `@k` is **required** for the three per-K names, and
+  **forbidden** for the rest, because only `metrics.per_k` is K-keyed:
+
+| Metric | `@k` | Emits when |
+| --- | --- | --- |
+| `strict_evidence_recall` | required | gold has required evidence and `k` is declared |
+| `graded_evidence_recall` | required | as above |
+| `supporting_coverage` | required | gold carries supporting units — never on today's gold |
+| `abstention_rate` | forbidden | gold carries negatives |
+| `mrr` | forbidden | **never** in v1 — no slice computes it |
+| `ndcg` | forbidden | **never** — no graded relevance exists |
+
+`mrr` is `emits() == False` with a reason, exactly as `ndcg` is. Nothing landed
+or planned computes it — S6's scope is Evidence Recall@{5,10} plus abstention —
+so licensing a decision rule against it would let a campaign gate on a number
+that never arrives.
+
+`abstention_rate` is K-free in the result schema while
+`negative_abstained(retrieved, k)` is per-K. That is a **result-schema**
+mismatch, not an S3 one; it is recorded here and left to S6, which owns the
+negative aggregate, rather than being quietly papered over by an `@k` this
+slice invents.
+
+`emits(name, scenario) -> bool` is what AC-5 calls: `ndcg` and `mrr` are always
+false; `<name>@20` under a hybrid call is false via `check_depth`;
+`abstention_rate` is false when gold carries no negatives.
 
 The design-of-record's example uses `evidence_recall_strict@10`, which matches
 no field in the result schema (spelled `strict_evidence_recall`). That example
@@ -209,9 +277,23 @@ it must be *present* to be tested.
 Two bounded introspections, each asserting coverage of a known surface:
 
 1. Every field of `EngineConfig` appears with an individual verdict.
-2. Every keyword-only parameter of `Engine.search`,
-   `Engine.search_projected_text`, `Engine.search_text_only`, and
-   `graph.search_expand` appears with a verdict.
+2. Every parameter of `Engine.search`, `Engine.search_projected_text`,
+   `Engine.search_text_only`, and `graph.search_expand` — minus
+   `{self, engine, query}` — appears with a verdict. **Not** keyword-only:
+   `filter` and `name` are positional-or-positional, `search_text_only` has no
+   keyword-only parameters at all, and `search_expand`'s `depth` is positional,
+   so a keyword-only basis would silently cover none of the rows that matter.
+
+`search_expand`'s four keyword-only filters (`source_type`, `kind`,
+`created_after`, `status`) get catalog rows of their own.
+
+**This introspection is not pure**, and the design says so rather than
+pretending: importing `fathomdb.engine` loads the native extension, which is
+absent in a fresh worktree. The resolver and all its other tests import nothing
+from `fathomdb`; this one test **skips visibly** — never silently — when the
+binding is unavailable, following the repo's existing
+`requires_test_hooks` precedent. Introspection (1) over `EngineConfig` stays
+pure, since `config.py` imports only `dataclasses`.
 
 The first revision had only (1), bounded to five fields, and therefore could
 not detect the eight omissions above — while naming silent under-coverage as
@@ -222,11 +304,43 @@ code-reviewed candidate list.
 
 Mirrors S1's established convention — returned, never raised:
 
-- `ConfigResolution(blockers: tuple[Blocker, ...] | (), scenario: ResolvedScenario | None)`,
-  never both, never neither.
-- `ResolvedScenario` carries the resolved values, the derived retrieval mode,
-  the metrics ladder, the decision rule or its explicit absence, and the
-  consumed-path set — so AC-2 has something to assert against.
+```python
+@dataclass(frozen=True)
+class ConfigResolution:
+    blockers: tuple[Blocker, ...] = ()      # empty iff scenario is not None
+    scenario: ResolvedScenario | None = None
+
+@dataclass(frozen=True)
+class ResolvedScenario:
+    campaign: CampaignKind
+    config_sha256: str                      # S4 pre-derives run_id from this
+    query_call: str
+    retrieval_mode: RetrievalMode
+    max_measurable_k: int | None
+    use_default_embedder: bool
+    query_params: Mapping[str, Any]
+    evidence_recall_k: tuple[int, ...]
+    document_metrics: tuple[str, ...]
+    corpus: Mapping[str, str] | None
+    gold: Mapping[str, str] | None
+    decision_rule: DecisionRule | None      # None means no better-than claim
+    consumed_paths: frozenset[str]
+    carried_paths: frozenset[str]
+```
+
+`config_sha256` is here because S4 must pre-derive the run identity from the
+resolved config before staging, and the sidecar requires it.
+
+Every rejection carries a code, including the four the first revision left
+unassigned:
+
+| Rejection | Code |
+| --- | --- |
+| `vector_only` named (via the removed-key rule) | `config_invalid_value` |
+| decision rule names a metric `emits()` rejects | `config_invalid_value` |
+| `projection_name` absent for `search_projected_text` | `config_missing_key` |
+| gold/corpus absent while metrics declared | `config_missing_key` |
+| `diagnostic` declaring `evidence_recall_k` | `config_inapplicable_knob` |
 
 ## S0 lock amendments carried by this slice
 
@@ -237,7 +351,10 @@ Reviewed here rather than slipped in:
 2. `earp.config.v1.schema.json`: remove `scenario.query.mode`; add
    `scenario.query.projection_name`; add `minimum`/`maximum` to `alpha`.
 3. `dev/design/earp.md`: correct the example config's missing `schema_version`
-   and its non-existent metric name.
+   and its non-existent metric name (`evidence_recall_strict@10` matches no
+   field; the result schema spells it `strict_evidence_recall`), and update
+   "the twelve blocker codes" — `models.py` already declares 14, and these six
+   make 20.
 
 ## `earp validate`
 
@@ -276,6 +393,27 @@ would make validation impossible in a worktree.
 13. Every path is exercised by a test that was first observed to fail.
 
 ## Review
+
+### Round 2 — revision 2, verdict REWORK (narrow)
+
+11 of 18 findings fully resolved; the structural pieces that made revision 1
+unimplementable were sound. Three things forced a third revision, the first of
+which reaches past this design.
+
+| Severity | Finding | Resolution |
+| --- | --- | --- |
+| BLOCKER | `CALL_MODE` encoded a **false statement about the SDK**, inherited from D-5: `search_projected_text` truncates at 10 via a reader `break` 35 lines below the SQL whose missing `LIMIT` the ruling relied on. A config could resolve cleanly and emit three copies of the @10 number | Verified in code; D-5's table corrected in the decisions record and flagged for HITL. Derivation now yields `(mode, max_k)` with this call capped |
+| BLOCKER | `Engine.search` is hybrid only with an embedder; with none the vector branch is skipped and the run is pure FTS, so the sidecar would record a mode the run did not use | Mode derived from `(call, use_default_embedder)` |
+| BLOCKER | The two consumption rules collided on `comparison.*` — owned by a later slice *and* predicate-false | Precedence stated: inexpressible-campaign refusal outranks carrying |
+| MAJOR | Budget was declared removed and then reintroduced as a live predicate with no decidable input | Predicate deleted; `budget.estimated_usd` registered to S9 and carried |
+| MAJOR | The second introspection keyed on **keyword-only** parameters, which covers none of `filter`, `name`, or `search_expand.depth`, and yields the empty set for `search_text_only` | Rebased on all parameters minus `{self, engine, query}`; the four `search_expand` filters get rows; the test skips visibly without the native binding |
+| MAJOR | `@k` grammar had no slot for `abstention_rate`, `mrr`, `ndcg`; `mrr` has no implementation anywhere | Per-name `@k` required/forbidden table; `mrr` is `emits() == False` |
+| MAJOR | Four acceptance criteria had no blocker code; `ResolvedScenario` was a prose list missing `config_sha256` | Codes assigned; the dataclass specified with field types |
+| MINOR | Walker subset omitted `$schema`/`$id`/`title`/`description`; bool-as-integer and NaN-vs-bounds unspecified | All stated |
+| MINOR | AC-4's `vector_only` clause unreachable once the key is removed; `RetrievalMode.VECTOR_ONLY` has three live consumers | Named legacy-key rule; retention stated with its consumers |
+| MINOR | `diagnostic` + `evidence_recall_k` ambiguous; `config_unused_key` misnamed for its new semantics; `earp.md`'s "twelve blocker codes" stale | MUST NOT; class redefined; amendment extended |
+
+### Round 1 — revision 1, verdict REWORK
 
 Independent code-grounded review, 2026-08-06. Verdict on revision 1:
 **REWORK** — scope and purity boundary sound, but three load-bearing pieces

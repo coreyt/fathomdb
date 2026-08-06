@@ -117,9 +117,50 @@ SQL (`:11120-11126`) carries **no `LIMIT`**. So depth-validation is per-mode:
 
 | Mode | @5 / @10 | @20 / @50 |
 | --- | --- | --- |
-| FTS-only (`search_text_only`, `search_projected_text`) | valid | **valid** |
+| `search_text_only` (node FTS) | valid | **valid** |
+| `search_projected_text` (property FTS) | valid | **reject** — see correction below |
 | vector-only | valid | **reject** — typed `metric_not_measurable` |
 | hybrid (`search`) | valid | **reject** — typed `metric_not_measurable` |
+
+### Correction (2026-08-06) — `search_projected_text` IS capped
+
+**This refines D-5's ruling in the stricter direction and needs HITL
+confirmation.** The original table grouped both FTS verbs as uncapped, on the
+reading that "the property-FTS SQL carries no `LIMIT`". The SQL indeed carries
+none — but the cap is a Rust `break` 35 lines below it, which that reading
+missed:
+
+```text
+lib.rs:6427-6432   search_projected_text computes
+                   limit = search_limit_override.max(SEARCH_RERANK_LIMIT)  // 10
+lib.rs:11161-11163 the projected-text reader: if results.len() >= limit { break; }
+```
+
+`search_limit_override` initialises to `SEARCH_RERANK_LIMIT` (`lib.rs:1301`) and
+is raisable only through `set_search_limit_for_test` (`:8113`), which D-5.3
+forbids exporting. So `search_projected_text` truncates at 10.
+
+`search_text_only` is genuinely different and the ruling holds for it: its
+`search_limit` bounds only the vector branch (`:11374`) and the explain trace
+(`:11877`), and the node-FTS SQL takes a `LIMIT` only under
+`FATHOMDB_PERF_EXPERIMENTS` (`:11457,11471`), which is off by default.
+
+Consequence: EARP refuses @20/@50 for `search_projected_text` as well. The
+ruling's *intent* — never silently score a depth the engine cannot deliver — is
+preserved and applied to one more verb, so proceeding on this reading refuses
+more rather than less. Flagged for HITL confirmation rather than treated as
+settled.
+
+### Correction (2026-08-06) — mode depends on the embedder, not the call alone
+
+`Engine.search` is hybrid only when an embedder is configured.
+`use_default_embedder` defaults to `False` (`engine.py:143`), and with no
+embedder `query_vector` is `None`, the vector branch is skipped, and the run is
+pure node FTS — the same path `search_text_only` takes (`lib.rs:6377`). Two
+consequences: the sidecar would record `retrieval_mode: hybrid` for a run that
+was FTS-only, and @20/@50 would be refused for a configuration that could
+measure them honestly. EARP therefore derives the mode from
+`(call, use_default_embedder)`, not from the call alone.
 
 The rejection error names `SEARCH_RERANK_LIMIT` and D-5.2 as the unblocking
 work. Until that slice lands, EARP records the fanout it used (10) with every
