@@ -43,7 +43,7 @@ co-tagging check pass. Platform packages stay on `next`.
 ## Landed release state
 
 <!-- BEGIN GENERATED release-state:0.8.22:plan-landed-roll-up -->
-**LANDED on `origin/main`, in full:** no slices. SCHEMA is 25; remaining ladder = 0 → 5 → 10 → 15 → 20 → 25.<!-- END GENERATED release-state:0.8.22:plan-landed-roll-up -->
+**LANDED on `origin/main`, in full:** Slices 0 (`55792858b2adce00d3d87193d02b23a5d8d52dd7`). SCHEMA is 25; remaining ladder = 5 → 10 → 15 → 20 → 25.<!-- END GENERATED release-state:0.8.22:plan-landed-roll-up -->
 
 ## Reserved-gap policy
 
@@ -65,6 +65,6 @@ prepares and verifies the release path; it does not authorize a registry write.
 ## Immediate next slice
 
 <!-- BEGIN GENERATED release-state:0.8.22:plan-immediate-next -->
-**IMMEDIATE NEXT: Slice 0** (`CONTRACT`) — release contract, platform acceptance, and trusted-publishing runbook
+**IMMEDIATE NEXT: Slice 5** (`SQLITE`) — rusqlite/sqlite-vec security migration and TC-76 regression proof
 
-**Remaining ladder:** 0 → 5 → 10 → 15 → 20 → 25.<!-- END GENERATED release-state:0.8.22:plan-immediate-next -->
+**Remaining ladder:** 5 → 10 → 15 → 20 → 25.<!-- END GENERATED release-state:0.8.22:plan-immediate-next -->
