@@ -155,15 +155,35 @@ scope in `dev/plans/earp-foundation.md:12-13` as the *campaign* basis; a small
 fixture may still back the fast, network-free unit tests.
 
 **Verified (2026-08-06).** `build_ir_gold.py:46` sets
-`QRELS_VERSION = "ir-c-reused-v2"` ("v2: query tracers + evidence-span
-locators"), emitting `locator.kind = "span"` with `locator.spans` when the
-dataset supplies them (`:106-127`). The on-disk cache reports
-`ir-c-reused-v1` with `"kind": "whole_body"` — **stale, exactly as ruled**.
-`necessity: "required"` is the generator's only emission site (`:132`), so v2
-adds no supporting rows. Version skew is therefore a *silent metric change*
-(span locators appear, per IR-B §(b) non-load-bearing for scoring in a
-non-chunking store, but load-bearing for the span diagnostic), which is why
-condition 3 is a hard precondition and not a nicety.
+`QRELS_VERSION = "ir-c-reused-v2"`, and every on-disk gold file reports
+`ir-c-reused-v1` — **stale, exactly as ruled**. `necessity: "required"` is the
+generator's only emission site (`:132`), so v2 adds no supporting rows.
+
+**Correction to an earlier gloss.** This note previously justified condition 3
+as preventing a *silent metric change*, on the grounds that v2 emits span
+locators. That justification is **false against the data**. The generator emits
+`locator.kind = "span"` only when a source row supplies `evidence_spans`
+(`:106-127`), and `evidence_spans` is non-empty on **zero of 4,597 source
+rows**:
+
+```text
+enronqa_qa.jsonl  rows= 710  has_key= 710  non_empty_spans=0
+qaconv_qa.jsonl   rows=2303  has_key=2303  non_empty_spans=0
+qmsum_qa.jsonl    rows=1584  has_key=1584  non_empty_spans=0
+```
+
+So regenerating to v2 changes only the `qrels_version` string, the tracer key
+renames `_source`/`_answer_type` → `source`/`answer_type`, and a new
+`query_origin: "human_dataset"` — a value the Rust reference already defaults
+to when absent (`ir_eval.rs:292-296`). No span locator appears and no metric
+moves.
+
+**The ruling stands; only the reason changes.** Condition 3 is correct as
+**provenance and version hygiene**: a gold file must declare the version its
+committed generator actually emits, so the identity recorded with every number
+cannot name a version no code produces. It is now also known to be *cheap* to
+satisfy — the content is semantically identical, so regeneration carries no
+metric consequence and no re-baselining.
 
 ## Correction · the gold set exists
 

@@ -209,6 +209,8 @@
             "corpus_root_absent",
             "gold_missing",
             "gold_hash_mismatch",
+            "gold_malformed",
+            "snapshot_unreadable",
             "gold_corpus_mismatch",
             "gold_stale_qrels_version",
             "metric_not_measurable",

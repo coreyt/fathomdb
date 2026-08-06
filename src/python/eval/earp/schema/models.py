@@ -123,6 +123,13 @@ class BlockerCode(str, Enum):
     GOLD_MISSING = "gold_missing"
     #: Pinned SHA-256 of the gold file does not match.
     GOLD_HASH_MISMATCH = "gold_hash_mismatch"
+    #: Gold bytes are not valid JSON, or do not conform to the GoldSet shape --
+    #: including an unknown `query_class`, `necessity`, or `query_origin`,
+    #: each of which the Rust reference treats as a hard error.
+    GOLD_MALFORMED = "gold_malformed"
+    #: The corpus snapshot is absent, unreadable, or carries no `corpus_hash`,
+    #: so the gold's corpus cross-check cannot be performed at all.
+    SNAPSHOT_UNREADABLE = "snapshot_unreadable"
     #: Gold `corpus_hash` does not equal the frozen snapshot hash.
     GOLD_CORPUS_MISMATCH = "gold_corpus_mismatch"
     #: Cached gold is `ir-c-reused-v1`; the generator emits v2 (D-6.3).
