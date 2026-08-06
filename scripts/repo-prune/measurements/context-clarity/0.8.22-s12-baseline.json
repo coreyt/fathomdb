@@ -1,0 +1,39 @@
+{
+  "label": "0.8.22-s12-baseline",
+  "git_sha": "d7d14f21",
+  "captured_utc": "2026-08-06T20:21:52Z",
+  "token_estimate": "ceil(bytes/4)",
+  "dev_tree": { "all_files": 1375, "all_bytes": 57058963,
+                "md_files": 886, "md_bytes": 12452158, "md_tokens_est": 3113040 },
+  "live_vs_archive": { "live_md_files": 836, "live_md_bytes": 11684795, "live_md_tokens_est": 2921199,
+                       "archive_md_files": 50, "archive_md_bytes": 767363 },
+  "runs_zone": { "all_files": 497, "all_bytes": 45460590,
+                 "md": 196, "json": 119, "log": 24, "txt": 0 },
+  "doc_index": { "bytes": 36901, "tokens_est": 9226, "table_rows": 223 },
+  "cold_start_orient_set": { "files": 43, "bytes": 508811, "tokens_est": 127203 },
+  "steward_cold_start_set": { "files": 13, "bytes": 613216, "tokens_est": 153304,
+                              "ceiling_tokens": 180000, "over_ceiling": false,
+                              "source": "dev/plans/prompts/0.8.x-STEWARD-HANDOFF.md §3 (derived, not hardcoded)",
+    "items": [
+    {"item": "entry", "files": 3, "bytes": 36271, "tokens_est": 9068},
+    {"item": "3.1", "files": 1, "bytes": 181660, "tokens_est": 45415},
+    {"item": "3.2", "files": 0, "bytes": 0, "tokens_est": 0},
+    {"item": "3.3", "files": 2, "bytes": 195058, "tokens_est": 48765},
+    {"item": "3.4", "files": 3, "bytes": 110418, "tokens_est": 27605},
+    {"item": "3.5", "files": 2, "bytes": 66756, "tokens_est": 16689},
+    {"item": "3.6", "files": 1, "bytes": 18841, "tokens_est": 4711},
+    {"item": "3.7", "files": 1, "bytes": 4212, "tokens_est": 1053}
+    ] },
+  "memory_surface": { "index_bytes": 18841, "index_tokens_est": 4711,
+                      "index_entries": 76, "memory_files": 82, "memory_all_bytes": 289083 },
+  "search_signal_to_noise": [
+    {"query": "CE-rerank", "total_files": 69, "ledger_zone": 28, "core": 41},
+    {"query": "rerank", "total_files": 275, "ledger_zone": 136, "core": 139},
+    {"query": "graphrag", "total_files": 80, "ledger_zone": 44, "core": 36},
+    {"query": "recall floor", "total_files": 58, "ledger_zone": 29, "core": 29},
+    {"query": "logical_id", "total_files": 142, "ledger_zone": 53, "core": 89},
+    {"query": "mem0", "total_files": 107, "ledger_zone": 44, "core": 63},
+    {"query": "RRF", "total_files": 161, "ledger_zone": 77, "core": 84},
+    {"query": "GraphRAG", "total_files": 80, "ledger_zone": 44, "core": 36}
+  ]
+}
