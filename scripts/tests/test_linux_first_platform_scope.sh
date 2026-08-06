@@ -46,8 +46,8 @@ matrix_rows() {
 assert_exact_rows() {
   local actual="$1" expected="$2" description="$3"
   local got want
-  got="$(printf '%s\n' "$actual" | sed '/^$/d' | sort -u)"
-  want="$(printf '%s\n' "$expected" | sed '/^$/d' | sort -u)"
+  got="$(printf '%s\n' "$actual" | sed '/^$/d' | sort)"
+  want="$(printf '%s\n' "$expected" | sed '/^$/d' | sort)"
   if [ "$got" = "$want" ]; then
     pass "$description"
   else
@@ -167,6 +167,34 @@ EOF
     fail "five-target guard accepts an unsupported sixth matrix row"
   else
     pass "five-target guard rejects an unsupported sixth matrix row"
+  fi
+
+  duplicate_root="$(mktemp -d)"
+  trap 'rm -rf "$fixture_root" "$duplicate_root"' EXIT
+  mkdir -p "$duplicate_root/.github/workflows" "$duplicate_root/dev/plans" "$duplicate_root/scripts/tests"
+  awk '
+    $0 == "            label: linux-x64" && !inserted {
+      print
+      print "          - runner: ubuntu-latest"
+      print "            target: x86_64-unknown-linux-gnu"
+      print "            label: linux-x64"
+      inserted = 1
+      next
+    }
+    { print }
+    END { exit !inserted }
+  ' "$CI" > "$duplicate_root/.github/workflows/ci.yml"
+  cp "$RELEASE" "$duplicate_root/.github/workflows/release.yml"
+  cp "$PLAN" "$duplicate_root/dev/plans/plan-0.8.22.md"
+  cp "$0" "$duplicate_root/scripts/tests/"
+  if duplicate_out="$(CROSS_PLATFORM_SCOPE_MATRIX_FIXTURE=1 \
+    bash "$duplicate_root/scripts/tests/test_linux_first_platform_scope.sh" 2>&1)"; then
+    fail "five-target guard accepts a duplicate matrix row"
+  elif grep -Fq 'ci.yml wheel-size gate covers exactly the five supported actual runners' <<<"$duplicate_out"; then
+    pass "five-target guard rejects a duplicate matrix row"
+  else
+    printf 'FAIL  duplicate fixture failed without exercising exact matrix cardinality\n%s\n' "$duplicate_out" >&2
+    FAILED=$((FAILED + 1))
   fi
 fi
 

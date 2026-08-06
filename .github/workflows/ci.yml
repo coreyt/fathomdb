@@ -429,9 +429,8 @@ jobs:
   #     and recorded in the job summary so accidental dependency creep
   #     on the minimal-deps build path is still visible — but not gated.
   #
-  # For 0.8.20 the matrix is the shipped x86_64 Linux artifact only.
-  # macOS/Windows native validation and artifacts are deferred to 0.8.22
-  # by the HITL's Linux-first scope ruling (steward seq-234).
+  # 0.8.22 validates the shipped Python wheel on Linux glibc x64/ARM64,
+  # macOS x64/ARM64, and Windows x64. Musl and other targets remain unsupported.
   wheel-size-gate:
     needs: changes
     if: needs.changes.outputs.docs_only != 'true'

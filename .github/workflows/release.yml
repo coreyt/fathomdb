@@ -41,15 +41,10 @@ env:
   # tag pushes and non-dry-run recovery dispatches use the canonical v-tag.
   RELEASE_CHECKOUT_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run == true && inputs.candidate_commit || github.event_name == 'workflow_dispatch' && format('refs/tags/v{0}', inputs.release_version) || github.ref }}
   RELEASE_GATES_REQUIRE_TAG_CHECKOUT: ${{ (github.event_name != 'workflow_dispatch' || inputs.dry_run != true) && '1' || '0' }}
-  # Linux-first platform coverage is partial: x64 and AArch64 glibc are
-  # supported, while macOS, Windows, and musl remain deferred.
-  # Publishing under `latest` would serve unsupported users an
-  # install-incompatible package as the default. So the main
-  # `fathomdb` package + both Linux binary packages publish under a
-  # NON-`latest` dist-tag. HITL confirms the exact
-  # label. macOS/Windows native artifacts and validation are deferred to 0.8.22;
-  # that release may complete the platform matrix and then promote
-  # `latest`.
+  # 0.8.22 supports Linux glibc x64/ARM64, macOS x64/ARM64, and Windows x64.
+  # Musl and every other target remain unsupported. Every package first
+  # publishes under `next`; only the main `fathomdb` package is promoted to
+  # `latest` after all five actual-runner registry smokes and co-tagging pass.
   NPM_DIST_TAG: "next"
 
 jobs:
