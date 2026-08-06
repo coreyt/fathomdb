@@ -19,7 +19,18 @@ job_block() {
   ' "$CI_YML"
 }
 
+named_step() {
+  local name="$1"
+  awk -v name="$name" '
+    $0 == "      - name: " name { found = 1; in_step = 1 }
+    in_step { print }
+    in_step && /^      - (name:|uses:|run:)/ && $0 != "      - name: " name { exit }
+    END { exit !found }
+  ' <<<"$block"
+}
+
 block="$(job_block)" || fail 'missing native-artifact-runtime-validation job'
+matrix_target="\${{ matrix.target }}"
 
 grep -Fqx '    needs: changes' <<<"$block" \
   || fail 'runtime job must run after the non-docs detector'
@@ -51,6 +62,28 @@ for required in \
   grep -Fq "$required" <<<"$block" \
     || fail "runtime job must locally consume both artifacts via ${required}"
 done
+
+python_build_step="$(named_step 'Build local Python wheel')" \
+  || fail 'missing local Python wheel build step'
+grep -Fqx '        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0' \
+  <<<"$python_build_step" \
+  || fail 'local Python wheel must use the pinned maturin-action release builder'
+grep -Fqx "          target: $matrix_target" <<<"$python_build_step" \
+  || fail 'local Python wheel must build for matrix.target'
+grep -Fqx '          args: --release --out dist --features pyo3/extension-module,default-embedder -i python3.11' \
+  <<<"$python_build_step" \
+  || fail 'local Python wheel must be a release extension-module/default-embedder artifact'
+
+napi_build_step="$(named_step 'Build local N-API artifact and TypeScript package')" \
+  || fail 'missing local N-API/TypeScript build step'
+grep -Fqx '        working-directory: src/ts' <<<"$napi_build_step" \
+  || fail 'local N-API artifact must build from src/ts'
+grep -Fqx "          CARGO_BUILD_TARGET: $matrix_target" <<<"$napi_build_step" \
+  || fail 'local N-API artifact must target matrix.target'
+grep -Fqx '          npm run build:native' <<<"$napi_build_step" \
+  || fail 'local N-API artifact must invoke npm run build:native'
+grep -Fqx '          npm exec -- tsc -p tsconfig.build.json' <<<"$napi_build_step" \
+  || fail 'local TypeScript package must invoke its tsc build'
 
 for helper_and_command in \
   "$REPO_ROOT/scripts/release/smoke/smoke-local-native-artifacts.sh:-m pip install --no-index --find-links" \
@@ -105,6 +138,26 @@ if [ "${NATIVE_RUNTIME_VALIDATION_FIXTURE:-0}" != "1" ]; then
   sed '0,/smoke-local-native-artifacts\.sh/s//smoke-pypi-wheel.sh/' "$CI_YML" > "$fixture"
   if NATIVE_RUNTIME_VALIDATION_FIXTURE=1 CI_YML="$fixture" bash "$0" >/dev/null 2>&1; then
     fail 'local-artifact command control accepted a registry smoke substitution'
+  fi
+
+  sed 's/default-embedder/default-embedder-removed/' "$CI_YML" > "$fixture"
+  if NATIVE_RUNTIME_VALIDATION_FIXTURE=1 CI_YML="$fixture" bash "$0" >/dev/null 2>&1; then
+    fail 'wheel-build control accepted a missing default-embedder feature'
+  fi
+
+  sed 's/CARGO_BUILD_TARGET:/CARGO_BUILD_PLATFORM:/' "$CI_YML" > "$fixture"
+  if NATIVE_RUNTIME_VALIDATION_FIXTURE=1 CI_YML="$fixture" bash "$0" >/dev/null 2>&1; then
+    fail 'N-API target control accepted a missing CARGO_BUILD_TARGET wiring'
+  fi
+
+  sed 's/npm run build:native$/npm run build:native:debug/' "$CI_YML" > "$fixture"
+  if NATIVE_RUNTIME_VALIDATION_FIXTURE=1 CI_YML="$fixture" bash "$0" >/dev/null 2>&1; then
+    fail 'N-API build control accepted a non-release native build command'
+  fi
+
+  sed 's/npm exec -- tsc -p tsconfig.build.json/npm exec -- tsc -p tsconfig.json/' "$CI_YML" > "$fixture"
+  if NATIVE_RUNTIME_VALIDATION_FIXTURE=1 CI_YML="$fixture" bash "$0" >/dev/null 2>&1; then
+    fail 'TypeScript build control accepted the wrong tsc configuration'
   fi
 fi
 
