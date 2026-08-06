@@ -22,6 +22,7 @@ try {
   python -m venv $venv
   $python = Join-Path $venv 'Scripts/python.exe'
   & $python -m pip install --no-index --find-links $WheelDirectory fathomdb
+  if ($LASTEXITCODE -ne 0) { throw 'smoke-local-native-artifacts: local wheel install failed' }
   @'
 import sys
 from fathomdb import Engine
@@ -36,6 +37,7 @@ engine.search("runtime validation")
 engine.close()
 print("local Python wheel runtime validation: ok")
 '@ | & $python - (Join-Path $work 'python-smoke.fdb')
+  if ($LASTEXITCODE -ne 0) { throw 'smoke-local-native-artifacts: local Python wheel runtime smoke failed' }
 
   $main = Join-Path $work 'main'
   $npmRoot = Join-Path $work 'npm'

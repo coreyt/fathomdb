@@ -4,6 +4,7 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 CI_YML="${CI_YML:-$REPO_ROOT/.github/workflows/ci.yml}"
+PS1_HELPER="${PS1_HELPER:-$REPO_ROOT/scripts/release/smoke/smoke-local-native-artifacts.ps1}"
 
 fail() {
   printf 'FAIL test-native-artifact-runtime-validation: %s\n' "$1" >&2
@@ -102,6 +103,28 @@ for helper_and_command in \
     || fail "${helper##*/} must locally validate with ${command}"
 done
 
+require_ps1_exit_check() {
+  local invocation="$1"
+  local check="$2"
+  awk -v invocation="$invocation" -v check="$check" '
+    $0 == invocation {
+      found = 1
+      if (getline && $0 == check) { valid = 1 }
+      exit
+    }
+    END { exit !(found && valid) }
+  ' "$PS1_HELPER"
+}
+
+require_ps1_exit_check \
+  "  & \$python -m pip install --no-index --find-links \$WheelDirectory fathomdb" \
+  "  if (\$LASTEXITCODE -ne 0) { throw 'smoke-local-native-artifacts: local wheel install failed' }" \
+  || fail 'PowerShell wheel install must immediately propagate its Python exit code'
+require_ps1_exit_check \
+  "'@ | & \$python - (Join-Path \$work 'python-smoke.fdb')" \
+  "  if (\$LASTEXITCODE -ne 0) { throw 'smoke-local-native-artifacts: local Python wheel runtime smoke failed' }" \
+  || fail 'PowerShell Python smoke must immediately propagate its Python exit code'
+
 for forbidden in \
   'smoke-pypi-wheel.sh' \
   'smoke-npm-package.sh' \
@@ -116,7 +139,8 @@ done
 # rather than merely finding the five required rows somewhere in the workflow.
 if [ "${NATIVE_RUNTIME_VALIDATION_FIXTURE:-0}" != "1" ]; then
   fixture="$(mktemp)"
-  trap 'rm -f "$fixture"' EXIT
+  ps1_fixture="$(mktemp)"
+  trap 'rm -f "$fixture" "$ps1_fixture"' EXIT
   awk '
     $0 == "  native-artifact-runtime-validation:" { in_job = 1 }
     in_job && /^  [[:alnum:]_-]+:$/ && $0 != "  native-artifact-runtime-validation:" { in_job = 0 }
@@ -158,6 +182,16 @@ if [ "${NATIVE_RUNTIME_VALIDATION_FIXTURE:-0}" != "1" ]; then
   sed 's/npm exec -- tsc -p tsconfig.build.json/npm exec -- tsc -p tsconfig.json/' "$CI_YML" > "$fixture"
   if NATIVE_RUNTIME_VALIDATION_FIXTURE=1 CI_YML="$fixture" bash "$0" >/dev/null 2>&1; then
     fail 'TypeScript build control accepted the wrong tsc configuration'
+  fi
+
+  sed '/local wheel install failed/d' "$PS1_HELPER" > "$ps1_fixture"
+  if NATIVE_RUNTIME_VALIDATION_FIXTURE=1 PS1_HELPER="$ps1_fixture" bash "$0" >/dev/null 2>&1; then
+    fail 'PowerShell exit-code control accepted removal of the wheel install check'
+  fi
+
+  sed 's/local Python wheel runtime smoke failed/local Python wheel runtime smoke ignored/' "$PS1_HELPER" > "$ps1_fixture"
+  if NATIVE_RUNTIME_VALIDATION_FIXTURE=1 PS1_HELPER="$ps1_fixture" bash "$0" >/dev/null 2>&1; then
+    fail 'PowerShell exit-code control accepted mutation of the Python smoke check'
   fi
 fi
 
