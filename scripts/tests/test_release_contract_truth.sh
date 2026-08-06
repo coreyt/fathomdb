@@ -98,6 +98,20 @@ import sys
 
 path = Path(sys.argv[1])
 text = path.read_text()
+needle = "  post-publish-smoke-darwin-x64:\n    runs-on: macos-15-intel\n"
+if text.count(needle) != 1:
+    raise SystemExit("test fixture no longer contains the Darwin x64 smoke job")
+path.write_text(text.replace(needle, needle + "    continue-on-error: ${{ inputs.dry_run != true }}\n", 1))
+PY
+expect_fail "$FIXTURE" 'rejects a dynamic release-ready smoke continuation'
+
+make_fixture "$FIXTURE"
+python3 - "$FIXTURE/.github/workflows/release.yml" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text()
 needle = "  promote-npm-latest:\n    runs-on: ubuntu-latest\n    if: ${{ inputs.dry_run != true && !(github.event_name == 'workflow_dispatch' && inputs.recovery_skip_npm == true && inputs.release_version == '0.8.20') }}\n"
 if text.count(needle) != 1:
     raise SystemExit("test fixture no longer contains the npm promotion guard")

@@ -120,11 +120,15 @@ git -C "$LOCAL_DRY_RUN_FIXTURE" add Cargo.toml scripts
 git -C "$LOCAL_DRY_RUN_FIXTURE" -c user.name=release-test -c user.email=release-test@example.invalid \
   commit -qm 'fixture'
 fixture_head="$(git -C "$LOCAL_DRY_RUN_FIXTURE" rev-parse HEAD)"
-if local_dry_run_out="$(bash "$LOCAL_DRY_RUN_FIXTURE/scripts/release/local-dry-run.sh" 2>&1)"; then
+set +e
+local_dry_run_out="$(bash "$LOCAL_DRY_RUN_FIXTURE/scripts/release/local-dry-run.sh" 2>&1)"
+local_dry_run_status=$?
+set -e
+if [ "$local_dry_run_status" -eq 0 ]; then
   fail "local release rehearsal fixture should stop at its sentinel gate"
 elif [ -f "$LOCAL_DRY_RUN_FIXTURE/candidate-commit" ] \
   && [ "$(cat "$LOCAL_DRY_RUN_FIXTURE/candidate-commit")" = "$fixture_head" ] \
-  && [ "$local_dry_run_out" = "$local_dry_run_out" ]; then
+  && [ "$local_dry_run_status" -eq 47 ]; then
   pass "local release rehearsal reaches dispatch gate with its immutable candidate commit"
 else
   fail "local release rehearsal must pass its immutable candidate commit to the dispatch gate; got: $local_dry_run_out"
