@@ -51,6 +51,35 @@ follows two rules:
    writer precedes the runner, so no slice has to invent a temporary output
    path it later discards.
 
+## Per-slice governance
+
+Every slice below carries the same four gates. A slice is not closed until all
+four are satisfied, and no slice may begin implementation before its design is
+reviewed.
+
+1. **Design.** `dev/design/earp-slice-<n>-design.md`, following the existing
+   `dev/design/slice-*-design.md` convention. It states the contract the slice
+   implements, the concrete call paths and witnesses it touches, and what it
+   deliberately does not do.
+2. **Design review.** An independent, code-grounded review recorded in the
+   design under a `## Review` section: findings, severity, remedy, and the
+   verdict. Reviews verify against source, not against architecture — the
+   review of this plan found that three of four claimed reuse targets were not
+   reusable from Python, which no architecture-level read would have caught.
+3. **Requirements and acceptance criteria.** Stated per slice, testable, and
+   written before the tests. Requirements say what must be true; acceptance
+   criteria say how it is demonstrated.
+4. **TDD, RED then GREEN.** Every behaviour lands as a failing test first. The
+   RED and GREEN evidence is recorded in the slice's closure notes and in the
+   `tdd_evidence` field the shared record already carries
+   (`experiments/_lib.py:104`). A test that passes on first write is not
+   evidence; it is a test that was never proven to fail.
+
+Slice 0 satisfies these by construction: its design is `dev/design/earp.md`,
+its review is the code-grounded review recorded in this revision, its
+requirements are the acceptance criteria below, and its deliverable is
+declarative schema with no behaviour to test.
+
 ## Slice sequence
 
 | Slice | Deliverable | Depends on |
@@ -205,6 +234,20 @@ because the prior draft declared `diagnostic` and delivered it nowhere:
   run-id collision is refused rather than silently overwritten.
 - Priced arms are individually opt-in, visibly skip by default, and are
   refused when projected cumulative spend exceeds the D-3 authorization.
+
+## Per-slice requirements and acceptance criteria
+
+| Slice | Requirement | Acceptance criterion |
+| ---: | --- | --- |
+| 1 | Gold is trustworthy before it is measured against | Pinned SHA-256 matches; `corpus_hash` equals the snapshot hash; `ir-c-reused-v1` refused as `gold_stale_qrels_version`; absent root refused as `corpus_root_absent`; snapshot and manifest recorded separately |
+| 2 | Ported metrics are the reference's metrics | Byte-parity with Rust output on `synthetic_gold.json`, no excluded fields, including `null` supporting coverage and `supporting_query_n`; depth rules refuse K>10 for vector/hybrid and admit it for FTS-only |
+| 3 | A config cannot express a run that cannot be honestly executed | Unknown, missing, invalid, and unused keys rejected; unmeasurable K rejected; ineligible metric rejected or `not_applicable`; decision rule predeclared or absent; every catalog entry has a call path and witness |
+| 4 | A partial run can never appear complete | Sidecar staged and validated before the index line exists; run id pre-derived and stable across `write_record`; colliding run dir with differing sidecar refused; blocked runs indexed only with a blocked verdict |
+| 5 | The machinery works end to end without a quality claim | Fresh DB, real SDK ingest with `source_id`, named search call, integrity and `open_report` witnesses, typed blockers; no metric emitted that gold cannot support |
+| 6 | Corpus-scale numbers are real and scoped | Evidence Recall@{5,10} strict and graded plus abstention over the 125 negatives; `ndcg` reported `not_applicable`; fanout recorded; replay reproduces the run identity and reports drift |
+| 7 | Projection state is read from its true source | `vector_dense_readiness` polled, `vector_unsupported_kinds` from the delta, `dense_disabled` from `open_report`; `None` readiness disambiguated from "not declared" |
+| 8 | A comparative claim is earned, not assumed | Arms differ only at `changed_knobs`; pairing on immutable query ids; CI method, seed, and power rule fixed before running; `UNDERPOWERED` emitted against the declared rule |
+| 9 | Spend is bounded and visible | Every priced arm opt-in and visibly skipped by default; projected cumulative spend over the D-3 authorization refused as `budget_exceeded`; cost recorded per run |
 
 ## Test-first sequence
 
