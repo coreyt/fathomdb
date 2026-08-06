@@ -31,18 +31,11 @@ edition = "2021"
 # `LICENSE` is authoritative; this SPDX field and every other publishable
 # manifest must agree with it (asserted by scripts/check-license-consistency.sh).
 license = "MIT"
-# 0.8.20 Slice 39 (R-20-DOC): make the license TEXT ship inside every `.crate`.
-# Measured, not assumed: `cargo package --list` at baseline shipped NO license
-# file for any of the 7 publishable crates. `include = ["../../../../LICENSE"]`
-# cannot reach outside the package root, but an INHERITED `license-file` can —
-# when a crate opts in with `license-file.workspace = true`, cargo resolves this
-# path relative to the WORKSPACE root and copies the file into the packaged
-# tarball as `LICENSE` (the packaged Cargo.toml is rewritten to
-# `license-file = "LICENSE"`). One real file, no per-crate copies to drift, and
-# no symlinks that a non-symlink-capable checkout would materialise as a text
-# stub. Verified with `cargo package --no-verify` + `tar -xzO`: byte-identical
-# to the repo-root LICENSE for all 7 crates.
-license-file = "LICENSE"
+# Cargo warns when both `license` and `license-file` are present. MIT has a
+# standard SPDX expression, so publishable crates inherit this field alone and
+# carry a byte-identical, regular LICENSE at their own package root. Cargo
+# includes that conventional file in each `.crate`; the consistency gate proves
+# both the source copies and real `cargo package --list` output.
 repository = "https://github.com/coreyt/fathomdb"
 rust-version = "1.95"
 
