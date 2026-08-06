@@ -25,7 +25,7 @@ grep -Fqx '    needs: changes' <<<"$block" \
   || fail 'runtime job must run after the non-docs detector'
 grep -Fqx "    if: needs.changes.outputs.docs_only != 'true'" <<<"$block" \
   || fail 'runtime job must be always-on for every non-docs change'
-grep -Fqx '    runs-on: ${{ matrix.runner }}' <<<"$block" \
+grep -Fqx "    runs-on: \${{ matrix.runner }}" <<<"$block" \
   || fail 'runtime job must execute on every selected native runner'
 
 rows="$(awk '
