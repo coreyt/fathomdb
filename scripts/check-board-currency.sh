@@ -129,11 +129,12 @@
 # loudly that it could not vouch for it (see the "no landing merge matched"
 # message below), never report ok by default. The only exception is a newly
 # activated state whose empty `landed`, first `next_slice`, and complete
-# `remaining_ladder` prove no merge can exist yet. Every ladder entry must also
-# still be `NOT_STARTED` with no landing SHA; its STATUS ladder is structurally
-# validated by the unconditional TC-133 cross-read. This can only convert a
-# silent pass into a loud failure -- it never fires for a board with >=1 matched
-# slice.
+# `remaining_ladder` prove no merge can exist yet. Its earliest (`next`) entry
+# may be `IN_PROGRESS` or `NOT_STARTED`; every later entry must be
+# `NOT_STARTED`, and none may carry a landing SHA. Its STATUS ladder is
+# structurally validated by the unconditional TC-133 cross-read. This can only
+# convert a silent pass into a loud failure -- it never fires for a board with
+# >=1 matched slice.
 #
 # Usage:
 #   scripts/check-board-currency.sh [--tip <ref>] [--boards-dir <dir>]
@@ -706,10 +707,13 @@ try:
     if not isinstance(ladder, list) or not ladder or not isinstance(remaining, list):
         raise ValueError("ladder or remaining_ladder is not a non-empty array")
     ladder_slices = []
-    for entry in ladder:
+    for index, entry in enumerate(ladder):
         if not isinstance(entry, dict) or "slice" not in entry:
             raise ValueError("ladder entry has no slice")
-        if entry.get("status") != "NOT_STARTED":
+        allowed_statuses = (
+            ("NOT_STARTED", "IN_PROGRESS") if index == 0 else ("NOT_STARTED",)
+        )
+        if entry.get("status") not in allowed_statuses:
             raise ValueError("ladder records a non-initial status")
         if entry.get("sha") not in (None, ""):
             raise ValueError("ladder records a landing SHA")

@@ -408,6 +408,28 @@ INITIAL_RELEASE_STATE='{
 INITIAL_REPO="$TMPROOT/initial-release"
 make_initial_release_fixture "$INITIAL_REPO" 0.8.81 "$INITIAL_RELEASE_STATE"
 
+INITIAL_IN_PROGRESS_STATE='{
+  "release": "0.8.75",
+  "board": "dev/plans/runs/STATUS-0.8.75.md",
+  "landed": [],
+  "ladder": [{"slice": 5, "status": "IN_PROGRESS"}, {"slice": 40, "status": "NOT_STARTED"}],
+  "remaining_ladder": [5, 40],
+  "next_slice": 5
+}'
+INITIAL_IN_PROGRESS_REPO="$TMPROOT/initial-in-progress"
+make_initial_release_fixture "$INITIAL_IN_PROGRESS_REPO" 0.8.75 "$INITIAL_IN_PROGRESS_STATE"
+
+INITIAL_LATER_IN_PROGRESS_STATE='{
+  "release": "0.8.74",
+  "board": "dev/plans/runs/STATUS-0.8.74.md",
+  "landed": [],
+  "ladder": [{"slice": 5, "status": "NOT_STARTED"}, {"slice": 40, "status": "IN_PROGRESS"}],
+  "remaining_ladder": [5, 40],
+  "next_slice": 5
+}'
+INITIAL_LATER_IN_PROGRESS_REPO="$TMPROOT/initial-later-in-progress"
+make_initial_release_fixture "$INITIAL_LATER_IN_PROGRESS_REPO" 0.8.74 "$INITIAL_LATER_IN_PROGRESS_STATE"
+
 INITIAL_UNRECORDED_LAND_STATE='{
   "release": "0.8.77",
   "board": "dev/plans/runs/STATUS-0.8.77.md",
@@ -1121,6 +1143,22 @@ if [ "$RC" -eq 0 ] \
   pass "a state-backed newly activated initial release may have zero landing merges"
 else
   fail "initial release must pass only through the explicit state-backed exception; rc=$RC, out: $OUT"
+fi
+
+# This is RED while every initial ladder entry is required to be NOT_STARTED:
+# the active first slice may truthfully be IN_PROGRESS before its first land.
+run_checker "$INITIAL_IN_PROGRESS_REPO"
+if [ "$RC" -eq 0 ] && grep -q 'note.*newly activated initial release' <<<"$OUT"; then
+  pass "a state-backed initial release may mark only its first slice IN_PROGRESS"
+else
+  fail "initial release with its first slice IN_PROGRESS must pass; rc=$RC, out: $OUT"
+fi
+
+run_checker "$INITIAL_LATER_IN_PROGRESS_REPO"
+if [ "$RC" -ne 0 ] && grep -q 'STALE.*no landing merge matched the convention' <<<"$OUT"; then
+  pass "a later IN_PROGRESS slice does not qualify for the initial-release exception"
+else
+  fail "only the first slice may be IN_PROGRESS in the initial-release exception; rc=$RC, out: $OUT"
 fi
 
 # This is RED before the initial-state predicate rejects a ladder which claims
