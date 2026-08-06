@@ -316,6 +316,12 @@ def main() -> None:
     if promotion_command_count != 1 or not PROMOTION_COMMAND.search(promotion):
         fail("promote-npm-latest must promote only fathomdb@${RELEASE_TAG#v} to latest")
 
+    github_release = jobs.get("github-release")
+    if github_release is None:
+        fail("release workflow lacks github-release")
+    if "promote-npm-latest" not in needs("github-release", github_release):
+        fail("github-release must depend on promote-npm-latest")
+
     print(f"ok    release-contract-truth: {release} has {len(ready)} release-ready native triples")
 
 
