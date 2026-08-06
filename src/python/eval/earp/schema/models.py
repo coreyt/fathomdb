@@ -43,6 +43,23 @@ class CampaignKind(str, Enum):
 # --- verdicts and outcomes --------------------------------------------------
 
 
+class QueryClass(str, Enum):
+    """The six gold query classes.
+
+    Declaration order is the reference's discriminant order, NOT alphabetical:
+    the reference keys per-class aggregates in a `BTreeMap<QueryClass, _>`,
+    which iterates by discriminant, so any per-class output that means to match
+    it must iterate in this order.
+    """
+
+    COMMITMENT = "commitment"
+    ACTION = "action"
+    EXACT_FACT = "exact_fact"
+    PREFERENCE = "preference"
+    EXPLORATORY = "exploratory"
+    NEGATIVE = "negative"
+
+
 class RunVerdict(str, Enum):
     """The run-level verdict written into `Record.verdict` and the index row.
 
@@ -228,14 +245,33 @@ PRODUCTION_RERANK_LIMIT = 10
 class MetricValue:
     """A metric slot that can honestly be empty.
 
-    `value` is None exactly when `status` is NOT_APPLICABLE. This is how
-    `supporting_coverage` arrives from the reference implementation, which
-    returns `Option<f64>` and serialises the unavailable case as JSON `null`.
+    `value` is None exactly when `status` is NOT_APPLICABLE -- **enforced**, not
+    merely documented. This is how `supporting_coverage` arrives from the
+    reference, which returns `Option<f64>` and serialises the unavailable case
+    as JSON `null`.
+
+    The enforcement matters precisely because ``MetricValue(EMITTED, 0.0)`` is a
+    legitimate state: supporting coverage is `Some(0.0)` when supporting units
+    exist and none were retrieved. Distinguishing that from "no supporting units
+    at all" is the whole point of the upstream fix, so the invariant cannot be
+    left to prose.
+
+    Integer denominators (`required_n`, `required_hits`, `supporting_query_n`,
+    `n`) do NOT live here -- `value` is a float. They live in the aggregates.
     """
 
     status: MetricStatus
     value: float | None = None
     reason: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.status is MetricStatus.NOT_APPLICABLE:
+            if self.value is not None:
+                raise ValueError("a not_applicable metric must carry value=None")
+            if not self.reason:
+                raise ValueError("a not_applicable metric must carry a reason")
+        elif self.value is None:
+            raise ValueError("an emitted metric must carry a value")
 
 
 # --- identities -------------------------------------------------------------
@@ -326,6 +362,7 @@ __all__ = [
     "KnobEntry",
     "MetricStatus",
     "MetricValue",
+    "QueryClass",
     "QueryOutcome",
     "RetrievalMode",
     "RunVerdict",
