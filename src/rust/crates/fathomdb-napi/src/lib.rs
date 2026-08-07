@@ -1585,6 +1585,7 @@ impl Engine {
         // instant `t`. The existence flags are REFUSED here (typed
         // `FDB_INVALID_ARGUMENT`), never silently ignored.
         view: Option<ReadViewInput>,
+        limit: Option<u32>,
     ) -> Result<SearchResult> {
         validate_ffi_string_napi(&query)?;
         if query.trim().is_empty() {
@@ -1615,12 +1616,13 @@ impl Engine {
         // the sidecar); default stays on search_reranked (byte-identical).
         let explain = explain.unwrap_or(false);
         let view = read_view_or_default(view);
+        let limit = limit.unwrap_or(10) as usize;
         let engine = Arc::clone(&self.inner);
         // fix-2: ONE call — `explain` is a parameter of the full-arity view entry
         // point, so the two arms can no longer drift on `view`.
         let result = call_engine(move || {
-            engine.search_reranked_view(
-                &query, filter, depth, graph_arm, alpha, pool_n, explain, &view,
+            engine.search_reranked_view_with_limit(
+                &query, filter, depth, graph_arm, alpha, pool_n, explain, &view, limit,
             )
         })
         .await?;
@@ -1635,14 +1637,18 @@ impl Engine {
         name: String,
         filter: Option<SearchFilterInput>,
         view: Option<ReadViewInput>,
+        limit: Option<u32>,
     ) -> Result<SearchResult> {
         validate_ffi_string_napi(&query)?;
         validate_ffi_string_napi(&name)?;
         let filter = search_filter_input_to_rust(filter)?;
         let view = read_view_or_default(view);
+        let limit = limit.unwrap_or(10) as usize;
         let engine = Arc::clone(&self.inner);
-        let result =
-            call_engine(move || engine.search_projected_text(&query, &name, filter, &view)).await?;
+        let result = call_engine(move || {
+            engine.search_projected_text_with_limit(&query, &name, filter, &view, limit)
+        })
+        .await?;
         Ok(SearchResult::from_rust(result))
     }
 
@@ -1658,6 +1664,7 @@ impl Engine {
         &self,
         query: String,
         view: Option<ReadViewInput>,
+        limit: Option<u32>,
     ) -> Result<SearchResult> {
         validate_ffi_string_napi(&query)?;
         if query.trim().is_empty() {
@@ -1668,8 +1675,11 @@ impl Engine {
             ));
         }
         let view = read_view_or_default(view);
+        let limit = limit.unwrap_or(10) as usize;
         let engine = Arc::clone(&self.inner);
-        let result = call_engine(move || engine.search_text_only_view(&query, &view)).await?;
+        let result =
+            call_engine(move || engine.search_text_only_view_with_limit(&query, &view, limit))
+                .await?;
         Ok(SearchResult::from_rust(result))
     }
 
@@ -2313,6 +2323,7 @@ pub async fn crossed_boundary_since(
 /// `graph_neighbors(depth, both)`. Nodes appearing in both sets appear
 /// only in `searchHits` (deduplication: search score takes priority).
 #[napi(js_name = "searchExpand")]
+#[allow(clippy::too_many_arguments)]
 pub async fn search_expand(
     engine: &Engine,
     query: String,
@@ -2321,6 +2332,7 @@ pub async fn search_expand(
     kind: Option<String>,
     created_after: Option<i64>,
     status: Option<String>,
+    search_limit: Option<u32>,
 ) -> Result<SearchExpandResult> {
     validate_ffi_string_napi(&query)?;
     let filter =
@@ -2337,7 +2349,9 @@ pub async fn search_expand(
             None
         };
     let inner = Arc::clone(&engine.inner);
-    let result = call_engine(move || inner.search_expand(&query, filter, depth)).await?;
+    let limit = search_limit.unwrap_or(10) as usize;
+    let result =
+        call_engine(move || inner.search_expand_with_limit(&query, filter, depth, limit)).await?;
     Ok(SearchExpandResult::from_rust(result))
 }
 

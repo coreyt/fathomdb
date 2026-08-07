@@ -387,15 +387,21 @@ export interface NativeEngine {
     // Omitted = the strict view (active-only, non-superseded, valid at query
     // time). The existence flags are refused by the engine on this path.
     view?: NativeReadView,
+    limit?: number,
   ): Promise<NativeSearchResult>;
   // 0.8.18 Slice 5 (#5 vector-equivalence probe) — text-only/FTS-only path +
   // degraded-state observability.
-  searchTextOnly(query: string, view?: NativeReadView): Promise<NativeSearchResult>;
+  searchTextOnly(
+    query: string,
+    view?: NativeReadView,
+    limit?: number,
+  ): Promise<NativeSearchResult>;
   searchProjectedText(
     query: string,
     name: string,
     filter?: NativeSearchFilter,
     view?: NativeReadView,
+    limit?: number,
   ): Promise<NativeSearchResult>;
   denseDisabled(): boolean;
   denseDisabledReason(): string | null;
@@ -505,6 +511,7 @@ export interface NativeModule {
     kind?: string,
     createdAfter?: number,
     status?: string,
+    searchLimit?: number,
   ): Promise<NativeSearchExpandResult>;
   forcePanicForTest?: () => void;
   forcePanicInAccessorForTest?: () => void;

@@ -666,13 +666,13 @@ take, as a trailing options object.
 
 ```ts
 engine.search(query, filter?, rerankDepth?, useGraphArm?, alpha?, poolN?,
-              explain?, view?): Promise<SearchResult>
-engine.searchTextOnly(query, view?): Promise<SearchResult>
+              explain?, options?): Promise<SearchResult>
+engine.searchTextOnly(query, options?): Promise<SearchResult>
 ```
 
-`view` is the exported `ReadView` interface — the same shape `read.get` /
-`read.list` / `graph.neighbors` accept (`camelCase` here, `snake_case` in
-Python), with no new type minted.
+`options` is `SearchOptions`: the exported `ReadView` shape plus optional
+`limit`. It keeps the same validity fields `read.get` / `read.list` /
+`graph.neighbors` accept (`camelCase` here, `snake_case` in Python).
 
 - Omitted / `undefined` is the STRICT view: active-only, non-superseded, and
   valid AT QUERY TIME.
@@ -695,15 +695,14 @@ enumerate history.
 These are ARGUMENTS, not new verbs — the governed command surface
 (`src/conformance/governed-surface-allowlist.json`) is unchanged.
 
-## Planned Slice 18 — ranked result limits (not yet shipped)
+## Ranked result limits (0.8.22 Slice 18)
 
-The accepted 0.8.22 contract in `design/retrieval-result-limits.md` adds an
-optional `limit` field, defaulting to 10, to the public options for `search`,
-`searchTextOnly`, and `searchProjectedText`. `graph.searchExpand` receives an
-optional `searchLimit` field with the same default. Each accepts `1..=100`; an
-out-of-range request rejects with `InvalidArgumentError` rather than silently
-clamping. `graph.neighbors` retains its separate 50-result traversal cap. These
-fields are planned, not callable, until Slice 18 lands.
+`SearchOptions` extends `ReadView` with optional `limit`, used as the final options argument
+for `search`, `searchTextOnly`, and `searchProjectedText`. It defaults to 10. The legacy
+`ReadView` shape remains accepted in that position. `graph.searchExpand` takes a final
+`SearchExpandOptions` object with optional `searchLimit`, also defaulting to 10. Each value must
+be an integer in `1..=100`; an out-of-range request rejects with `InvalidArgumentError` rather
+than silently clamping. `graph.neighbors` retains its separate 50-result traversal cap.
 
 ## Nested-source projections (0.8.21 Slice 60)
 

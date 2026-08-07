@@ -45,6 +45,7 @@ from fathomdb.types import (
     WriteReceipt,
 )
 from fathomdb.filter import Filter
+from fathomdb.errors import InvalidArgumentError
 
 # 0.8.20 Slice 15b fix-2 — reuse the read namespace's dataclass -> native
 # ReadView translator rather than duplicating it here, so the two search entry
@@ -59,6 +60,15 @@ _KWARG_FIELDS = {
     "embedder_call_timeout_ms",
     "slow_threshold_ms",
 }
+
+
+def _validate_ranked_result_limit(name: str, limit: object) -> int:
+    """Return a public ranked-result limit or raise the SDK's typed error."""
+    if not isinstance(limit, int) or isinstance(limit, bool):
+        raise TypeError(f"{name} must be an integer in 1..=100, got {type(limit).__name__!r}")
+    if not 1 <= limit <= 100:
+        raise InvalidArgumentError(f"{name} must be an integer in 1..=100, got {limit!r}")
+    return limit
 
 
 def _validate_id_list(name: str, value: object) -> list[int]:
@@ -351,6 +361,7 @@ class Engine:
         pool_n: int | None = None,
         explain: bool = False,
         view: ReadView | None = None,
+        limit: int = 10,
     ) -> SearchResult:
         """Hybrid search with optional CE reranking and optional graph-BFS arm.
 
@@ -434,6 +445,7 @@ class Engine:
             raise TypeError(
                 f"view must be a ReadView or None, got {type(view).__name__!r}"
             )
+        limit = _validate_ranked_result_limit("limit", limit)
         native_view = _to_native_view(view)
         # 0.8.11 Slice 40 (#17) — accept the unified Filter on the vec0 search
         # path; lower to the SearchFilter sugar (typed-rejects a Json term, D3).
@@ -448,6 +460,7 @@ class Engine:
                 pool_n=pool_n,
                 explain=explain,
                 view=native_view,
+                limit=limit,
             )
         else:
             result = self._native.search(
@@ -463,6 +476,7 @@ class Engine:
                 pool_n=pool_n,
                 explain=explain,
                 view=native_view,
+                limit=limit,
             )
         fallback = result.soft_fallback
         soft = (
@@ -520,6 +534,7 @@ class Engine:
         filter: SearchFilter | None = None,
         *,
         view: ReadView | None = None,
+        limit: int = 10,
     ) -> SearchResult:
         """Search one declared ``searchable`` property-FTS projection.
 
@@ -531,7 +546,8 @@ class Engine:
             raise TypeError(f"filter must be a SearchFilter or None, got {type(filter).__name__!r}")
         if not isinstance(view, (ReadView, type(None))):
             raise TypeError(f"view must be a ReadView or None, got {type(view).__name__!r}")
-        kwargs: dict[str, Any] = {"view": _to_native_view(view)}
+        limit = _validate_ranked_result_limit("limit", limit)
+        kwargs: dict[str, Any] = {"view": _to_native_view(view), "limit": limit}
         if filter is not None:
             kwargs.update(
                 source_type=filter.source_type,
@@ -560,7 +576,7 @@ class Engine:
         )
 
     def search_text_only(
-        self, query: str, view: ReadView | None = None
+        self, query: str, view: ReadView | None = None, *, limit: int = 10
     ) -> SearchResult:
         """0.8.18 Slice 5 (#5 vector-equivalence probe) — text-only / FTS-only search.
 
@@ -574,7 +590,8 @@ class Engine:
             raise TypeError(
                 f"view must be a ReadView or None, got {type(view).__name__!r}"
             )
-        result = self._native.search_text_only(query, view=_to_native_view(view))
+        limit = _validate_ranked_result_limit("limit", limit)
+        result = self._native.search_text_only(query, view=_to_native_view(view), limit=limit)
         fallback = result.soft_fallback
         soft = (
             SoftFallback(branch=cast(SoftFallbackBranch, fallback.branch))

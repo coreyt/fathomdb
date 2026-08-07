@@ -544,13 +544,10 @@ struct ProjectionRuntimeShared {
     /// after the unique pin tx, so none can survive un-centered). Embedding
     /// (`run_projection_job`) runs OUTSIDE the gate and stays parallel.
     commit_gate: Mutex<()>,
-    /// 0.7.2 PR-2bc S1 fix-1 — overridable phase-2 rerank `LIMIT` for the
-    /// search hot path. Equals `SEARCH_RERANK_LIMIT` (10) in production; a
-    /// test seam (`set_search_limit_for_test`) can RAISE it (clamped to >=10,
-    /// so it can never shrink below production semantics) so the recall
-    /// harness can pull top-(10+slack) and exclude the self-retrieving
-    /// query-source doc before truncating to 10. Production reads this atomic
-    /// (default 10) — there is NO env var read on the hot path.
+    /// Test-only vector-candidate fanout override for the search hot path.
+    /// It defaults to `SEARCH_RERANK_LIMIT` (10); the test seam may raise it
+    /// so recall tests can inspect deeper vector candidates. It never changes
+    /// the caller-requested final result limit or visible result cardinality.
     search_limit_override: AtomicUsize,
     /// Slice 10 / G12-recency — dedicated recency-reweight flag, **off by
     /// default** (NOT `fusion_mode`). When set, fused hits are reweighted toward
@@ -691,11 +688,11 @@ enum ReaderRequest {
         /// `vec_quantize_binary` sign-quant. Equal to `query_vector` for
         /// non-MC-required identities (the EU-5a2 default).
         query_vector_bin: Option<String>,
-        /// 0.7.2 PR-2bc S1 fix-1 — phase-2 rerank `LIMIT`. Read from
-        /// `ProjectionRuntimeShared::search_limit_override` (default
-        /// `SEARCH_RERANK_LIMIT` = 10, clamped >=10) by `search_inner`
-        /// before dispatch, so the worker never reads any env var.
-        search_limit: usize,
+        /// Public limit applied after ranking and filtering.
+        result_limit: usize,
+        /// Vector candidate fanout. The private test seam may raise this above
+        /// `result_limit`, but never changes caller-visible cardinality.
+        candidate_limit: usize,
         /// G10 — optional closed metadata filter (`None` = unfiltered, the
         /// byte-identical-to-0.7.2 path). Applied in the phase-1 candidates
         /// statement (vector branch) and as a Rust post-filter (text branch).
@@ -1097,7 +1094,8 @@ fn reader_worker_loop(
                 compiled,
                 query_vector,
                 query_vector_bin,
-                search_limit,
+                result_limit,
+                candidate_limit,
                 filter,
                 recency_enabled,
                 importance_enabled,
@@ -1116,7 +1114,8 @@ fn reader_worker_loop(
                     &compiled,
                     query_vector.as_deref(),
                     query_vector_bin.as_deref(),
-                    search_limit,
+                    result_limit,
+                    candidate_limit,
                     filter.as_deref(),
                     recency_enabled,
                     importance_enabled,
@@ -2490,7 +2489,7 @@ pub struct Explanation {
 pub struct QueryTrace {
     /// Query LENGTH only (chars) — never the query text (privacy; ADR §C).
     pub query_chars: u32,
-    /// Final result limit (`SEARCH_RERANK_LIMIT`-derived `final_limit`).
+    /// Caller-requested final result limit (`final_limit`).
     pub k: u32,
     pub rerank_depth: u32,
     pub pool_n: u32,
@@ -6143,7 +6142,16 @@ impl Engine {
     }
 
     pub fn search(&self, query: &str) -> Result<SearchResult, EngineError> {
-        self.search_filtered(query, None)
+        self.search_with_limit(query, DEFAULT_SEARCH_RESULT_LIMIT)
+    }
+
+    /// Hybrid search with an explicit ranked-result limit in `1..=100`.
+    pub fn search_with_limit(
+        &self,
+        query: &str,
+        limit: usize,
+    ) -> Result<SearchResult, EngineError> {
+        self.search_filtered_with_limit(query, None, limit)
     }
 
     /// 0.8.20 Slice 15b fix-2 (R-20-NV / R-20-RV) — `search` under an explicit
@@ -6162,7 +6170,17 @@ impl Engine {
     ///
     /// Governed surface: PROPOSED / NOT SIGNED (0.8.20 Slice 15b fix-2).
     pub fn search_view(&self, query: &str, view: &ReadView) -> Result<SearchResult, EngineError> {
-        self.search_reranked_with_explain(query, None, 0, false, 0.3, 0, false, *view)
+        self.search_view_with_limit(query, view, DEFAULT_SEARCH_RESULT_LIMIT)
+    }
+
+    /// Hybrid search under a [`ReadView`] with an explicit ranked-result limit.
+    pub fn search_view_with_limit(
+        &self,
+        query: &str,
+        view: &ReadView,
+        limit: usize,
+    ) -> Result<SearchResult, EngineError> {
+        self.search_reranked_view_with_limit(query, None, 0, false, 0.3, 0, false, view, limit)
     }
 
     /// 0.8.20 Slice 15b fix-2 (R-20-NV / R-20-RV) — the FULL-arity view entry
@@ -6192,6 +6210,34 @@ impl Engine {
         explain: bool,
         view: &ReadView,
     ) -> Result<SearchResult, EngineError> {
+        self.search_reranked_view_with_limit(
+            query,
+            filter,
+            rerank_depth,
+            use_graph_arm,
+            alpha,
+            pool_n,
+            explain,
+            view,
+            DEFAULT_SEARCH_RESULT_LIMIT,
+        )
+    }
+
+    /// Full-arity hybrid search under a [`ReadView`] with an explicit ranked-result limit.
+    #[allow(clippy::too_many_arguments)]
+    pub fn search_reranked_view_with_limit(
+        &self,
+        query: &str,
+        filter: Option<SearchFilter>,
+        rerank_depth: usize,
+        use_graph_arm: bool,
+        alpha: f64,
+        pool_n: usize,
+        explain: bool,
+        view: &ReadView,
+        limit: usize,
+    ) -> Result<SearchResult, EngineError> {
+        let limit = validate_search_result_limit(limit)?;
         self.search_reranked_with_explain(
             query,
             filter,
@@ -6201,6 +6247,7 @@ impl Engine {
             pool_n,
             explain,
             *view,
+            limit,
         )
     }
 
@@ -6213,6 +6260,16 @@ impl Engine {
         &self,
         query: &str,
         filter: Option<SearchFilter>,
+    ) -> Result<SearchResult, EngineError> {
+        self.search_filtered_with_limit(query, filter, DEFAULT_SEARCH_RESULT_LIMIT)
+    }
+
+    /// Hybrid search with an optional [`SearchFilter`] and explicit ranked-result limit.
+    pub fn search_filtered_with_limit(
+        &self,
+        query: &str,
+        filter: Option<SearchFilter>,
+        limit: usize,
     ) -> Result<SearchResult, EngineError> {
         // 0.8.11 Slice 40 (R-FIL-2): re-express the shipped G10 `SearchFilter`
         // sugar through the unified `Filter` type, then lower back to the vec0
@@ -6244,7 +6301,7 @@ impl Engine {
         // FIX-6: delegate to search_reranked(depth=0, use_graph_arm=false) to eliminate the
         // ~26-line duplicate body that would otherwise drift with search_reranked.
         // 0.8.5: depth=0 is inert, so the α/pool_n defaults (0.3, 0) never reach the blend.
-        self.search_reranked(query, lowered, 0, false, 0.3, 0)
+        self.search_reranked_with_limit(query, lowered, 0, false, 0.3, 0, limit)
     }
 
     /// 0.8.11 Slice 40 (#17) — unified-`Filter` entry point for the vec0 search
@@ -6255,8 +6312,18 @@ impl Engine {
     /// shipped [`Engine::search_filtered`]`(query, Option<SearchFilter>)` stays
     /// as sugar over the same path.
     pub fn search_filter(&self, query: &str, filter: &Filter) -> Result<SearchResult, EngineError> {
+        self.search_filter_with_limit(query, filter, DEFAULT_SEARCH_RESULT_LIMIT)
+    }
+
+    /// Unified-filter hybrid search with an explicit ranked-result limit.
+    pub fn search_filter_with_limit(
+        &self,
+        query: &str,
+        filter: &Filter,
+        limit: usize,
+    ) -> Result<SearchResult, EngineError> {
         let sf = filter.to_search_filter()?;
-        self.search_reranked(query, Some(sf), 0, false, 0.3, 0)
+        self.search_reranked_with_limit(query, Some(sf), 0, false, 0.3, 0, limit)
     }
 
     /// 0.8.1 Slice 10 (R1) / Slice 30 (R3) — `search_reranked`: hybrid search
@@ -6282,6 +6349,30 @@ impl Engine {
         alpha: f64,
         pool_n: usize,
     ) -> Result<SearchResult, EngineError> {
+        self.search_reranked_with_limit(
+            query,
+            filter,
+            rerank_depth,
+            use_graph_arm,
+            alpha,
+            pool_n,
+            DEFAULT_SEARCH_RESULT_LIMIT,
+        )
+    }
+
+    /// Hybrid search with optional reranking and an explicit ranked-result limit.
+    #[allow(clippy::too_many_arguments)]
+    pub fn search_reranked_with_limit(
+        &self,
+        query: &str,
+        filter: Option<SearchFilter>,
+        rerank_depth: usize,
+        use_graph_arm: bool,
+        alpha: f64,
+        pool_n: usize,
+        limit: usize,
+    ) -> Result<SearchResult, EngineError> {
+        let limit = validate_search_result_limit(limit)?;
         // explain=false → `SearchResult.explanation == None`, byte-identical results.
         self.search_reranked_with_explain(
             query,
@@ -6292,6 +6383,7 @@ impl Engine {
             pool_n,
             false,
             ReadView::default(),
+            limit,
         )
     }
 
@@ -6313,6 +6405,30 @@ impl Engine {
         alpha: f64,
         pool_n: usize,
     ) -> Result<SearchResult, EngineError> {
+        self.search_explained_with_limit(
+            query,
+            filter,
+            rerank_depth,
+            use_graph_arm,
+            alpha,
+            pool_n,
+            DEFAULT_SEARCH_RESULT_LIMIT,
+        )
+    }
+
+    /// Explained hybrid search with an explicit ranked-result limit.
+    #[allow(clippy::too_many_arguments)]
+    pub fn search_explained_with_limit(
+        &self,
+        query: &str,
+        filter: Option<SearchFilter>,
+        rerank_depth: usize,
+        use_graph_arm: bool,
+        alpha: f64,
+        pool_n: usize,
+        limit: usize,
+    ) -> Result<SearchResult, EngineError> {
+        let limit = validate_search_result_limit(limit)?;
         self.search_reranked_with_explain(
             query,
             filter,
@@ -6322,6 +6438,7 @@ impl Engine {
             pool_n,
             true,
             ReadView::default(),
+            limit,
         )
     }
 
@@ -6338,7 +6455,16 @@ impl Engine {
     ///
     /// Governed surface: re-exported from the `fathomdb` facade + Py/TS bindings.
     pub fn search_text_only(&self, query: &str) -> Result<SearchResult, EngineError> {
-        self.search_text_only_view(query, &ReadView::default())
+        self.search_text_only_with_limit(query, DEFAULT_SEARCH_RESULT_LIMIT)
+    }
+
+    /// Text-only search with an explicit ranked-result limit in `1..=100`.
+    pub fn search_text_only_with_limit(
+        &self,
+        query: &str,
+        limit: usize,
+    ) -> Result<SearchResult, EngineError> {
+        self.search_text_only_view_with_limit(query, &ReadView::default(), limit)
     }
 
     /// 0.8.20 Slice 15b fix-2 (R-20-NV / R-20-RV) — [`search_text_only`][Engine::search_text_only]
@@ -6351,18 +6477,25 @@ impl Engine {
         query: &str,
         view: &ReadView,
     ) -> Result<SearchResult, EngineError> {
+        self.search_text_only_view_with_limit(query, view, DEFAULT_SEARCH_RESULT_LIMIT)
+    }
+
+    /// Text-only search under a [`ReadView`] with an explicit ranked-result limit.
+    pub fn search_text_only_view_with_limit(
+        &self,
+        query: &str,
+        view: &ReadView,
+        limit: usize,
+    ) -> Result<SearchResult, EngineError> {
+        let limit = validate_search_result_limit(limit)?;
         self.ensure_open()?;
         view.reject_existence_relaxation_on_search()?;
         if query.trim().is_empty() {
             return Err(EngineError::WriteValidation);
         }
         let compiled = compile_text_query(query);
-        let search_limit = self
-            .projection_runtime
-            .shared
-            .search_limit_override
-            .load(Ordering::SeqCst)
-            .max(SEARCH_RERANK_LIMIT);
+        let candidate_limit =
+            self.projection_runtime.shared.search_limit_override.load(Ordering::SeqCst).max(limit);
         let (response_tx, response_rx) = mpsc::sync_channel::<ReaderResponse>(1);
         // `query_vector = None` ⇒ `read_search_in_tx` skips the vector branch
         // entirely (no embed, no phase-1 bit-KNN, no phase-2 L2) and returns the
@@ -6372,7 +6505,8 @@ impl Engine {
             compiled,
             query_vector: None,
             query_vector_bin: None,
-            search_limit,
+            result_limit: limit,
+            candidate_limit,
             filter: None,
             recency_enabled: false,
             importance_enabled: false,
@@ -6418,18 +6552,31 @@ impl Engine {
         filter: Option<SearchFilter>,
         view: &ReadView,
     ) -> Result<SearchResult, EngineError> {
+        self.search_projected_text_with_limit(
+            query,
+            name,
+            filter,
+            view,
+            DEFAULT_SEARCH_RESULT_LIMIT,
+        )
+    }
+
+    /// Search one declared property-FTS projection with an explicit ranked-result limit.
+    pub fn search_projected_text_with_limit(
+        &self,
+        query: &str,
+        name: &str,
+        filter: Option<SearchFilter>,
+        view: &ReadView,
+        limit: usize,
+    ) -> Result<SearchResult, EngineError> {
+        let limit = validate_search_result_limit(limit)?;
         self.ensure_open()?;
         view.reject_existence_relaxation_on_search()?;
         if query.trim().is_empty() {
             return Err(EngineError::WriteValidation);
         }
 
-        let limit = self
-            .projection_runtime
-            .shared
-            .search_limit_override
-            .load(Ordering::SeqCst)
-            .max(SEARCH_RERANK_LIMIT);
         let (response_tx, response_rx) = mpsc::sync_channel(1);
         let request = ReaderRequest::SearchProjectedText {
             query: query.to_string(),
@@ -6493,6 +6640,7 @@ impl Engine {
         pool_n: usize,
         explain: bool,
         view: ReadView,
+        limit: usize,
     ) -> Result<SearchResult, EngineError> {
         // fix-2: refuse an existence-relaxing view BEFORE any work (and before the
         // Started event), so the refusal is a pure argument error rather than a
@@ -6509,6 +6657,7 @@ impl Engine {
             pool_n,
             explain,
             view,
+            limit,
         );
         self.detect_slow(started, lifecycle::EventCategory::Search);
         match outcome {
@@ -6734,6 +6883,7 @@ impl Engine {
         pool_n: usize,
         explain: bool,
         view: ReadView,
+        result_limit: usize,
     ) -> Result<SearchResult, EngineError> {
         self.search_inner_with_stats(
             query,
@@ -6744,6 +6894,7 @@ impl Engine {
             pool_n,
             explain,
             view,
+            result_limit,
         )
         .map(|(result, _stats)| result)
     }
@@ -6762,6 +6913,7 @@ impl Engine {
         pool_n: usize,
         explain: bool,
         view: ReadView,
+        result_limit: usize,
     ) -> Result<(SearchResult, GraphFrontierStats), EngineError> {
         self.ensure_open()?;
         // 0.8.18 Slice 5 (#5 vector-equivalence probe, R-VEQ-4) — the SINGLE
@@ -6839,15 +6991,15 @@ impl Engine {
             None => None,
         };
         let query_vector = raw_query_vector.and_then(|vector| serde_json::to_string(&vector).ok());
-        // 0.7.2 PR-2bc S1 fix-1 — phase-2 rerank LIMIT. Production default is
-        // `SEARCH_RERANK_LIMIT` (10); the test seam may RAISE it, clamped to
-        // the production floor so a test can never shrink search semantics.
-        let search_limit = self
+        // The public result limit is independent of the test-only vector
+        // candidate fanout. The seam may raise this fanout for recall tests,
+        // but the reader still truncates visible results to `result_limit`.
+        let candidate_limit = self
             .projection_runtime
             .shared
             .search_limit_override
             .load(Ordering::SeqCst)
-            .max(SEARCH_RERANK_LIMIT);
+            .max(result_limit);
         let recency_enabled =
             self.projection_runtime.shared.recency_reweight_enabled.load(Ordering::SeqCst);
         let importance_enabled =
@@ -6859,7 +7011,8 @@ impl Engine {
             compiled,
             query_vector,
             query_vector_bin,
-            search_limit,
+            result_limit,
+            candidate_limit,
             filter: filter.map(Box::new),
             recency_enabled,
             importance_enabled,
@@ -6918,8 +7071,18 @@ impl Engine {
         &self,
         query: &str,
     ) -> Result<GraphFrontierStats, EngineError> {
-        self.search_inner_with_stats(query, None, 0, true, 0.3, 0, false, ReadView::default())
-            .map(|(_result, stats)| stats)
+        self.search_inner_with_stats(
+            query,
+            None,
+            0,
+            true,
+            0.3,
+            0,
+            false,
+            ReadView::default(),
+            DEFAULT_SEARCH_RESULT_LIMIT,
+        )
+        .map(|(_result, stats)| stats)
     }
 
     /// Slice 30 (G2) — `read.get`: active-only point lookup by `logical_id`.
@@ -7032,6 +7195,19 @@ impl Engine {
         filter: Option<SearchFilter>,
         depth: u32,
     ) -> Result<SearchExpandResult, EngineError> {
+        self.search_expand_with_limit(query, filter, depth, DEFAULT_SEARCH_RESULT_LIMIT)
+    }
+
+    /// Hybrid search followed by graph expansion, with an explicit limit for
+    /// the initial ranked `search_hits` set.
+    pub fn search_expand_with_limit(
+        &self,
+        query: &str,
+        filter: Option<SearchFilter>,
+        depth: u32,
+        limit: usize,
+    ) -> Result<SearchExpandResult, EngineError> {
+        let limit = validate_search_result_limit(limit)?;
         self.ensure_open()?;
         if depth > 3 {
             return Err(EngineError::InvalidArgument {
@@ -7041,7 +7217,7 @@ impl Engine {
         // Step 1: run the hybrid search to get initial hits (no CE reranking in expand).
         // 0.8.5: depth=0 → no rerank, so α/pool_n (0.3, 0) are inert here.
         let search_result =
-            self.search_inner(query, filter, 0, false, 0.3, 0, false, ReadView::default())?;
+            self.search_inner(query, filter, 0, false, 0.3, 0, false, ReadView::default(), limit)?;
         if search_result.results.is_empty() {
             return Ok(SearchExpandResult {
                 search_hits: Vec::new(),
@@ -8101,13 +8277,11 @@ impl Engine {
         Ok(report)
     }
 
-    /// 0.7.2 PR-2bc S1 fix-1 test seam — RAISE the phase-2 rerank `LIMIT`
-    /// above the production `SEARCH_RERANK_LIMIT` (10) so the recall harness
-    /// can pull top-(10+slack) and exclude the self-retrieving query-source
-    /// doc before truncating to 10. The search path clamps the stored value
-    /// to the production floor, so a test can never shrink search fanout
-    /// below production semantics. Production reads the same atomic and never
-    /// consults any env var.
+    /// Test seam that raises vector-candidate fanout for recall tests.
+    ///
+    /// This does not alter the caller-requested final result limit or the
+    /// caller-visible result cardinality. Production uses the default and
+    /// never consults an environment variable.
     #[doc(hidden)]
     pub fn set_search_limit_for_test(&self, limit: usize) {
         self.projection_runtime.shared.search_limit_override.store(limit, Ordering::SeqCst);
@@ -9844,11 +10018,30 @@ pub const TOP_K_BIT_CANDIDATES: usize = 192;
 /// assert the value.
 pub const MEAN_VEC_PIN_THRESHOLD: u64 = 256;
 
-/// 0.7.2 PR-2bc S1 fix-1 — production phase-2 rerank `LIMIT` for engine
-/// search. This is the original hardcoded `LIMIT 10`; it is the default and
-/// the floor for `search_limit_override` (a test seam may RAISE it but never
-/// shrink it below this). There is NO env-var override on the hot path.
+/// Historical name for the public default ranked-result count (10).
+///
+/// Vector candidate fanout is separately at least the caller-requested result
+/// limit and `TOP_K_BIT_CANDIDATES`; the test seam may raise that fanout without
+/// changing visible result cardinality. There is no environment-variable
+/// override on the hot path.
 pub const SEARCH_RERANK_LIMIT: usize = 10;
+
+/// Default number of ranked hits returned by public retrieval APIs.
+pub const DEFAULT_SEARCH_RESULT_LIMIT: usize = SEARCH_RERANK_LIMIT;
+
+/// Largest ranked-hit count a public retrieval request may select.
+pub const MAX_SEARCH_RESULT_LIMIT: usize = 100;
+
+fn validate_search_result_limit(limit: usize) -> Result<usize, EngineError> {
+    if !(1..=MAX_SEARCH_RESULT_LIMIT).contains(&limit) {
+        return Err(EngineError::InvalidArgument {
+            msg: format!(
+                "search result limit must be an integer in 1..={MAX_SEARCH_RESULT_LIMIT}; got {limit}"
+            ),
+        });
+    }
+    Ok(limit)
+}
 
 /// EU-5a2 — streaming f64 accumulator for the mean-centering pipeline,
 /// per `dev/design/embedder.md` §0.3 (f64 chosen to bound numerical
@@ -11177,6 +11370,7 @@ fn read_search_in_tx(
     query_vector: Option<&str>,
     query_vector_bin: Option<&str>,
     final_limit: usize,
+    candidate_limit: usize,
     filter: Option<&SearchFilter>,
     recency_enabled: bool,
     importance_enabled: bool,
@@ -11231,14 +11425,12 @@ fn read_search_in_tx(
             // EU-5a2: ?1 is the (possibly centered) sign-quant input,
             // ?2 is the un-centered f32 for vec_distance_l2 — both sides
             // of the f32 cosine use un-centered vectors.
-            // PR-2bc S1 fix-1: the phase-2 rerank LIMIT is `SEARCH_RERANK_LIMIT`
-            // (10) in production. `final_limit` is supplied by the caller from
-            // `ProjectionRuntimeShared::search_limit_override` (default 10,
-            // clamped >=10) — there is NO env-var read on this hot path. A test
-            // seam (`set_search_limit_for_test`) may RAISE it so the recall
-            // harness can pull top-(10+slack) and exclude the self-retrieving
-            // query-source doc BEFORE truncating to 10 (standard ANN-recall
-            // practice); it can never shrink below production semantics.
+            // Slice 18: `final_limit` is the caller's public result limit
+            // (default 10, validated through the public API). `candidate_limit`
+            // controls only vector phase-2 fanout: the test-only
+            // `set_search_limit_for_test` seam may raise it for recall tests.
+            // The seam never changes `final_limit`; visible results are still
+            // truncated to that caller-requested limit after ranking.
             // G10: the metadata filter is appended to this single phase-1
             // statement (`AND col=?n` from ?3); `filter=None` keeps the SQL
             // byte-identical to 0.7.2. `?1`/`?2` are the sign-quant + f32 query
@@ -11271,10 +11463,9 @@ fn read_search_in_tx(
             // stops at `final_limit` SURVIVING hits, so the common case does
             // exactly as many hydration probes as before.
             //
-            // `max` (not a bare constant) because `set_search_limit_for_test`
-            // may raise `final_limit` above the pool for the recall harness;
-            // this must never request FEWER candidates than the caller wants.
-            let candidate_limit = final_limit.max(TOP_K_BIT_CANDIDATES);
+            // `max` (not a bare constant) preserves both the test seam's
+            // deeper candidate fanout and the caller's requested result limit.
+            let candidate_limit = candidate_limit.max(final_limit).max(TOP_K_BIT_CANDIDATES);
             let sql = build_vector_phase1_sql(filter, candidate_limit);
             let mut params: Vec<rusqlite::types::Value> = vec![
                 rusqlite::types::Value::Text(bin_vector.to_string()),
@@ -11459,6 +11650,13 @@ fn read_search_in_tx(
         } else {
             None
         };
+        // The FTS-only public path has no Rust-side metadata predicate: validity
+        // is in the SQL statement and `filter` is always `None`. Its ordered SQL
+        // limit is therefore truthful and bounds candidate collection without
+        // risking a filtered row consuming the caller's result budget. Hybrid
+        // search retains its full text ranking for RRF fusion and applies the
+        // public cutoff only after fusion below.
+        let fts_only_limit = query_vector.is_none().then_some(final_limit);
         // G1: SELECT body + kind + write_cursor (interim id) and the
         // `bm25()` text-relevance score. IR-C (2026-06-10,
         // `performance-output-and-compare.md`): the per-branch rank RRF fuses on
@@ -11468,7 +11666,8 @@ fn read_search_in_tx(
         // better, so ascending puts best matches first; `write_cursor` is the
         // deterministic tiebreak. The filter is applied as a Rust post-filter so
         // the unfiltered path is untouched.
-        let limit_clause = perf_limit.map(|k| format!(" LIMIT {k}")).unwrap_or_default();
+        let limit_clause =
+            fts_only_limit.or(perf_limit).map(|k| format!(" LIMIT {k}")).unwrap_or_default();
         // Cause-A: PREFER a logical_id-bearing query — LEFT JOIN canonical_nodes so
         // node hits carry the `l:`-tagged stable id. The join is 1:1 on
         // `write_cursor` (search_index holds node bodies only; edge bodies live in
@@ -11763,7 +11962,7 @@ fn read_search_in_tx(
     let mut exp_importance: Option<HashMap<u64, f64>> = None;
     let mut exp_confidence: Option<HashMap<u64, f64>> = None;
 
-    let results = if vector_stage_only {
+    let mut results = if vector_stage_only {
         vector_results
     } else if use_graph_arm {
         // R3 (Slice 30) — graph arm: BFS over temporal fact-edges seeded from
@@ -11845,6 +12044,8 @@ fn read_search_in_tx(
         }
         rerank_fused(raw_query, fused, rerank_depth, alpha, pool_n)
     };
+
+    results.truncate(final_limit);
 
     // 0.8.8 EXP-OBS — assemble the sidecar `Explanation` from the captured maps +
     // the final `results`. `embedder_id` is left empty here (the worker has no

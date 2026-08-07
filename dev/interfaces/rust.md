@@ -128,11 +128,14 @@ Rust exposes:
 
 - `Engine::open(...) -> Result<OpenedEngine, EngineOpenError>`
 - `Engine::write(...) -> Result<WriteReceipt, EngineError>`
-- `Engine::search(...) -> Result<SearchResult, EngineError>`
+- `Engine::search(...) -> Result<SearchResult, EngineError>` — defaults to 10 ranked hits.
+- `Engine::search_with_limit(query, limit) -> Result<SearchResult, EngineError>` — `limit` is
+  `1..=100`; out-of-range values return `EngineError::InvalidArgument`.
 - `Engine::search_explained(...) -> Result<SearchResult, EngineError>` — 0.8.8
   EXP-OBS: same retrieval as `search_reranked`, additionally returning the opt-in
   `Explanation` sidecar (`SearchResult.explanation`); default paths are unchanged.
-- `Engine::search_text_only(&self, query: &str) -> Result<SearchResult, EngineError>`
+- `Engine::search_text_only(&self, query: &str) -> Result<SearchResult, EngineError>` — default 10.
+- `Engine::search_text_only_with_limit(query, limit) -> Result<SearchResult, EngineError>`
 - `Engine::close(...) -> Result<(), EngineError>`
 
 ### Read verbs
@@ -156,6 +159,8 @@ has no existence or validity axis.
 - `Engine::graph_neighbors(&self, ..., view: &ReadView) -> Result<Vec<NodeRecord>, EngineError>`
 - `Engine::search_expand(&self, query: &str, filter: Option<SearchFilter>, depth: u32) ->
   Result<SearchExpandResult, EngineError>`
+- `Engine::search_expand_with_limit(query, filter, depth, limit) -> Result<SearchExpandResult,
+  EngineError>` — limits only initial ranked `search_hits`; expansion remains capped at 50 per root.
 
 ### Lifecycle + erasure verbs (0.8.19 Slice 10 / 0.8.20 Slice 5d)
 
@@ -424,6 +429,11 @@ row-set, the `bm25()` ordering and the scores byte-unchanged.
   full-arity form the Python/TS `view=` bindings call, so a caller can combine a
   content filter, the CE knobs and a validity view in one query.
 - `Engine::search_text_only_view(query, &ReadView) -> Result<SearchResult, EngineError>`
+- `Engine::search_view_with_limit(query, &ReadView, limit) -> Result<SearchResult, EngineError>`
+- `Engine::search_reranked_view_with_limit(query, filter, rerank_depth, use_graph_arm, alpha,
+  pool_n, explain, &ReadView, limit) -> Result<SearchResult, EngineError>`
+- `Engine::search_text_only_view_with_limit(query, &ReadView, limit) -> Result<SearchResult,
+  EngineError>`
 
 `search_reranked(q, f, d, g, a, p)` is exactly
 `search_reranked_view(q, f, d, g, a, p, false, &ReadView::default())`.
@@ -737,17 +747,18 @@ counter or incur its extra comparison.
   attribute filters; orders by ascending FTS5 `bm25` then write cursor; returns
   `branch=Text`, `soft_fallback=None`, and no explanation. It never body-scans,
   embeds, or fuses with body/vector retrieval.
+- `Engine::search_projected_text_with_limit(query, name, filter, &ReadView, limit) ->
+  Result<SearchResult, EngineError>` has the same semantics with an explicit `1..=100` limit.
 
-## Planned Slice 18 — ranked result limits (not yet shipped)
+## Ranked result limits (0.8.22 Slice 18)
 
-The accepted 0.8.22 contract is in `design/retrieval-result-limits.md`. Every
-ranked search family will default to 10 returned hits and support an explicit
-limit in `1..=100`; an out-of-range value will return `EngineError::InvalidArgument`.
-The affected families are hybrid search (and its view/filter/rerank/explain
-forms), `search_text_only`, `search_projected_text`, and the `search_hits` part
-of `search_expand`. Rust retains a default-ten convenience form and gains an
-explicit-limit form; the implemented symbol spellings replace this planned note
-when Slice 18 lands. `graph_neighbors` remains separately capped at 50.
+Every ranked search family defaults to 10 returned hits. The explicit `*_with_limit`
+forms accept only `1..=100`; an out-of-range value returns `EngineError::InvalidArgument`
+and is never silently clamped. The hybrid family also exposes
+`search_filtered_with_limit`, `search_filter_with_limit`, `search_reranked_with_limit`, and
+`search_explained_with_limit`. Vector candidate fanout is at least the requested limit; the
+private test seam can only raise candidate fanout, never public result cardinality.
+`graph_neighbors` remains separately capped at 50.
 
 ## Errors
 

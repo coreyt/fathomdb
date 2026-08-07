@@ -1307,7 +1307,7 @@ impl PyEngine {
     #[pyo3(
         signature = (query, source_type=None, kind=None, created_after=None,
                      status=None, rerank_depth=0, use_graph_arm=false,
-                     alpha=None, pool_n=None, explain=false, attributes=None, view=None)
+                     alpha=None, pool_n=None, explain=false, attributes=None, view=None, limit=10)
     )]
     fn search(
         &self,
@@ -1342,6 +1342,7 @@ impl PyEngine {
         // `InvalidArgumentError`), never silently ignored — see
         // `Engine::search_view`.
         view: Option<&PyReadView>,
+        limit: usize,
     ) -> PyResult<PySearchResult> {
         validate_ffi_string_py(query)?;
         // G10 filter strings cross the FFI exactly like `query` and the write
@@ -1396,7 +1397,7 @@ impl PyEngine {
         // `explain` is a parameter of it, so the explain/non-explain split no
         // longer duplicates the argument list (and cannot drift on `view`).
         let result = call_engine(py, move || {
-            engine.search_reranked_view(
+            engine.search_reranked_view_with_limit(
                 &query,
                 filter,
                 rerank_depth,
@@ -1405,13 +1406,14 @@ impl PyEngine {
                 pool_n,
                 explain,
                 &view,
+                limit,
             )
         })?;
         Ok(PySearchResult::from_rust(result))
     }
 
     /// Lexically search exactly one declared `searchable→FTS` projection.
-    #[pyo3(signature = (query, name, source_type=None, kind=None, created_after=None, status=None, attributes=None, view=None))]
+    #[pyo3(signature = (query, name, source_type=None, kind=None, created_after=None, status=None, attributes=None, view=None, limit=10))]
     #[allow(clippy::too_many_arguments)]
     fn search_projected_text(
         &self,
@@ -1424,6 +1426,7 @@ impl PyEngine {
         status: Option<Bound<'_, PyAny>>,
         attributes: Option<Vec<(String, String)>>,
         view: Option<&PyReadView>,
+        limit: usize,
     ) -> PyResult<PySearchResult> {
         validate_ffi_string_py(query)?;
         validate_ffi_string_py(name)?;
@@ -1455,8 +1458,9 @@ impl PyEngine {
         let engine = Arc::clone(&self.inner);
         let query = query.to_string();
         let name = name.to_string();
-        let result =
-            call_engine(py, move || engine.search_projected_text(&query, &name, filter, &view))?;
+        let result = call_engine(py, move || {
+            engine.search_projected_text_with_limit(&query, &name, filter, &view, limit)
+        })?;
         Ok(PySearchResult::from_rust(result))
     }
 
@@ -1467,18 +1471,20 @@ impl PyEngine {
     /// only (no vector recall, no CE rerank, no graph arm).
     ///
     /// 0.8.20 Slice 15b fix-2 — takes the same optional `view` as `search`.
-    #[pyo3(signature = (query, view=None))]
+    #[pyo3(signature = (query, view=None, limit=10))]
     fn search_text_only(
         &self,
         py: Python<'_>,
         query: &str,
         view: Option<&PyReadView>,
+        limit: usize,
     ) -> PyResult<PySearchResult> {
         validate_ffi_string_py(query)?;
         let engine = Arc::clone(&self.inner);
         let query = query.to_string();
         let view = read_view_or_default(view);
-        let result = call_engine(py, move || engine.search_text_only_view(&query, &view))?;
+        let result =
+            call_engine(py, move || engine.search_text_only_view_with_limit(&query, &view, limit))?;
         Ok(PySearchResult::from_rust(result))
     }
 
@@ -2327,7 +2333,7 @@ fn crossed_boundary_since(
 /// plus expanded nodes reachable by traversal that are not already in the hit set.
 #[pyfunction]
 #[pyo3(
-    signature = (engine, query, depth, source_type=None, kind=None, created_after=None, status=None)
+    signature = (engine, query, depth, source_type=None, kind=None, created_after=None, status=None, search_limit=10)
 )]
 #[allow(clippy::too_many_arguments)]
 fn search_expand(
@@ -2339,6 +2345,7 @@ fn search_expand(
     kind: Option<Bound<'_, PyAny>>,
     created_after: Option<i64>,
     status: Option<Bound<'_, PyAny>>,
+    search_limit: usize,
 ) -> PyResult<PySearchExpandResult> {
     let query = extract_validated_str(query)?;
     // Use extract_opt_validated_str (same path as Engine.search) so lone UTF-16
@@ -2360,7 +2367,9 @@ fn search_expand(
             None
         };
     let inner = Arc::clone(&engine.inner);
-    let result = call_engine(py, move || inner.search_expand(&query, filter, depth))?;
+    let result = call_engine(py, move || {
+        inner.search_expand_with_limit(&query, filter, depth, search_limit)
+    })?;
     Ok(PySearchExpandResult::from_rust(result))
 }
 

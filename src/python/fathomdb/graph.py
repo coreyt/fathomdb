@@ -114,6 +114,7 @@ def search_expand(
     kind: str | None = None,
     created_after: int | None = None,
     status: str | None = None,
+    search_limit: int = 10,
 ) -> SearchExpandResult:
     """G6 — FTS/vector search followed by bounded BFS expansion.
 
@@ -153,6 +154,16 @@ def search_expand(
         raise InvalidArgumentError(
             f"graph.search_expand depth must be a non-negative integer; got {depth!r}"
         )
+    if not isinstance(search_limit, int) or isinstance(search_limit, bool):
+        raise TypeError(
+            "graph.search_expand search_limit must be an integer in 1..=100, "
+            f"got {type(search_limit).__name__!r}"
+        )
+    if not 1 <= search_limit <= 100:
+        raise InvalidArgumentError(
+            "graph.search_expand search_limit must be an integer in 1..=100, "
+            f"got {search_limit!r}"
+        )
     native_result = _native_search_expand(
         engine._native,
         query,
@@ -161,6 +172,7 @@ def search_expand(
         kind,
         created_after,
         status,
+        search_limit,
     )
     search_hits = [_to_search_hit(hit) for hit in native_result.search_hits]
     expanded = [

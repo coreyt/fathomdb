@@ -125,7 +125,7 @@ receipt = engine.write([
   pointing at a non-existent or superseded node — see
   [`WriteReceipt`](#writereceipt).
 
-### `engine.search(query, filter=None, *, rerank_depth=0, use_graph_arm=False, alpha=None, pool_n=None) -> SearchResult`
+### `engine.search(query, filter=None, *, rerank_depth=0, use_graph_arm=False, alpha=None, pool_n=None, limit=10) -> SearchResult`
 
 Run hybrid retrieval (FTS5 + vector) for `query`, ranked by **G9 RRF fusion**,
 with optional CPU cross-encoder reranking (0.8.1 R1) and optional graph-BFS
@@ -158,6 +158,9 @@ third arm (0.8.1 R3).
   clamped to the hit count. `None` ⇒ `rerank_depth` (preserves the prior
   pool == depth semantics). Note `rerank_depth == 0` is still the identity gate,
   so `rerank_depth=0, pool_n=10` does **not** rerank.
+- `limit` (`int`, default `10`) — maximum ranked hits returned. It must be in
+  `1..=100`; zero, negative values, and values above 100 raise
+  `InvalidArgumentError` and are never silently clamped.
 - Returns: `SearchResult(projection_cursor: int, soft_fallback:
   SoftFallback | None, results: list[SearchHit])`. Each
   [`SearchHit`](#searchhit) carries the matched record's `id`, `kind`,
@@ -170,6 +173,18 @@ third arm (0.8.1 R3).
 > two branches agree on ranks above one only a single branch found. This is the
 > deliberate, documented 0.8.0 ranking change; pre-0.8.0 union-dedup ordering is
 > not retained. See [hybrid search guide](../guides/hybrid-search-filtering.md).
+
+### `engine.search_text_only(query, view=None, *, limit=10) -> SearchResult`
+
+Run node-body FTS retrieval without embedding, vector retrieval, fusion, or
+reranking. `limit` has the same `1..=100` validation and default of 10 as
+`engine.search`; it is applied after the validity predicate.
+
+### `engine.search_projected_text(query, name, filter=None, *, view=None, limit=10) -> SearchResult`
+
+Search exactly one declared `SEARCHABLE` property-FTS projection. `limit` has
+the same `1..=100` validation and default of 10; metadata and validity filters
+are applied before retained hits consume that result budget.
 
 ### `engine.embed(text: str) -> list[float]`
 
@@ -382,7 +397,7 @@ Returns up to **50** `NodeRecord`s reachable within `depth` hops
 
 Raises `InvalidArgumentError` for depth > 3 or an unrecognised direction.
 
-### `graph.search_expand(engine, query, depth, *, source_type=None, kind=None, created_after=None, status=None) -> SearchExpandResult`
+### `graph.search_expand(engine, query, depth, *, source_type=None, kind=None, created_after=None, status=None, search_limit=10) -> SearchExpandResult`
 
 G6 — FTS/vector search (G1) followed by bounded BFS expansion.
 
@@ -390,6 +405,8 @@ G6 — FTS/vector search (G1) followed by bounded BFS expansion.
 - `depth` (`int`) — BFS hop limit for expansion; 0 skips expansion.
   Depth > 3 raises `InvalidArgumentError`.
 - Optional filter kwargs match `engine.search` semantics.
+- `search_limit` (`int`, default `10`) — maximum initial ranked `search_hits`,
+  in `1..=100`. It does not change the 50-per-root graph expansion cap.
 
 Returns a `SearchExpandResult`. Nodes that appear in both the search hit set
 and the traversal reach appear **only** in `search_hits` (deduplication:
