@@ -695,6 +695,16 @@ enumerate history.
 These are ARGUMENTS, not new verbs — the governed command surface
 (`src/conformance/governed-surface-allowlist.json`) is unchanged.
 
+## Planned Slice 18 — ranked result limits (not yet shipped)
+
+The accepted 0.8.22 contract in `design/retrieval-result-limits.md` adds an
+optional `limit` field, defaulting to 10, to the public options for `search`,
+`searchTextOnly`, and `searchProjectedText`. `graph.searchExpand` receives an
+optional `searchLimit` field with the same default. Each accepts `1..=100`; an
+out-of-range request rejects with `InvalidArgumentError` rather than silently
+clamping. `graph.neighbors` retains its separate 50-result traversal cap. These
+fields are planned, not callable, until Slice 18 lands.
+
 ## Nested-source projections (0.8.21 Slice 60)
 
 `ProjectionSpec.source?: string[] | null` is a literal canonical-body member

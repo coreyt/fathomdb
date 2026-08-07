@@ -738,6 +738,17 @@ counter or incur its extra comparison.
   `branch=Text`, `soft_fallback=None`, and no explanation. It never body-scans,
   embeds, or fuses with body/vector retrieval.
 
+## Planned Slice 18 — ranked result limits (not yet shipped)
+
+The accepted 0.8.22 contract is in `design/retrieval-result-limits.md`. Every
+ranked search family will default to 10 returned hits and support an explicit
+limit in `1..=100`; an out-of-range value will return `EngineError::InvalidArgument`.
+The affected families are hybrid search (and its view/filter/rerank/explain
+forms), `search_text_only`, `search_projected_text`, and the `search_hits` part
+of `search_expand`. Rust retains a default-ten convenience form and gains an
+explicit-limit form; the implemented symbol spellings replace this planned note
+when Slice 18 lands. `graph_neighbors` remains separately capped at 50.
+
 ## Errors
 
 Rust exposes typed open/runtime errors without message parsing:

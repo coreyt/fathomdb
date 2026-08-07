@@ -13,12 +13,13 @@
     {"slice": 12, "short": "DOC-BASELINE", "title": "current-authority and document-debt inventory via the two-phase repo-prune classifier", "depends_on": [10], "status": "LANDED", "design_refs": ["dev/plans/plan-0.8.21.md"], "sha": "72a83049", "merge_subject": "docs(prune): record Slice 12 verification", "evidence": "Candidate measurement/run record landed as 26e69288 plus 72a83049. context-clarity, markdown lint, and diff check passed; independent review passed after verification evidence was made durable. Phase 2 cleanup remains unauthorized."},
     {"slice": 17, "short": "SCALE-PROTOCOL", "title": "pre-register the 0.8.23 scale-bound measurement protocol without running it", "depends_on": [5, 12], "status": "LANDED", "design_refs": ["dev/plans/0.8.6-0.8.16-PROGRAM-SEQUENCING.md"], "sha": "5a7f2484", "merge_subject": "docs(0.8.22): clarify scale protocol samples", "evidence": "Protocol/run record landed as 2c78b77d plus 5a7f2484. Markdown lint, design-status lint, and diff checks passed; independent review passed after treatment-specific sufficiency, corpus-survey exclusion, and two-phase-path terminology were corrected. No benchmark ran and no scale claim was made."},
     {"slice": 15, "short": "NATIVE-CI", "title": "native build, validation, and wheel-size matrix", "depends_on": [10], "status": "LANDED", "design_refs": ["dev/design/release.md", "dev/design/bindings.md"], "sha": "13341688fca3d02d11c10bb10eb26232156f8032", "merge_subject": "Merge pull request #201 from coreyt/integrate/0.8.22-eval-supporting-coverage-20260806", "evidence": "PR #201 merged at this SHA after CI run #31186535382 passed the full heavy verifier, all five native runtime validations (Linux x64/ARM64, macOS x64/ARM64, Windows x64), and all five wheel-size gates. Local Linux x64 artifact smoke and an independent adversarial review also passed. No registry publish or registry smoke occurred."},
-    {"slice": 20, "short": "PUBLISH", "title": "ordered platform publication and registry smokes", "depends_on": [15], "status": "NOT_STARTED", "design_refs": ["dev/design/release.md", "dev/design/bindings.md"]},
+    {"slice": 18, "short": "RETRIEVAL-LIMITS", "title": "ranked retrieval result limits and SDK parity", "depends_on": [15], "status": "NOT_STARTED", "design_refs": ["dev/design/retrieval-result-limits.md", "dev/interfaces/rust.md", "dev/interfaces/python.md", "dev/interfaces/typescript.md"]},
+    {"slice": 20, "short": "PUBLISH", "title": "ordered platform publication and registry smokes", "depends_on": [15, 18], "status": "NOT_STARTED", "design_refs": ["dev/design/release.md", "dev/design/bindings.md"]},
     {"slice": 25, "short": "PROMOTE", "title": "next-to-latest promotion after every smoke", "depends_on": [20], "status": "NOT_STARTED", "design_refs": ["dev/design/release.md"]}
   ],
   "landed": [0, 5, 10, 12, 15, 17],
-  "next_slice": 20,
-  "remaining_ladder": [20, 25],
+  "next_slice": 18,
+  "remaining_ladder": [18, 20, 25],
   "generated_views": [
     {"id": "plan-landed-roll-up", "file": "dev/plans/plan-0.8.22.md", "location": "Landed release state", "renders": "every landed slice + its landing SHA, the SCHEMA version, and the remaining ladder"},
     {"id": "plan-immediate-next", "file": "dev/plans/plan-0.8.22.md", "location": "Immediate next slice", "renders": "the next commissioned slice and remaining ladder"},
