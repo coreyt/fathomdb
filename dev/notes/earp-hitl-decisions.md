@@ -88,7 +88,29 @@ HITL approval.
   preconditions (paired immutable query IDs, declared strata, fixed CI method
   and seed, predeclared power conditions).
 
-## D-5 · Metric depth (K) and evaluation fanout
+## D-5 · Metric depth (K) and evaluation fanout — RETIRED 2026-08-07
+
+**HITL ruling (2026-08-07): D-5 is retired as overtaken by events.** 0.8.22
+Slice 18 ("bound ranked retrieval results", `c7779a76`, merged to `main` and
+into this branch at `44f727a6`) delivered the D-5.2 fanout-control slice: every
+search verb now takes a public `limit` (default `DEFAULT_SEARCH_RESULT_LIMIT`
+= 10, refused outside `1..=MAX_SEARCH_RESULT_LIMIT` = 100 with a typed error),
+wired Rust → Python → TypeScript. This retires the whole section below — the
+depth table, the 2026-08-06 `search_projected_text` correction (which was
+correct against the pre-Slice-18 engine and needs no separate confirmation),
+and the pending D-5.2 commissioning.
+
+**Successor rule (implemented by the limit-adoption slice):** `@K` is valid
+for **any** retrieval mode when `K ≤ limit ≤ 100` and the limit used is
+recorded in the sidecar with every number; `K > limit` is a typed refusal.
+Mode is still derived from `(call, use_default_embedder)`, and D-5.3 stands:
+`set_search_limit_for_test` remains unexported — the public `limit` replaces
+it. Hybrid's text branch still ranks fully before the post-fusion cutoff, so
+hybrid cost is characterized separately.
+
+The section below is retained verbatim as the historical record.
+
+### Historical (pre-Slice-18) ruling
 
 **Ruling.** The K-ladder problem is real for **vector and hybrid** retrieval
 only. Two nuances correct the blunt reading:
