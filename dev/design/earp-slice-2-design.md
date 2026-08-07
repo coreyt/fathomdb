@@ -224,6 +224,18 @@ now but cannot be **closed** until that branch lands — otherwise the port is
 parity with a reference state that is not on the mainline. The drift detector
 makes the skew visible rather than silent.
 
+**CLOSED 2026-08-07.** The fix (`19765415`, `4d478daa`) is on `main` and was
+merged into this branch at `44f727a6`. The drift detector's skip is gone:
+`ir_eval.rs` hashes to `REFERENCE_SHA256_POSTFIX`, and
+`test_metrics_parity.py` passes 41/41 with zero skips against the rebuilt
+worktree binding (fathomdb 0.8.22). All four slice gates are satisfied.
+
+**Amendment (2026-08-07):** invariant 7 above ("K > 10 is refused for
+vector-only and hybrid") describes the pre-Slice-18 engine and is retired with
+D-5 (see `dev/notes/earp-hitl-decisions.md`). `check_depth` remains correct as
+S2 shipped it; its successor rule (K ≤ recorded `limit` ≤ 100 for every mode)
+is owned by the limit-adoption slice, not by a reopened S2.
+
 ## Review
 
 Independent code-grounded review, 2026-08-06. Verdict: **proceed with specified
