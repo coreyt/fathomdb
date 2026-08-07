@@ -204,6 +204,32 @@
         "fixture": {
           "type": "string",
           "description": "Path to a human-authored fixture (JSONL of write items). Required for a diagnostic campaign, which has no corpus and no gold."
+        },
+        "answer_arm": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "max_queries"
+          ],
+          "description": "S9. The opt-in priced answer arm, behind the enforced D-3 budget gate. Declaring it REQUIRES a `budget` block (resolver-collected): a priced arm without a declared worst case cannot be projected against the ceiling.",
+          "properties": {
+            "kind": {
+              "enum": [
+                "r2_identical_answerer"
+              ],
+              "description": "The only commissioned priced adapter: the r2_parity_eval identical-answerer protocol (R2_RUN + R2_ANSWERER_*), scored by its own $0 PerClassScorer. Mem0/extractor/GPU arms are catalog UNSUPPORTED entries; commissioning them is an HITL scope decision."
+            },
+            "answerer_model": {
+              "type": "string",
+              "description": "REQUIRED (resolver-collected) whenever a decision_rule or comparison consumes answer_accuracy: config_sha256 covers this document, so an env-defaulted model would let two different-model runs share a sha and poison S8 pairing/replay. The R2_ANSWERER_MODEL env default is permitted only for claim-free characterizations, and the sidecar marks the resolved value env-resolved."
+            },
+            "max_queries": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "REQUIRED: bounds the priced call count, and the preflight cross-check multiplies by it — gate 1 has no meaning without it."
+            }
+          }
         }
       }
     },

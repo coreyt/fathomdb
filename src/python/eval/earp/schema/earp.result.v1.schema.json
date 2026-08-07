@@ -531,9 +531,10 @@
             "search_result",
             "store_query",
             "write_receipt",
-            "filesystem"
+            "filesystem",
+            "answer_arm"
           ],
-          "description": "Not interchangeable: vector_dense_readiness comes only from read_projections, vector_unsupported_kinds only from projection_delta, dense_disabled only from open_report."
+          "description": "Not interchangeable: vector_dense_readiness comes only from read_projections, vector_unsupported_kinds only from projection_delta, dense_disabled only from open_report. answer_arm (S9) carries the visible-skip witness, the cheap-validate witness, and the ledger-preflight witness — one source, three named witnesses."
         },
         "call_path": {
           "type": "string"

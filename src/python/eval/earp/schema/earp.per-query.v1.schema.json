@@ -15,7 +15,11 @@
     "query_class": {
       "enum": ["commitment", "action", "exact_fact", "preference", "exploratory", "negative"]
     },
-    "k": { "type": "integer", "minimum": 1 },
+    "k": {
+      "type": ["integer", "null"],
+      "minimum": 1,
+      "description": "The K rung for retrieval rows; null EXACTLY for answer-arm rows (S9), whose outcome is K-independent. Additive-nullable, same no-bump rule."
+    },
     "outcome": { "enum": ["scored", "skipped", "blocked", "error"] },
     "reason": {
       "type": ["string", "null"],
@@ -49,6 +53,19 @@
     "arm": {
       "type": "string",
       "description": "S8. The arm this row was measured under (comparison/sweep campaigns only; absent for single-scenario campaigns)."
+    },
+    "answer_outcome": {
+      "enum": ["correct", "incorrect", "abstained_miss", "false_positive", "correct_abstention"],
+      "description": "S9 answer-arm rows only. PerClassScorer semantics: correct/correct_abstention score 1.0; incorrect, abstained_miss (abstention against a positive), and false_positive (an answered negative) score 0.0. Never folded into a retrieval recall denominator."
+    },
+    "answer_text_sha": {
+      "type": ["string", "null"],
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "S9. sha256 of the (normalized) answer text; null when the answerer abstained. The text itself never lands in the sidecar."
+    },
+    "answer_reason": {
+      "type": ["string", "null"],
+      "description": "S9. Populated on non-scored answer rows (error/halt); null on scored ones."
     }
   },
   "allOf": [

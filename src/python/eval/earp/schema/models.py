@@ -104,6 +104,10 @@ class WitnessSource(str, Enum):
     #: reads: the enum's docstring warns these are not interchangeable.
     WRITE_RECEIPT = "write_receipt"
     FILESYSTEM = "filesystem"
+    #: S9 — the priced answer arm. One source, three named witnesses: the
+    #: visible-skip witness (D-2), the cheap-validate witness, and the
+    #: ledger-preflight witness (D-3).
+    ANSWER_ARM = "answer_arm"
 
 
 class WitnessStatus(str, Enum):

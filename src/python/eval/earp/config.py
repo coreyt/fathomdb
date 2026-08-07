@@ -96,6 +96,10 @@ METRIC_NAMES: Mapping[str, str] = {
     "graded_evidence_recall": "per_k",
     "supporting_coverage": "per_k",
     "abstention_rate": "k_free",
+    #: S9 -- arm-implied, never config-requested: it lands in the result's
+    #: free-keyed `metrics.document_metrics` map and emits ONLY from the
+    #: declared answer arm's outcomes.
+    "answer_accuracy": "k_free",
     "mrr": "never",
     "ndcg": "never",
 }
@@ -117,6 +121,14 @@ def _diagnostic_only(doc: Mapping[str, Any]) -> bool:
     takes its text from `GoldQuery.query`, so carrying either would be a
     declaration the run must silently ignore."""
     return doc.get("campaign") == "diagnostic"
+
+
+def _not_diagnostic(doc: Mapping[str, Any]) -> bool:
+    """A diagnostic runs without gold, so an answer arm has no ground truth to
+    score against; carrying one would be a declaration the run must silently
+    ignore. (Arm-INTERNAL answer arms are refused separately in
+    `_resolve_arms`: multi-arm priced execution is an HITL scope decision.)"""
+    return doc.get("campaign") != "diagnostic"
 
 
 def _comparison_only(doc: Mapping[str, Any]) -> bool:
@@ -160,6 +172,12 @@ CONSUMER_REGISTRY: Mapping[str, Consumer] = {
     "scenario.projections.declare": Consumer("S7"),
     "scenario.projections.readiness_timeout_s": Consumer("S7"),
     "scenario.fixture": Consumer("S5", _diagnostic_only),
+    # FOUR registrations: `declared_paths` yields the object node itself plus
+    # its three children (the S7/S8 lesson, enumerated at implementation time).
+    "scenario.answer_arm": Consumer("S9", _not_diagnostic),
+    "scenario.answer_arm.kind": Consumer("S9", _not_diagnostic),
+    "scenario.answer_arm.answerer_model": Consumer("S9", _not_diagnostic),
+    "scenario.answer_arm.max_queries": Consumer("S9", _not_diagnostic),
     "scenario.query": Consumer("S3"),
     "scenario.query.call": Consumer("S3"),
     "scenario.query.text": Consumer("S5", _diagnostic_only),
@@ -199,6 +217,18 @@ CONSUMER_REGISTRY: Mapping[str, Consumer] = {
 
 
 @dataclass(frozen=True)
+class ResolvedAnswerArm:
+    """The declared priced answer arm (S9). `answerer_model` is None exactly
+    when the config left it to the `R2_ANSWERER_MODEL` env default -- legal
+    only for claim-free runs (resolver-enforced), and the sidecar marks the
+    resolved value `env-resolved`."""
+
+    kind: str
+    max_queries: int
+    answerer_model: str | None = None
+
+
+@dataclass(frozen=True)
 class ResolvedScenario:
     campaign: CampaignKind
     config_sha256: str
@@ -222,6 +252,8 @@ class ResolvedScenario:
     projections: tuple[DeclaredProjection, ...] = ()
     #: S7 -- bound on the `read.projections()` readiness poll.
     readiness_timeout_s: float = 30.0
+    #: S9 -- the declared priced answer arm, or None.
+    answer_arm: ResolvedAnswerArm | None = None
 
 
 @dataclass(frozen=True)
@@ -274,11 +306,21 @@ def schema_paths() -> tuple[str, ...]:
     return tuple(declared_paths(_SCHEMA))
 
 
-def emits(name: str, *, evidence_recall_k: tuple[int, ...], has_negatives: bool) -> bool:
+def emits(
+    name: str,
+    *,
+    evidence_recall_k: tuple[int, ...],
+    has_negatives: bool,
+    has_answer_arm: bool = False,
+) -> bool:
     """Whether a campaign can emit the named metric.
 
     Grammar: `<metric>@<k>`. `@k` is REQUIRED for the three per-K names, since
     only `metrics.per_k` is K-keyed, and FORBIDDEN for the rest.
+
+    The `k_free` branch dispatches PER METRIC (S9): `answer_accuracy` keys on
+    the declared answer arm, NOT on `has_negatives` -- that coupling belongs to
+    `abstention_rate` alone.
     """
     base, _, suffix = name.partition("@")
     kind = METRIC_NAMES.get(base)
@@ -293,7 +335,11 @@ def emits(name: str, *, evidence_recall_k: tuple[int, ...], has_negatives: bool)
         if not suffix.isdigit():
             return False
         return int(suffix) in evidence_recall_k
-    return suffix == "" and has_negatives
+    if suffix != "":
+        return False
+    if base == "answer_accuracy":
+        return has_answer_arm
+    return has_negatives
 
 
 def _blocker(code: BlockerCode, message: str, path: str) -> Blocker:
@@ -431,6 +477,61 @@ def resolve_config(doc: Mapping[str, Any]) -> ConfigResolution:
 
     call = query.get("call")
     use_default_embedder = bool(engine.get("use_default_embedder", False))
+
+    # --- S9: the priced answer arm's collected couplings. -------------------
+    answer_arm_doc = _mapping(scenario, "answer_arm")
+    has_answer_arm = "answer_arm" in scenario
+    if has_answer_arm and "budget" not in doc:
+        blockers.append(
+            _blocker(
+                BlockerCode.CONFIG_MISSING_KEY,
+                (
+                    "`scenario.answer_arm` declares a priced arm, which requires "
+                    "`budget.estimated_usd`: without a declared worst case the "
+                    "cumulative D-3 projection cannot be computed"
+                ),
+                "budget",
+            )
+        )
+    if has_answer_arm and "answerer_model" not in answer_arm_doc:
+        # Explicit-in-config whenever a claim consumes answer_accuracy:
+        # config_sha256 covers the document, so an env-defaulted model would
+        # let two different-model runs share a sha and poison pairing/replay.
+        claim_docs = (doc.get("decision_rule"), doc.get("comparison"))
+        if any(
+            isinstance(claim, dict) and claim.get("metric") == "answer_accuracy"
+            for claim in claim_docs
+        ):
+            blockers.append(
+                _blocker(
+                    BlockerCode.CONFIG_MISSING_KEY,
+                    (
+                        "a decision_rule/comparison consumes `answer_accuracy`, so "
+                        "`answerer_model` must be explicit in the config (config "
+                        "identity: an env-defaulted model would let two "
+                        "different-model runs share a config_sha256); the "
+                        "R2_ANSWERER_MODEL env default is legal only for "
+                        "claim-free runs"
+                    ),
+                    "scenario.answer_arm.answerer_model",
+                )
+            )
+    resolved_answer_arm: ResolvedAnswerArm | None = None
+    if has_answer_arm:
+        arm_kind = answer_arm_doc.get("kind")
+        arm_max_queries = answer_arm_doc.get("max_queries")
+        arm_model = answer_arm_doc.get("answerer_model")
+        if (
+            arm_kind == "r2_identical_answerer"
+            and isinstance(arm_max_queries, int)
+            and not isinstance(arm_max_queries, bool)
+            and arm_max_queries >= 1
+        ):
+            resolved_answer_arm = ResolvedAnswerArm(
+                kind=arm_kind,
+                max_queries=arm_max_queries,
+                answerer_model=arm_model if isinstance(arm_model, str) and arm_model else None,
+            )
 
     # --- S7: the projection matrix is validated BEFORE it is run. -----------
     projections_doc = _mapping(scenario, "projections")
@@ -640,7 +741,12 @@ def resolve_config(doc: Mapping[str, Any]) -> ConfigResolution:
     if isinstance(rule_doc, dict) and isinstance(rule_doc.get("metric"), str):
         metric = rule_doc["metric"]
         has_negatives = True  # gold-dependent; S6 re-checks against real gold
-        if not emits(metric, evidence_recall_k=ladder, has_negatives=has_negatives):
+        if not emits(
+            metric,
+            evidence_recall_k=ladder,
+            has_negatives=has_negatives,
+            has_answer_arm=has_answer_arm,
+        ):
             blockers.append(
                 _blocker(
                     BlockerCode.CONFIG_INVALID_VALUE,
@@ -713,6 +819,7 @@ def resolve_config(doc: Mapping[str, Any]) -> ConfigResolution:
             carried_paths=frozenset(carried),
             projections=tuple(declared_projections),
             readiness_timeout_s=readiness_timeout_s,
+            answer_arm=resolved_answer_arm,
         )
     )
 
@@ -781,6 +888,24 @@ def _resolve_arms(doc: Mapping[str, Any], blockers: list[Blocker]) -> tuple[Reso
         scenario_raw = arm.get("scenario")
         if not isinstance(scenario_raw, dict):
             continue  # the walker already recorded the missing/mistyped scenario
+        if "answer_arm" in scenario_raw:
+            # S9's money gate is single-scenario, deliberately: a per-arm
+            # priced arm multiplies the priced call count by the arm count,
+            # and commissioning that spend shape is an HITL scope decision.
+            # Refused typed here -- the synthesized per-arm document reads as
+            # a characterization, so the consumer registry cannot see it.
+            blockers.append(
+                _blocker(
+                    BlockerCode.CONFIG_UNUSED_KEY,
+                    (
+                        "a priced `answer_arm` inside an arms campaign is not "
+                        "consumable in v1; S9 delivers the single-scenario priced "
+                        "path only, and multi-arm priced execution stays an HITL "
+                        "scope decision"
+                    ),
+                    f"arms[{index}].scenario.answer_arm",
+                )
+            )
         synthesized: dict[str, Any] = {
             "schema_version": "earp.v1",
             # `characterization` is the single-scenario kind with this arm's
@@ -1069,6 +1194,7 @@ __all__ = [
     "STRATA_VOCABULARY",
     "ConfigResolution",
     "Consumer",
+    "ResolvedAnswerArm",
     "ResolvedArm",
     "ResolvedComparison",
     "ResolvedScenario",

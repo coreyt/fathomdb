@@ -13,9 +13,12 @@ validation impossible in a worktree.
 from __future__ import annotations
 
 import argparse
+import os
 import sys
+from pathlib import Path
 
-from eval.earp.config import load_config, resolve_config
+from eval.earp.config import ResolvedScenario, load_config, resolve_config
+from eval.earp.schema.models import Blocker
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -76,7 +79,51 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  config sha256   {scenario.config_sha256}")
     if scenario.carried_paths:
         print(f"  carried         {len(scenario.carried_paths)} path(s) for later slices")
+    _print_budget(scenario, doc)
     return 0
+
+
+def _print_budget(scenario: ResolvedScenario, doc: object) -> None:
+    """S9: for an answer-arm config, show the money the run would put at
+    stake -- the declared estimate, the current cumulative spend, and the
+    projection against the D-3 authorization."""
+    from eval.earp.pricing import (  # noqa: PLC0415 -- keep validate import-light
+        D3_AUTHORIZED_USD,
+        LEDGER_ROOT_ENV,
+        read_cumulative_spend,
+    )
+
+    arm = scenario.answer_arm
+    if arm is None:
+        return
+    estimated = 0.0
+    if isinstance(doc, dict):
+        budget = doc.get("budget")
+        if isinstance(budget, dict) and isinstance(budget.get("estimated_usd"), (int, float)):
+            estimated = float(budget["estimated_usd"])
+    declared_root = os.environ.get(LEDGER_ROOT_ENV)
+    if declared_root:
+        root = Path(declared_root)
+        root_note = f"{root} ({LEDGER_ROOT_ENV})"
+    else:
+        from eval.earp._experiments import REPO_ROOT  # noqa: PLC0415
+
+        root = REPO_ROOT / "experiments"
+        root_note = f"{root} ({LEDGER_ROOT_ENV} unset; priced runs will refuse)"
+    cumulative = read_cumulative_spend(root)
+    print(
+        f"  answer arm      {arm.kind} "
+        f"(model {arm.answerer_model or 'env-resolved (claim-free only)'}, "
+        f"max_queries {arm.max_queries})"
+    )
+    if isinstance(cumulative, Blocker):
+        print(f"  budget          MALFORMED LEDGER: {cumulative.message}")
+        return
+    print(
+        f"  budget          estimate ${estimated:.2f} + cumulative ${cumulative:.2f} "
+        f"= projected ${cumulative + estimated:.2f} of ${D3_AUTHORIZED_USD:.2f} authorized"
+    )
+    print(f"  ledger          {root_note}")
 
 
 if __name__ == "__main__":  # pragma: no cover

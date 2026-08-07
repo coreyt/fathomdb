@@ -260,6 +260,40 @@ CATALOG: tuple[KnobEntry, ...] = (
         ),
     ),
     KnobEntry(
+        name="priced_arm.mem0",
+        classification=KnobClass.UNSUPPORTED,
+        call_path=None,
+        witness=None,
+        reason=(
+            "A dormant local-OSS Mem0OSSAdapter exists in r2_parity_eval, but its "
+            "commissioning as a priced EARP arm stays an HITL scope decision; S9 "
+            "ships the enforcement machinery plus exactly one adapter (the R2 "
+            "identical-answerer) so the money gate is the slice's center."
+        ),
+    ),
+    KnobEntry(
+        name="priced_arm.extractor",
+        classification=KnobClass.UNSUPPORTED,
+        call_path=None,
+        witness=None,
+        reason=(
+            "No in-repo extractor answerer protocol is in standing use; building "
+            "a new network adapter inside S9 would dilute the money gate, and its "
+            "commissioning is an HITL scope decision."
+        ),
+    ),
+    KnobEntry(
+        name="priced_arm.gpu",
+        classification=KnobClass.UNSUPPORTED,
+        call_path=None,
+        witness=None,
+        reason=(
+            "The GPU arm has no in-repo answerer protocol in standing use; its "
+            "commissioning is an HITL scope decision, recorded here so its "
+            "absence is a refusal rather than silence."
+        ),
+    ),
+    KnobEntry(
         name="attach_logging_subscriber",
         classification=KnobClass.UNSUPPORTED,
         call_path=None,
