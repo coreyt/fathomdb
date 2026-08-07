@@ -56,7 +56,7 @@ fi
 # A workflow_dispatch rehearsal is anchored to an immutable commit rather
 # than the mutable branch ref selected in the UI. Use the same full revision
 # for this local rehearsal before any build or dry-run publish command runs.
-candidate_commit="$(git -C "$REPO_ROOT" rev-parse --verify HEAD^{commit})"
+candidate_commit="$(git -C "$REPO_ROOT" rev-parse --verify 'HEAD^{commit}')"
 
 log "Step 1/5: scripts/verify-release-gates.sh"
 GITHUB_EVENT_NAME=workflow_dispatch \
