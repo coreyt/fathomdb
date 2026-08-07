@@ -218,6 +218,7 @@ class Engine:
         # `include_inactive`) raise `InvalidArgumentError` on this path rather
         # than being silently ignored. See `fathomdb.engine.Engine.search`.
         view: ReadView | None = ...,
+        limit: int = ...,
     ) -> SearchResult: ...
     def search_projected_text(
         self,
@@ -229,11 +230,12 @@ class Engine:
         status: str | None = ...,
         attributes: list[tuple[str, str]] | None = ...,
         view: ReadView | None = ...,
+        limit: int = ...,
     ) -> SearchResult: ...
     # 0.8.18 Slice 5 (R-VEQ-4) — text-only / FTS-only path; takes the same
     # optional validity view as `search` (0.8.20 Slice 15b fix-2).
     def search_text_only(
-        self, query: str, view: ReadView | None = ...
+        self, query: str, view: ReadView | None = ..., limit: int = ...
     ) -> SearchResult: ...
     def dense_disabled(self) -> bool: ...
     def dense_disabled_reason(self) -> str | None: ...
@@ -420,6 +422,7 @@ def search_expand(
     kind: str | None = ...,
     created_after: int | None = ...,
     status: str | None = ...,
+    search_limit: int = ...,
 ) -> SearchExpandResult:
     """G6 — FTS/vector search followed by bounded BFS expansion.
 

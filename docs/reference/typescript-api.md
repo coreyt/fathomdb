@@ -134,7 +134,7 @@ const receipt = await engine.write([
   pointing at a non-existent or superseded node — see
   [`WriteReceipt`](#writereceipt).
 
-### `engine.search(query, filter?, rerankDepth?, useGraphArm?, alpha?, poolN?) -> Promise<SearchResult>`
+### `engine.search(query, filter?, rerankDepth?, useGraphArm?, alpha?, poolN?, explain?, options?) -> Promise<SearchResult>`
 
 Run hybrid retrieval, ranked by **G9 RRF fusion**, with optional CPU
 cross-encoder reranking (0.8.1 R1) and optional graph-BFS third arm (0.8.1 R3).
@@ -166,6 +166,10 @@ cross-encoder reranking (0.8.1 R1) and optional graph-BFS third arm (0.8.1 R3).
   reranked-pool size, clamped to the hit count. Omitted ⇒ `rerankDepth`. Note
   `rerankDepth === 0` is still the identity gate, so `rerankDepth: 0, poolN: 10`
   does **not** rerank. Must be a non-negative integer (`RangeError` otherwise).
+- `options.limit` (`number`, default `10`) — maximum ranked hits returned. It
+  must be an integer in `1..=100`; out-of-range values reject with
+  `InvalidArgumentError`, never a silent clamp. `options` also accepts the
+  existing `ReadView` fields.
 - Resolves to a `SearchResult` whose `results` is a `SearchHit[]`; each
   [`SearchHit`](#searchhit) carries the matched record's `id`, `kind`, `body`,
   the **RRF-fused** `score`, the `branch` that produced it (`"graph_arm"`
@@ -176,6 +180,18 @@ cross-encoder reranking (0.8.1 R1) and optional graph-BFS third arm (0.8.1 R3).
 > Rank Fusion (`Σ 1/(60 + rank)`) of the vector and text branches — the
 > deliberate, documented 0.8.0 ranking change; pre-0.8.0 union-dedup ordering is
 > not retained. See [hybrid search guide](../guides/hybrid-search-filtering.md).
+
+### `engine.searchTextOnly(query, options?): Promise<SearchResult>`
+
+Run node-body FTS retrieval without embedding, vector retrieval, fusion, or
+reranking. `options.limit` defaults to 10 and must be an integer in `1..=100`.
+
+### `engine.searchProjectedText(query, name, filter?, options?): Promise<SearchResult>`
+
+Search exactly one declared `SEARCHABLE` property-FTS projection. The final
+`SearchOptions` accepts `limit` with the same default and validation as
+`engine.search`; metadata and validity filters are applied before retained hits
+consume that result budget.
 
 ### `engine.embed(text) -> Promise<number[]>`
 
@@ -544,7 +560,7 @@ Returns up to **50** `NodeRecord`s reachable within `depth` hops
 (root excluded). Edges with `t_invalid` in the past are silently skipped
 (valid-time filter). Returns `[]` when the root has no reachable neighbors.
 
-### `graph.searchExpand(engine, query, depth, filter?): Promise<SearchExpandResult>`
+### `graph.searchExpand(engine, query, depth, filter?, options?): Promise<SearchExpandResult>`
 
 G6 — FTS/vector search (G1) followed by bounded BFS expansion.
 
@@ -553,6 +569,8 @@ G6 — FTS/vector search (G1) followed by bounded BFS expansion.
   `InvalidArgumentError`.
 - `filter` (`SearchFilter | undefined`) — optional metadata filter (same as
   `engine.search`).
+- `options.searchLimit` (`number`, default `10`) — maximum initial ranked
+  `searchHits`, in `1..=100`; it does not change the 50-per-root expansion cap.
 
 Returns a `SearchExpandResult`. Nodes appearing in both the search hit set and
 the traversal reach appear **only** in `searchHits` (deduplication: search score

@@ -314,6 +314,36 @@ export interface SearchFilter {
   attributes?: [string, string][];
 }
 
+/** Options shared by ranked search methods. `limit` defaults to 10 and is 1–100. */
+export type SearchOptions = ReadView & {
+  limit?: number;
+};
+
+/** Options for the initial ranked hits returned by {@link graph.searchExpand}. */
+export interface SearchExpandOptions {
+  searchLimit?: number;
+}
+
+function validateRankedResultLimit(name: string, limit: number | undefined): number {
+  const resolved = limit ?? 10;
+  if (!Number.isInteger(resolved) || resolved < 1 || resolved > 100) {
+    throw new InvalidArgumentError(`${name} must be an integer in 1..=100; got ${resolved}`);
+  }
+  return resolved;
+}
+
+function splitSearchOptions(options: SearchOptions | undefined): {
+  limit: number;
+  view: ReadView | undefined;
+} {
+  if (options === undefined) return { limit: 10, view: undefined };
+  const { limit, ...view } = options;
+  return {
+    limit: validateRankedResultLimit("limit", limit),
+    view: Object.keys(view).length === 0 ? undefined : view,
+  };
+}
+
 /**
  * 0.8.11 Slice 40 (#17) — one term of the unified `Filter` grammar (G4 + G10),
  * a discriminated union mirroring `fathomdb_engine::FilterTerm`
@@ -923,7 +953,7 @@ export class Engine {
      * from projection indexes that are not version-complete, so they have no
      * truthful answer here. They are refused rather than silently ignored.
      */
-    view?: ReadView,
+    view?: SearchOptions,
   ): Promise<SearchResult> {
     validateFfiString(query);
     // 0.8.11 Slice 40 (#17) — accept the unified Filter on the vec0 search path;
@@ -999,8 +1029,19 @@ export class Engine {
     if (explain !== undefined && typeof explain !== "boolean") {
       throw new TypeError(`explain must be a boolean, got ${typeof explain}`);
     }
+    const searchOptions = splitSearchOptions(view);
     const r = await intercept(() =>
-      this.#native.search(query, filter, rerankDepth, useGraphArm, alpha, poolN, explain, view),
+      this.#native.search(
+        query,
+        filter,
+        rerankDepth,
+        useGraphArm,
+        alpha,
+        poolN,
+        explain,
+        searchOptions.view,
+        searchOptions.limit,
+      ),
     );
     const branch = r.softFallback?.branch;
     // 0.8.8 EXP-OBS: map the opt-in explanation sidecar; `null` (default) stays null.
@@ -1053,9 +1094,12 @@ export class Engine {
    * opened in the degraded `denseDisabled` state. Returns node-body FTS hits
    * only (no vector recall, no CE rerank, no graph arm).
    */
-  async searchTextOnly(query: string, view?: ReadView): Promise<SearchResult> {
+  async searchTextOnly(query: string, view?: SearchOptions): Promise<SearchResult> {
     validateFfiString(query);
-    const r = await intercept(() => this.#native.searchTextOnly(query, view));
+    const searchOptions = splitSearchOptions(view);
+    const r = await intercept(() =>
+      this.#native.searchTextOnly(query, searchOptions.view, searchOptions.limit),
+    );
     const branch = r.softFallback?.branch;
     return {
       projectionCursor: r.projectionCursor,
@@ -1083,7 +1127,7 @@ export class Engine {
     query: string,
     name: string,
     filter?: SearchFilter,
-    view?: ReadView,
+    view?: SearchOptions,
   ): Promise<SearchResult> {
     validateFfiString(query);
     validateFfiString(name);
@@ -1099,7 +1143,10 @@ export class Engine {
         validateFfiString(pair[1]);
       }
     }
-    const r = await intercept(() => this.#native.searchProjectedText(query, name, filter, view));
+    const searchOptions = splitSearchOptions(view);
+    const r = await intercept(() =>
+      this.#native.searchProjectedText(query, name, filter, searchOptions.view, searchOptions.limit),
+    );
     return {
       projectionCursor: r.projectionCursor,
       softFallback: null,
@@ -1390,6 +1437,7 @@ export const graph = {
     query: string,
     depth: number,
     filter?: SearchFilter,
+    options?: SearchExpandOptions,
   ): Promise<SearchExpandResult> {
     validateFfiString(query);
     if (!Number.isInteger(depth) || depth < 0 || depth > 3) {
@@ -1400,6 +1448,7 @@ export const graph = {
     if (filter?.sourceType !== undefined) validateFfiString(filter.sourceType);
     if (filter?.kind !== undefined) validateFfiString(filter.kind);
     if (filter?.status !== undefined) validateFfiString(filter.status);
+    const searchLimit = validateRankedResultLimit("searchLimit", options?.searchLimit);
     const r = await intercept(() =>
       native.searchExpand(
         engine._native,
@@ -1409,6 +1458,7 @@ export const graph = {
         filter?.kind,
         filter?.createdAfter,
         filter?.status,
+        searchLimit,
       ),
     );
     return {
