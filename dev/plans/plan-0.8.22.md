@@ -27,6 +27,12 @@ default result count is 10 and the validated maximum is 100 for the direct
 ranked-search families. This closes the existing unbounded FTS result paths and
 makes EARP's `K = 20` and `K = 50` measurements accessible through public SDKs.
 
+Before publication, the release also repairs canonical FTS hydration, makes
+projection readiness truthful for sessions without safe dense runtime support,
+and adds a governed pure-read projection-status surface. Detailed contracts are
+in the Slice 19, 21, and 22 plans and designs; publication remains held until
+all three have landed and its existing gate is explicitly resumed.
+
 ## Requirements and acceptance criteria
 
 - The manifest, loader, npm metadata, and publish job agree on exactly five
@@ -51,6 +57,15 @@ makes EARP's `K = 20` and `K = 50` measurements accessible through public SDKs.
   out-of-range request rather than silently clamping it.
 - `search_expand.search_hits` uses the same `search_limit` contract; graph
   expansion retains its separate 50-per-root traversal cap.
+- Body and edge FTS hydration use unconditional canonical `write_cursor`
+  indexes with planner-shape proof; projected-text retains its applicable
+  active-node partial index.
+- A declared vector projection reports `unavailable` when dense runtime is
+  absent or not safety-approved, and a safe later open repairs eligible stranded
+  work without reopening failed terminals or duplicating embedding.
+- A governed projection-status read reports runtime availability and its reason,
+  corpus-wide per-projection dense readiness, and declaration-scoped unsupported
+  kinds without configuration side effects.
 
 ## Slice ladder
 
@@ -63,8 +78,28 @@ makes EARP's `K = 20` and `K = 50` measurements accessible through public SDKs.
 | 17 | Pre-registered 0.8.23 scale-measurement protocol (no run) | 5, 12 |
 | 15 | Native build, validation, and wheel-size coverage | 10 |
 | 18 | Ranked retrieval result limits and SDK parity | 15 |
-| 20 | Ordered publish and real registry smokes | 15, 18 |
+| 19 | Canonical FTS join indexes and planner proof | 18 |
+| 21 | Truthful projection runtime state and safe boot graft | 19 |
+| 22 | Governed pure projection-status read | 21 |
+| 20 | Ordered publish and real registry smokes | 15, 18, 22 |
 | 25 | `next` → `latest` promotion and release truth | 20 |
+
+### Slices 19, 21, and 22 — retrieval and projection truth
+
+Slice 19 is an index-only schema step with focused `EXPLAIN QUERY PLAN` proof;
+it does not add an edge-FTS SQL result limit. Slice 21 is a governed public
+behavior change and begins only after its readiness decision record and pickup
+review; it adds no schema step. Slice 22 begins only after Slice 21 and its own
+governed-read decision; it is a pure status read, not a configuration echo.
+
+**Slice 19 is CLOSED on the reviewed local integration branch at `550c4b03`,
+but is not yet LANDED on `origin/main`.** The dependent local work inherits that
+exact reviewed base; the closure measurement and protected-branch landing
+remain required before publication.
+
+The corresponding plans require RED→GREEN evidence, cross-SDK conformance
+where the public contract changes, an independent review, and the normal local
+verification gates. They do not authorize a tag, registry write, or publication.
 
 ### Slice 12 — DOC-BASELINE
 
@@ -112,7 +147,7 @@ their own policies.
 ## Landed release state
 
 <!-- BEGIN GENERATED release-state:0.8.22:plan-landed-roll-up -->
-**LANDED on `origin/main`, in full:** Slices 0 (`55792858b2adce00d3d87193d02b23a5d8d52dd7`) · 5 (`55792858b2adce00d3d87193d02b23a5d8d52dd7`) · 10 (`4c7bb26b`) · 12 (`72a83049`) · 15 (`13341688fca3d02d11c10bb10eb26232156f8032`) · 17 (`5a7f2484`) · 18 (`8fdb27dbf00a0663772ffc8e27a243ac1e7dcd74`). SCHEMA is 25; remaining ladder = 20 → 25.<!-- END GENERATED release-state:0.8.22:plan-landed-roll-up -->
+**LANDED on `origin/main`, in full:** Slices 0 (`55792858b2adce00d3d87193d02b23a5d8d52dd7`) · 5 (`55792858b2adce00d3d87193d02b23a5d8d52dd7`) · 10 (`4c7bb26b`) · 12 (`72a83049`) · 15 (`13341688fca3d02d11c10bb10eb26232156f8032`) · 17 (`5a7f2484`) · 18 (`8fdb27dbf00a0663772ffc8e27a243ac1e7dcd74`). SCHEMA is 25; remaining ladder = 21 → 22 → 20 → 25.<!-- END GENERATED release-state:0.8.22:plan-landed-roll-up -->
 
 ## Reserved-gap policy
 
@@ -137,6 +172,6 @@ prepares and verifies the release path; it does not authorize a registry write.
 ## Immediate next slice
 
 <!-- BEGIN GENERATED release-state:0.8.22:plan-immediate-next -->
-**IMMEDIATE NEXT: Slice 20** (`PUBLISH`) — ordered platform publication and registry smokes
+**IMMEDIATE NEXT: Slice 21** (`PROJ-STATE`) — truthful projection runtime state and safe boot graft
 
-**Remaining ladder:** 20 → 25.<!-- END GENERATED release-state:0.8.22:plan-immediate-next -->
+**Remaining ladder:** 21 → 22 → 20 → 25.<!-- END GENERATED release-state:0.8.22:plan-immediate-next -->
