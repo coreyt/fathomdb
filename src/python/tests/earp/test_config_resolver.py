@@ -178,20 +178,22 @@ def test_budget_is_carried_unconditionally() -> None:
 
 
 @pytest.mark.parametrize(
-    ("call", "embedder", "mode", "max_k"),
+    ("call", "embedder", "mode"),
     [
-        ("Engine.search_text_only", False, RetrievalMode.FTS_ONLY, None),
-        ("Engine.search_text_only", True, RetrievalMode.FTS_ONLY, None),
-        ("Engine.search", False, RetrievalMode.FTS_ONLY, None),
-        ("Engine.search", True, RetrievalMode.HYBRID, 10),
-        ("Engine.search_projected_text", False, RetrievalMode.FTS_ONLY, 10),
-        ("Engine.search_projected_text", True, RetrievalMode.FTS_ONLY, 10),
+        ("Engine.search_text_only", False, RetrievalMode.FTS_ONLY),
+        ("Engine.search_text_only", True, RetrievalMode.FTS_ONLY),
+        ("Engine.search", False, RetrievalMode.FTS_ONLY),
+        ("Engine.search", True, RetrievalMode.HYBRID),
+        ("Engine.search_projected_text", False, RetrievalMode.FTS_ONLY),
+        ("Engine.search_projected_text", True, RetrievalMode.FTS_ONLY),
     ],
 )
 def test_mode_derives_from_call_and_embedder(
-    call: str, embedder: bool, mode: RetrievalMode, max_k: int | None
+    call: str, embedder: bool, mode: RetrievalMode
 ) -> None:
-    assert CALL_MODE[(call, embedder)] == (mode, max_k)
+    """The per-call max-K column is gone (S6a): mode determines cost and
+    semantics, while depth is bounded by the public result limit alone."""
+    assert CALL_MODE[(call, embedder)] is mode
 
 
 def test_search_without_embedder_is_fts_not_hybrid() -> None:
@@ -211,8 +213,9 @@ def test_deep_k_refused_for_hybrid() -> None:
 
 
 def test_deep_k_refused_for_projected_text_despite_being_fts() -> None:
-    """The property-FTS SQL carries no LIMIT, but the reader breaks at
-    SEARCH_RERANK_LIMIT — so this verb truncates at 10 even though it is FTS."""
+    """The projected-text reader now honours the public limit (0.8.22 Slice
+    18) — but with no `limit` declared the resolved limit is the engine
+    default of 10, so @50 is still refused for this FTS-by-mechanism verb."""
     doc = _config()
     doc["scenario"]["query"] = {"call": "Engine.search_projected_text", "projection_name": "body"}
     doc["metrics"]["evidence_recall_k"] = [5, 10, 50]
@@ -221,8 +224,11 @@ def test_deep_k_refused_for_projected_text_despite_being_fts() -> None:
 
 
 def test_deep_k_allowed_for_text_only() -> None:
+    """fts_only is no longer unbounded (S6a): the deep ladder is honest only
+    with a declared `limit` covering it, because the rebuilt engine really
+    returns at most 10 by default."""
     doc = _config()
-    doc["scenario"]["query"] = {"call": "Engine.search_text_only"}
+    doc["scenario"]["query"] = {"call": "Engine.search_text_only", "limit": 50}
     doc["scenario"]["engine"] = {"use_default_embedder": False}
     doc["metrics"]["evidence_recall_k"] = [5, 10, 20, 50]
     result = resolve_config(doc)
@@ -238,8 +244,8 @@ def test_removed_mode_key_gets_a_named_message() -> None:
 
 
 def test_vector_only_retained_in_the_depth_table() -> None:
-    """Unreachable from config by construction, but live in MAX_MEASURABLE_K,
-    the result schema, and S2's parity tests."""
+    """Unreachable from config by construction, but live in the result schema
+    and S2's parity tests."""
     assert RetrievalMode.VECTOR_ONLY in RetrievalMode
 
 

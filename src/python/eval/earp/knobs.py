@@ -102,6 +102,17 @@ CATALOG: tuple[KnobEntry, ...] = (
         reason="CE-rerank POOL SIZE -- not a result-depth control, and not a way around the depth cap.",
     ),
     KnobEntry(
+        name="limit",
+        classification=KnobClass.SEMANTIC,
+        call_path="Engine.search(limit=)",
+        witness="search_result.n",
+        reason=(
+            "The public result limit (0.8.22 Slice 18): bounds visible result "
+            "cardinality on every search verb, and with it the deepest measurable K. "
+            "Witnessed by exact cardinality."
+        ),
+    ),
+    KnobEntry(
         name="explain",
         classification=KnobClass.OBSERVABILITY,
         call_path="Engine.search(explain=)",

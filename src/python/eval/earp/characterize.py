@@ -20,20 +20,21 @@ from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
 from eval.earp._experiments import lib as _lib
+from eval.earp.depth import check_depth
 from eval.earp.gold import GoldQuery, verify_gold
 from eval.earp.metrics import KResult, aggregate, resolve_ndcg, validate_methodology
 from eval.earp.schema.models import (
+    ENGINE_DEFAULT_RESULT_LIMIT,
+    ENGINE_MAX_RESULT_LIMIT,
     SCHEMA_VERSION_PER_QUERY,
     SCHEMA_VERSION_RESULT,
     Blocker,
     BlockerCode,
     MetricValue,
+    RetrievalMode,
     RunVerdict,
 )
 from eval.earp.writer import write_run
-
-#: The production rerank floor, recorded with every number per IR-B (c).
-DEFAULT_FANOUT = 10
 
 
 class DriftAxis(str, Enum):
@@ -68,7 +69,9 @@ class CharacterizationResult:
     run_dir: Path | None = None
     ingested: int = 0
     retrievals: int = 0
-    fanout_used: int = DEFAULT_FANOUT
+    #: The public result limit the run actually passed to the engine (S6a):
+    #: max(ladder), recorded with every number per IR-B (c).
+    fanout_used: int = ENGINE_DEFAULT_RESULT_LIMIT
     per_k: Mapping[int, KResult] = field(default_factory=dict)
     document_metrics: Mapping[str, MetricValue] = field(default_factory=dict)
     per_query_rows: list[dict[str, Any]] = field(default_factory=list)
@@ -202,18 +205,31 @@ def run_characterization(
         "metrics": {"evidence_recall_k": list(evidence_recall_k)},
     }
 
+    # characterize() never resolves a config, so it cannot take "the resolved
+    # limit": the deepest rung IS the limit it passes -- explicitly -- at the
+    # search call below. Before S6a it truncated to max(ladder) while calling
+    # with the engine default, so a (5, 10, 50) ladder silently scored @50
+    # over 10 hits.
+    ladder = tuple(sorted(set(evidence_recall_k)))
+    deepest = max(ladder)
+
     def _blocked_result(blocker: Blocker) -> CharacterizationResult:
         outcome = _write(
             config_doc, experiments_root, experiment, ts, RunVerdict.BLOCKED,
-            {}, [], (blocker,), blocker.message, blank_provenance,
+            {}, [], (blocker,), blocker.message, blank_provenance, deepest,
         )
         return CharacterizationResult(
             verdict=RunVerdict.BLOCKED,
             run_id=outcome.run_id,
             run_dir=outcome.run_dir,
+            fanout_used=deepest,
             blockers=(blocker,),
             config_doc=config_doc,
         )
+
+    depth_blocker = check_depth(RetrievalMode.FTS_ONLY, deepest, ENGINE_MAX_RESULT_LIMIT)
+    if depth_blocker is not None:
+        return _blocked_result(depth_blocker)
 
     if not Path(data_root).is_dir():
         return _blocked_result(
@@ -285,23 +301,21 @@ def run_characterization(
     cache: dict[str, list[str]] = {}
     errors: dict[str, str] = {}
     retrievals = 0
-    ladder = tuple(sorted(set(evidence_recall_k)))
-    deepest = max(ladder)
 
     try:
         engine = Engine.open(str(Path(db_dir) / "corpus.db"))
         engine.write(items)
 
-        # Retrieve ONCE per query, truncated to the deepest rung. Calling the
-        # engine per K rung would re-execute every search -- ~55 hours at
-        # corpus scale instead of ~28.
+        # Retrieve ONCE per query, with the deepest rung as the public result
+        # limit. Calling the engine per K rung would re-execute every search
+        # -- ~55 hours at corpus scale instead of ~28.
         for query in gold_set.queries:
             retrievals += 1
             try:
                 if retrieve_override is not None:
                     result = retrieve_override(query.query)
                 else:
-                    result = engine.search_text_only(query.query)
+                    result = engine.search_text_only(query.query, limit=deepest)
                 cache[query.query_id] = [
                     hit.id.value
                     for hit in result.results[:deepest]
@@ -329,7 +343,7 @@ def run_characterization(
         config_doc, experiments_root, experiment, ts, RunVerdict.COMPLETE,
         _metrics_document(per_k), rows, (),
         f"characterization over {len(items)} docs, {len(gold_set.queries)} queries",
-        blank_provenance,
+        blank_provenance, deepest,
     )
     return CharacterizationResult(
         verdict=RunVerdict.COMPLETE,
@@ -337,7 +351,7 @@ def run_characterization(
         run_dir=outcome.run_dir,
         ingested=len(items),
         retrievals=retrievals,
-        fanout_used=DEFAULT_FANOUT,
+        fanout_used=deepest,
         per_k=per_k,
         document_metrics={"ndcg": resolve_ndcg(has_graded_relevance=False)},
         per_query_rows=rows,
@@ -444,6 +458,7 @@ def _write(
     blockers: tuple[Blocker, ...],
     read: str,
     blank_provenance: bool,
+    fanout_used: int,
 ) -> Any:
     sha = _lib.config_sha256(dict(config_doc))
     run_id = _lib.make_run_id(experiment, ts, sha)
@@ -456,7 +471,7 @@ def _write(
             "config_sha256": sha,
             "query_call": "Engine.search_text_only",
             "retrieval_mode": "fts_only",
-            "fanout_used": DEFAULT_FANOUT,
+            "fanout_used": fanout_used,
         },
         "metrics": dict(metrics),
         "witnesses": [],
@@ -529,7 +544,6 @@ def replay(
 
 
 __all__ = [
-    "DEFAULT_FANOUT",
     "CharacterizationResult",
     "Drift",
     "DriftAxis",

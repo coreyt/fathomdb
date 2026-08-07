@@ -63,7 +63,7 @@
         },
         "fanout_used": {
           "type": "integer",
-          "description": "The search fanout in effect. Recorded with every number per IR-B (c); equals the production rerank limit until the fanout control lands."
+          "description": "The public result limit in effect for the run (0.8.22 Slice 18), recorded with every number per IR-B (c); it bounds visible cardinality in every mode, while the engine's internal hybrid/vector fanout -- max(limit, TOP_K_BIT_CANDIDATES) -- is not caller-visible. Cutover (S6a): before S6a this recorded the engine default in effect (always 10); from S6a it records the requested public limit. A rename to result_limit was considered and declined to avoid a version bump; the two readings coincide on every pre-S6a sidecar, all of which used ladder (5, 10) with the default fanout of 10."
         },
         "engine": {
           "type": "object"

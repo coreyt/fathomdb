@@ -134,6 +134,12 @@
               "minimum": 1,
               "description": "CE-rerank pool size. NOT a result-depth control."
             },
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "description": "The public result limit (0.8.22 Slice 18), mirroring the engine's own window: validate_search_result_limit refuses values outside 1..=100 with a typed error, never a clamp. Absent means 10, the engine default -- config_sha256 covers the raw document, so absence keeps every existing config's hash unmoved. Bounds visible result cardinality on every search verb; @K is measurable exactly when K <= limit."
+            },
             "projection_name": {
               "type": "string",
               "description": "The projection to query. Required exactly when call is Engine.search_projected_text, which takes it as a required positional argument -- without it a config resolves cleanly and cannot run."
@@ -161,7 +167,7 @@
             "minimum": 1
           },
           "uniqueItems": true,
-          "description": "Mode-aware (D-5). vector_only/hybrid reject K>10 with metric_not_measurable until the fanout control lands; fts_only is unbounded."
+          "description": "Depth ladder. One rule for every retrieval mode (S6a, the D-5 successor): @K is measurable exactly when K <= the resolved scenario.query.limit (absent means 10; at most 100, the engine's MAX_SEARCH_RESULT_LIMIT). K > 100 is permanently unmeasurable and rejected with metric_not_measurable."
         },
         "document_metrics": {
           "type": "array",

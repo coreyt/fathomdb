@@ -299,23 +299,37 @@ def test_failed_negative_retrieval_is_not_a_correct_abstention() -> None:
 @pytest.mark.parametrize("k", [5, 10])
 def test_measurable_depth_is_allowed_for_every_mode(k: int) -> None:
     for mode in RetrievalMode:
-        assert check_depth(mode, k) is None
+        assert check_depth(mode, k, 10) is None
 
 
 @pytest.mark.parametrize("k", [20, 50])
 @pytest.mark.parametrize("mode", [RetrievalMode.VECTOR_ONLY, RetrievalMode.HYBRID])
 def test_deep_k_is_refused_for_vector_and_hybrid(mode: RetrievalMode, k: int) -> None:
-    blocker = check_depth(mode, k)
+    blocker = check_depth(mode, k, 10)
     assert blocker is not None
     assert blocker.code is BlockerCode.METRIC_NOT_MEASURABLE
-    assert "SEARCH_RERANK_LIMIT" in blocker.message
+    #: The lever is 0.8.22 Slice 18's public `limit`, not the retired D-5.2
+    #: commissioning or the hidden test seam.
+    assert "Raise `limit`" in blocker.message
+    assert "Slice 18" in blocker.message
+    assert "SEARCH_RERANK_LIMIT" not in blocker.message
 
 
-@pytest.mark.parametrize("k", [20, 50, 200])
-def test_deep_k_is_allowed_for_fts_only(k: int) -> None:
-    """The rerank floor bounds only the vector path; the FTS SQL carries no
-    LIMIT, so these depths are honestly measurable there."""
-    assert check_depth(RetrievalMode.FTS_ONLY, k) is None
+@pytest.mark.parametrize("k", [20, 50, 100])
+def test_k_up_to_the_declared_limit_is_allowed_for_every_mode(k: int) -> None:
+    """The D-5 mode table is retired (S6a): fts_only is no longer unbounded
+    and hybrid/vector are no longer capped at 10 -- one rule, k <= limit."""
+    for mode in RetrievalMode:
+        assert check_depth(mode, k, 100) is None
+
+
+@pytest.mark.parametrize("mode", list(RetrievalMode))
+def test_k_beyond_the_engine_maximum_is_permanently_unmeasurable(mode: RetrievalMode) -> None:
+    """k=200 was measurable for fts_only under the old doctrine; the rebuilt
+    engine refuses limit > 100 on every verb, so it is refused everywhere."""
+    blocker = check_depth(mode, 200, 100)
+    assert blocker is not None
+    assert blocker.code is BlockerCode.METRIC_NOT_MEASURABLE
 
 
 def test_metric_function_itself_never_refuses_on_depth() -> None:

@@ -344,6 +344,9 @@ def _write(
             "config_sha256": scenario.config_sha256,
             "query_call": scenario.query_call,
             "retrieval_mode": scenario.retrieval_mode.value,
+            # The public result limit in effect (S6a). The resolver injected it
+            # into query_params, so the engine call above genuinely used it.
+            "fanout_used": scenario.max_measurable_k,
         },
         "metrics": {},
         "witnesses": [

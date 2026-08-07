@@ -48,7 +48,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  campaign        {scenario.campaign.value}")
     print(f"  call            {scenario.query_call}")
     print(f"  retrieval mode  {scenario.retrieval_mode.value}")
-    print(f"  max measurable  {scenario.max_measurable_k or 'unbounded'}")
+    print(f"  result limit    {scenario.max_measurable_k}")
     print(f"  evidence@K      {list(scenario.evidence_recall_k) or '-'}")
     print(f"  decision rule   {scenario.decision_rule or 'none (no better-than claim)'}")
     print(f"  config sha256   {scenario.config_sha256}")

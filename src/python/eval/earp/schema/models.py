@@ -247,25 +247,26 @@ class MetricStatus(str, Enum):
 
 
 class RetrievalMode(str, Enum):
-    """Depth measurability is mode-dependent (D-5): the production rerank floor
-    bounds only the vector path, so FTS-only admits @20/@50 while vector and
-    hybrid do not, until the commissioned fanout control lands."""
+    """Mode determines cost and semantics, no longer depth (S6a, the D-5
+    successor): @K is measurable exactly when K <= the run's public result
+    `limit`, for every mode, with the limit validated to the engine's own
+    1..=100 window and recorded with every number."""
 
     FTS_ONLY = "fts_only"
     VECTOR_ONLY = "vector_only"
     HYBRID = "hybrid"
 
 
-#: Deepest K each mode can honestly measure today. `None` = unbounded.
-MAX_MEASURABLE_K: dict[RetrievalMode, int | None] = {
-    RetrievalMode.FTS_ONLY: None,
-    RetrievalMode.VECTOR_ONLY: 10,
-    RetrievalMode.HYBRID: 10,
-}
-
-#: `SEARCH_RERANK_LIMIT` in the engine. Recorded with every number, and named
-#: in the `METRIC_NOT_MEASURABLE` blocker so the refusal is self-explaining.
-PRODUCTION_RERANK_LIMIT = 10
+#: Mirrors of the engine's public result-limit window (0.8.22 Slice 18):
+#: `DEFAULT_SEARCH_RESULT_LIMIT` / `MAX_SEARCH_RESULT_LIMIT`, enforced by
+#: `validate_search_result_limit` as a typed REFUSAL outside 1..=100, never a
+#: clamp. The S2 drift detector guards `ir_eval.rs`, NOT `lib.rs`, so these
+#: mirrors are pinned by their own binding-present guard instead
+#: (`test_limit_adoption.py`): every search verb's `limit` default must equal
+#: ENGINE_DEFAULT_RESULT_LIMIT, and the window is pinned empirically --
+#: limit=100 accepted, limit=101 refused.
+ENGINE_DEFAULT_RESULT_LIMIT = 10
+ENGINE_MAX_RESULT_LIMIT = 100
 
 
 @dataclass(frozen=True)
@@ -372,8 +373,8 @@ class CostLedger:
 
 
 __all__ = [
-    "MAX_MEASURABLE_K",
-    "PRODUCTION_RERANK_LIMIT",
+    "ENGINE_DEFAULT_RESULT_LIMIT",
+    "ENGINE_MAX_RESULT_LIMIT",
     "SCHEMA_VERSION_CONFIG",
     "SCHEMA_VERSION_PER_QUERY",
     "SCHEMA_VERSION_RESULT",

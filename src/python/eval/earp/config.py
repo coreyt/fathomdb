@@ -25,6 +25,8 @@ from eval.earp._experiments import lib as _lib
 from eval.earp.depth import check_depth
 from eval.earp.schema import CONFIG_SCHEMA_PATH
 from eval.earp.schema.models import (
+    ENGINE_DEFAULT_RESULT_LIMIT,
+    ENGINE_MAX_RESULT_LIMIT,
     Blocker,
     BlockerCode,
     CampaignKind,
@@ -36,31 +38,30 @@ from eval.earp.schema.validate import assert_supported, declared_paths, validate
 
 _SCHEMA: dict[str, Any] = json.loads(CONFIG_SCHEMA_PATH.read_text(encoding="utf-8"))
 
-#: (call, use_default_embedder) -> (mode, max measurable K).
+#: (call, use_default_embedder) -> retrieval mode.
 #:
 #: Derived from BOTH, not from the call alone: `Engine.search` is hybrid only
 #: when an embedder is configured. With none, the vector branch is skipped and
 #: the run is pure node FTS, so deriving `hybrid` would record a mode the run
-#: did not use AND refuse depths it could honestly measure.
+#: did not use.
 #:
-#: `search_projected_text` is the exception that shows depth is a CALL-SITE
-#: property, not a mode property: it is FTS by mechanism, yet its reader breaks
-#: at `results.len() >= limit` with `limit = max(override, SEARCH_RERANK_LIMIT)`,
-#: so it truncates at 10 despite its SQL carrying no LIMIT.
-CALL_MODE: Mapping[tuple[str, bool], tuple[RetrievalMode, int | None]] = {
-    ("Engine.search_text_only", False): (RetrievalMode.FTS_ONLY, None),
-    ("Engine.search_text_only", True): (RetrievalMode.FTS_ONLY, None),
-    ("Engine.search", False): (RetrievalMode.FTS_ONLY, None),
-    ("Engine.search", True): (RetrievalMode.HYBRID, 10),
-    ("Engine.search_projected_text", False): (RetrievalMode.FTS_ONLY, 10),
-    ("Engine.search_projected_text", True): (RetrievalMode.FTS_ONLY, 10),
+#: Mode determines cost and semantics, no longer depth (S6a): every search
+#: verb takes the public `limit`, and @K is measurable exactly when
+#: `K <= limit` -- so there is no per-call max-K column any more.
+CALL_MODE: Mapping[tuple[str, bool], RetrievalMode] = {
+    ("Engine.search_text_only", False): RetrievalMode.FTS_ONLY,
+    ("Engine.search_text_only", True): RetrievalMode.FTS_ONLY,
+    ("Engine.search", False): RetrievalMode.FTS_ONLY,
+    ("Engine.search", True): RetrievalMode.HYBRID,
+    ("Engine.search_projected_text", False): RetrievalMode.FTS_ONLY,
+    ("Engine.search_projected_text", True): RetrievalMode.FTS_ONLY,
 }
 
 #: Which query knobs each call actually accepts.
 CALL_PARAMS: Mapping[str, frozenset[str]] = {
-    "Engine.search": frozenset({"rerank_depth", "use_graph_arm", "alpha", "pool_n"}),
-    "Engine.search_projected_text": frozenset({"projection_name"}),
-    "Engine.search_text_only": frozenset(),
+    "Engine.search": frozenset({"rerank_depth", "use_graph_arm", "alpha", "pool_n", "limit"}),
+    "Engine.search_projected_text": frozenset({"projection_name", "limit"}),
+    "Engine.search_text_only": frozenset({"limit"}),
 }
 
 #: Campaign kinds `earp.v1` structurally cannot represent: it has exactly one
@@ -132,6 +133,7 @@ CONSUMER_REGISTRY: Mapping[str, Consumer] = {
     "scenario.query": Consumer("S3"),
     "scenario.query.call": Consumer("S3"),
     "scenario.query.text": Consumer("S5", _diagnostic_only),
+    "scenario.query.limit": Consumer("S5"),
     "scenario.query.rerank_depth": Consumer("S5"),
     "scenario.query.use_graph_arm": Consumer("S5"),
     "scenario.query.alpha": Consumer("S5"),
@@ -165,7 +167,10 @@ class ResolvedScenario:
     config_sha256: str
     query_call: str
     retrieval_mode: RetrievalMode
-    max_measurable_k: int | None
+    #: The resolved public result limit (S6a) -- an `int`, never None:
+    #: "unbounded" no longer exists. Kept under its historical name because it
+    #: still answers the same question, the deepest honestly-measurable K.
+    max_measurable_k: int
     use_default_embedder: bool
     query_params: Mapping[str, Any]
     evidence_recall_k: tuple[int, ...]
@@ -308,9 +313,8 @@ def resolve_config(doc: Mapping[str, Any]) -> ConfigResolution:
     call = query.get("call")
     use_default_embedder = bool(engine.get("use_default_embedder", False))
     mode: RetrievalMode | None = None
-    max_k: int | None = None
     if isinstance(call, str) and (call, use_default_embedder) in CALL_MODE:
-        mode, max_k = CALL_MODE[(call, use_default_embedder)]
+        mode = CALL_MODE[(call, use_default_embedder)]
 
         accepted = CALL_PARAMS[call]
         for knob in query:
@@ -338,13 +342,26 @@ def resolve_config(doc: Mapping[str, Any]) -> ConfigResolution:
     ladder = tuple(metrics.get("evidence_recall_k", ()) or ())
     document_metrics = tuple(metrics.get("document_metrics", ()) or ())
 
+    # The public result limit (S6a). Absent means the engine default -- the
+    # hash covers the RAW document, so absence must keep resolving to 10 or
+    # every existing config's identity moves. The schema owns the RANGE window
+    # (minimum 1 / maximum 100, the alpha precedent): an out-of-window or
+    # mistyped value is already a collected walker defect above, so depth
+    # checks proceed against the default rather than double-reporting.
+    declared_limit = query.get("limit")
+    limit = ENGINE_DEFAULT_RESULT_LIMIT
+    if (
+        isinstance(declared_limit, int)
+        and not isinstance(declared_limit, bool)
+        and 1 <= declared_limit <= ENGINE_MAX_RESULT_LIMIT
+    ):
+        limit = declared_limit
+
     if mode is not None:
         for k in ladder:
             if not isinstance(k, int) or isinstance(k, bool):
                 continue
-            blocker = check_depth(mode, k) if max_k is None else None
-            if max_k is not None and k > max_k:
-                blocker = check_depth(RetrievalMode.HYBRID, k)
+            blocker = check_depth(mode, k, limit)
             if blocker is not None:
                 blockers.append(blocker)
 
@@ -444,9 +461,16 @@ def resolve_config(doc: Mapping[str, Any]) -> ConfigResolution:
             config_sha256=_lib.config_sha256(dict(doc)),
             query_call=call,
             retrieval_mode=mode,
-            max_measurable_k=max_k,
+            max_measurable_k=limit,
             use_default_embedder=use_default_embedder,
-            query_params={k: v for k, v in query.items() if k != "call"},
+            # The resolved limit is INJECTED here, exactly once, whether or not
+            # the config declared it: query_params is the single source the
+            # runner passes through, so no duplicate-kwarg path exists and the
+            # runner needs no knowledge of the knob.
+            query_params={
+                **{k: v for k, v in query.items() if k != "call"},
+                "limit": limit,
+            },
             evidence_recall_k=ladder,
             document_metrics=document_metrics,
             corpus=doc.get("corpus"),
