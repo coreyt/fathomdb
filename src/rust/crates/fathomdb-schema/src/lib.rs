@@ -898,7 +898,8 @@ pub const MIGRATIONS: &[Migration] = &[
     },
     // 0.8.22 Slice 19 — the FTS hydration paths join canonical rows by
     // `write_cursor`. The node partial active-state index cannot cover the
-    // ownerless-preserving body-FTS join, and edges had no cursor index at all.
+    // body-FTS LEFT JOIN's full state predicate, which retains `state IS NULL`
+    // rows; edges had no cursor index at all.
     // These unconditional, non-unique B-trees preserve retrieval semantics and
     // are index-only, so the migration-accretion guard needs no exemption.
     Migration {

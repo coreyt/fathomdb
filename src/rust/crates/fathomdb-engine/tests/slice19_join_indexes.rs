@@ -123,7 +123,6 @@ fn edge_fts_hydration_plan_uses_unconditional_edge_cursor_index() {
          JOIN canonical_edges ce ON ce.write_cursor = sei.write_cursor \
          WHERE search_index_edges MATCH 'joinindex' \
            AND ce.superseded_at IS NULL \
-           AND (ce.t_valid IS NULL OR ce.t_valid <= 2_000_000_000) \
            AND (ce.t_invalid IS NULL OR ce.t_invalid > 2_000_000_000) \
          ORDER BY bm25(search_index_edges), sei.write_cursor",
     );
