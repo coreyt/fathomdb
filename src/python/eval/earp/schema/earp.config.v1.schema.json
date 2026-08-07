@@ -7,8 +7,7 @@
   "additionalProperties": false,
   "required": [
     "schema_version",
-    "campaign",
-    "scenario"
+    "campaign"
   ],
   "properties": {
     "schema_version": {
@@ -208,6 +207,28 @@
         }
       }
     },
+    "arms": {
+      "type": "array",
+      "minItems": 2,
+      "description": "S8. Named arms for comparison/sweep campaigns; each carries a FULL scenario object (no sparse overrides -- inheritance is a resolver concern earp.v1 deliberately does not have; explicit arms are hashable and diff-able as written). `scenario` and `arms` are mutually exclusive per campaign kind, resolver-enforced: diagnostic/characterization/replay require `scenario`; comparison (exactly 2 arms; arms[0]=control, arms[1]=treatment) and sweep (>= 2) require `arms`. `scenario` also left the top-level required list for this key: an arms-only document must be able to validate.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "scenario"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Arm name; uniqueness and non-emptiness are RESOLVER-collected errors (the stdlib walker does not interpret minLength)."
+          },
+          "scenario": {
+            "$ref": "#/properties/scenario"
+          }
+        }
+      }
+    },
     "metrics": {
       "type": "object",
       "additionalProperties": false,
@@ -274,7 +295,7 @@
       "required": [
         "changed_knobs"
       ],
-      "description": "Only a comparison campaign may claim a one-knob causal result; resolved arms must differ only at these paths.",
+      "description": "Only a comparison campaign may claim a one-knob causal result; resolved arms must differ only at these paths. A sweep may NOT carry this block in v1 (sweep makes no claim and declares no knob axis); the schema keeps metric/ci_method/seed/resamples/min_n optional because future kinds share the block, but a comparison campaign requires them all at resolution.",
       "properties": {
         "changed_knobs": {
           "type": "array",
@@ -282,6 +303,10 @@
             "type": "string"
           },
           "minItems": 1
+        },
+        "metric": {
+          "type": "string",
+          "description": "The paired effect metric (e.g. strict_evidence_recall@10), fixed before the first retrieval. Must be emittable by the declared ladder and measurable at each arm's resolved mode and limit."
         },
         "strata": {
           "type": "array",

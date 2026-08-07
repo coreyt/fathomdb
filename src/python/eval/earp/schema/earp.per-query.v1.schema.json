@@ -42,7 +42,14 @@
       "type": ["array", "null"],
       "items": { "type": "string" }
     },
-    "stratum": { "type": ["string", "null"] }
+    "stratum": {
+      "type": ["string", "null"],
+      "description": "Populated when comparison.strata declares 'query_class' (the whole v1 vocabulary): the query's gold query_class."
+    },
+    "arm": {
+      "type": "string",
+      "description": "S8. The arm this row was measured under (comparison/sweep campaigns only; absent for single-scenario campaigns)."
+    }
   },
   "allOf": [
     {

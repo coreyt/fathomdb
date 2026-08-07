@@ -20,9 +20,11 @@ from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
 from eval.earp._experiments import lib as _lib
+from eval.earp.config import ResolvedScenario
 from eval.earp.depth import check_depth
 from eval.earp.gold import GoldQuery, verify_gold
 from eval.earp.metrics import KResult, aggregate, resolve_ndcg, validate_methodology
+from eval.earp.runner import PARAM_RENAMES, resolve_call
 from eval.earp.schema.models import (
     ENGINE_DEFAULT_RESULT_LIMIT,
     ENGINE_MAX_RESULT_LIMIT,
@@ -30,6 +32,7 @@ from eval.earp.schema.models import (
     SCHEMA_VERSION_RESULT,
     Blocker,
     BlockerCode,
+    CampaignKind,
     MetricValue,
     RetrievalMode,
     RunVerdict,
@@ -169,6 +172,198 @@ def _load_snapshot_shards(
     return items, None
 
 
+@dataclass(frozen=True)
+class ArmExecution:
+    """One arm's execution: ingest + gold verification + retrieve loop +
+    scoring, and NOTHING durable -- no run directory, no sidecar, no index
+    line. Extracted from `run_characterization` for S8 so a comparison never
+    writes standalone characterization records per arm; ALL arms-campaign
+    writing lives in `eval.earp.comparison`.
+
+    Either `blocker` is set (nothing was measured) or the measurement fields
+    are populated.
+    """
+
+    blocker: Blocker | None = None
+    ingested: int = 0
+    retrievals: int = 0
+    cache: Mapping[str, list[str]] = field(default_factory=dict)
+    errors: Mapping[str, str] = field(default_factory=dict)
+    per_k: Mapping[int, KResult] = field(default_factory=dict)
+    rows: list[dict[str, Any]] = field(default_factory=list)
+    queries: tuple[GoldQuery, ...] = ()
+
+
+def execute_arm(
+    *,
+    scenario: ResolvedScenario,
+    data_root: Path,
+    snapshot_path: Path,
+    gold_path: Path,
+    gold_sha256: str,
+    corpus_hash: str,
+    qrels_version: str,
+    manifest_path: Path | None = None,
+    retrieve_override: Callable[[str], Any] | None = None,
+) -> ArmExecution:
+    """Run one resolved scenario over a FRESH database and score it.
+
+    Honors the arm's resolved public `limit` (never `max(ladder)` -- that
+    remains `run_characterization`'s own wrapper behaviour), embedder flag,
+    projections (configured BEFORE ingest, the S7 order), and query call:
+    `query_call`/`query_params` thread through the runner's `resolve_call` +
+    `PARAM_RENAMES` seam. `retrieve_override` takes the query text and stands
+    in for the whole engine call (the S6 seam, unchanged).
+    """
+    from fathomdb import Engine  # noqa: PLC0415 -- native import
+
+    if not Path(data_root).is_dir():
+        return ArmExecution(
+            blocker=_blocked(
+                BlockerCode.CORPUS_ROOT_ABSENT,
+                f"configured corpus data_root does not exist: {data_root}",
+                "characterize.ingest",
+            )
+        )
+
+    items, ingest_blocker = _load_snapshot_shards(Path(data_root), Path(snapshot_path))
+    if ingest_blocker is not None:
+        return ArmExecution(blocker=ingest_blocker)
+
+    verification = verify_gold(
+        gold_path=Path(gold_path),
+        snapshot_path=Path(snapshot_path),
+        manifest_path=manifest_path,
+        expected_sha256=gold_sha256,
+        expected_corpus_hash=corpus_hash,
+        expected_qrels_version=qrels_version,
+        data_root=Path(data_root),
+    )
+    if verification.blocker is not None:
+        blocker = verification.blocker
+        if blocker.code is BlockerCode.GOLD_STALE_QRELS_VERSION:
+            blocker = _blocked(
+                blocker.code,
+                blocker.message + " (tests/corpus/scripts/build_ir_gold.py)",
+                blocker.stage,
+                **blocker.detail,
+            )
+        return ArmExecution(blocker=blocker)
+
+    gold_set = verification.gold_set
+    assert gold_set is not None
+
+    issues = validate_methodology(gold_set.queries)
+    if issues:
+        return ArmExecution(
+            blocker=_blocked(
+                BlockerCode.GOLD_MALFORMED,
+                f"gold violates a methodology invariant: {issues[:3]}",
+                "characterize.gold",
+            )
+        )
+
+    ingested_ids = {item["logical_id"] for item in items}
+    required = {
+        unit.doc_id
+        for query in gold_set.queries
+        for unit in query.required_evidence
+        if unit.necessity == "required"
+    }
+    missing = sorted(required - ingested_ids)
+    if missing:
+        return ArmExecution(
+            blocker=_blocked(
+                BlockerCode.GOLD_CORPUS_MISMATCH,
+                f"{len(missing)} required gold doc_id(s) are absent from the ingested "
+                f"corpus, e.g. {missing[:3]}; scoring would report a silent 0.0",
+                "characterize.join",
+                missing=len(missing),
+            )
+        )
+
+    limit = scenario.max_measurable_k
+    db_dir = tempfile.mkdtemp(prefix="earp-arm-")
+    engine = None
+    cache: dict[str, list[str]] = {}
+    errors: dict[str, str] = {}
+    retrievals = 0
+
+    try:
+        engine = Engine.open(
+            str(Path(db_dir) / "corpus.db"),
+            use_default_embedder=scenario.use_default_embedder,
+        )
+        if scenario.projections:
+            # BEFORE ingest (the S7 order): the engine backfills
+            # same-transaction FTS builds on a fresh, empty database.
+            from fathomdb.types import ProjectionSpec  # noqa: PLC0415
+
+            engine.configure_projections(
+                [
+                    ProjectionSpec(
+                        name=projection.name,
+                        roles=frozenset(projection.roles),
+                        fts=projection.fts,
+                        vector=projection.vector,
+                    )
+                    for projection in scenario.projections
+                ]
+            )
+        engine.write(items)
+
+        params = {
+            PARAM_RENAMES.get(key, key): value
+            for key, value in scenario.query_params.items()
+            if key != "text"
+        }
+        call = (
+            retrieve_override
+            if retrieve_override is not None
+            else resolve_call(engine, scenario.query_call)
+        )
+        # Retrieve ONCE per query with the arm's resolved public limit.
+        for query in gold_set.queries:
+            retrievals += 1
+            try:
+                if retrieve_override is not None:
+                    result = call(query.query)
+                else:
+                    result = call(query.query, **params)
+                cache[query.query_id] = [
+                    hit.id.value
+                    for hit in result.results[:limit]
+                    if getattr(hit.id, "space", None) == "logical"
+                ]
+            except Exception as exc:  # noqa: BLE001 -- typed per-query failure
+                errors[query.query_id] = f"{type(exc).__name__}: {exc}"
+    finally:
+        if engine is not None:
+            try:
+                engine.close()
+            except Exception:  # noqa: BLE001, S110
+                pass
+        shutil.rmtree(db_dir, ignore_errors=True)
+
+    def _cached(query: GoldQuery) -> list[str]:
+        if query.query_id in errors:
+            raise RuntimeError(errors[query.query_id])
+        return cache.get(query.query_id, [])
+
+    ladder = tuple(sorted(set(scenario.evidence_recall_k)))
+    per_k = {k: aggregate(gold_set.queries, _cached, k=k) for k in ladder}
+    rows = _per_query_rows(gold_set.queries, cache, errors, ladder)
+    return ArmExecution(
+        ingested=len(items),
+        retrievals=retrievals,
+        cache=cache,
+        errors=errors,
+        per_k=per_k,
+        rows=rows,
+        queries=gold_set.queries,
+    )
+
+
 def run_characterization(
     *,
     data_root: Path,
@@ -186,8 +381,6 @@ def run_characterization(
     blank_provenance: bool = False,
 ) -> CharacterizationResult:
     """Ingest, verify gold, score, and write. Retrieval happens ONCE per query."""
-    from fathomdb import Engine  # noqa: PLC0415
-
     config_doc = {
         "schema_version": "earp.v1",
         "campaign": "characterization",
@@ -231,130 +424,55 @@ def run_characterization(
     if depth_blocker is not None:
         return _blocked_result(depth_blocker)
 
-    if not Path(data_root).is_dir():
-        return _blocked_result(
-            _blocked(
-                BlockerCode.CORPUS_ROOT_ABSENT,
-                f"configured corpus data_root does not exist: {data_root}",
-                "characterize.ingest",
-            )
-        )
-
-    items, ingest_blocker = _load_snapshot_shards(Path(data_root), Path(snapshot_path))
-    if ingest_blocker is not None:
-        return _blocked_result(ingest_blocker)
-
-    verification = verify_gold(
-        gold_path=Path(gold_path),
-        snapshot_path=Path(snapshot_path),
-        manifest_path=manifest_path,
-        expected_sha256=gold_sha256,
-        expected_corpus_hash=corpus_hash,
-        expected_qrels_version=qrels_version,
+    # The thin single-arm wrapper (S8): the arm executor does the work; this
+    # function keeps its historical `limit = max(ladder)` behaviour by
+    # synthesizing the scenario itself, and keeps writing its own records.
+    execution = execute_arm(
+        scenario=ResolvedScenario(
+            campaign=CampaignKind.CHARACTERIZATION,
+            config_sha256=_lib.config_sha256(dict(config_doc)),
+            query_call="Engine.search_text_only",
+            retrieval_mode=RetrievalMode.FTS_ONLY,
+            max_measurable_k=deepest,
+            use_default_embedder=False,
+            query_params={"limit": deepest},
+            evidence_recall_k=ladder,
+            document_metrics=(),
+            corpus=config_doc["corpus"],
+            gold=config_doc["gold"],
+            decision_rule=None,
+            consumed_paths=frozenset(),
+            carried_paths=frozenset(),
+        ),
         data_root=Path(data_root),
+        snapshot_path=Path(snapshot_path),
+        gold_path=Path(gold_path),
+        gold_sha256=gold_sha256,
+        corpus_hash=corpus_hash,
+        qrels_version=qrels_version,
+        manifest_path=manifest_path,
+        retrieve_override=retrieve_override,
     )
-    if verification.blocker is not None:
-        blocker = verification.blocker
-        if blocker.code is BlockerCode.GOLD_STALE_QRELS_VERSION:
-            blocker = _blocked(
-                blocker.code,
-                blocker.message + " (tests/corpus/scripts/build_ir_gold.py)",
-                blocker.stage,
-                **blocker.detail,
-            )
-        return _blocked_result(blocker)
-
-    gold_set = verification.gold_set
-    assert gold_set is not None
-
-    issues = validate_methodology(gold_set.queries)
-    if issues:
-        return _blocked_result(
-            _blocked(
-                BlockerCode.GOLD_MALFORMED,
-                f"gold violates a methodology invariant: {issues[:3]}",
-                "characterize.gold",
-            )
-        )
-
-    ingested_ids = {item["logical_id"] for item in items}
-    required = {
-        unit.doc_id
-        for query in gold_set.queries
-        for unit in query.required_evidence
-        if unit.necessity == "required"
-    }
-    missing = sorted(required - ingested_ids)
-    if missing:
-        return _blocked_result(
-            _blocked(
-                BlockerCode.GOLD_CORPUS_MISMATCH,
-                f"{len(missing)} required gold doc_id(s) are absent from the ingested "
-                f"corpus, e.g. {missing[:3]}; scoring would report a silent 0.0",
-                "characterize.join",
-                missing=len(missing),
-            )
-        )
-
-    db_dir = tempfile.mkdtemp(prefix="earp-characterization-")
-    engine = None
-    cache: dict[str, list[str]] = {}
-    errors: dict[str, str] = {}
-    retrievals = 0
-
-    try:
-        engine = Engine.open(str(Path(db_dir) / "corpus.db"))
-        engine.write(items)
-
-        # Retrieve ONCE per query, with the deepest rung as the public result
-        # limit. Calling the engine per K rung would re-execute every search
-        # -- ~55 hours at corpus scale instead of ~28.
-        for query in gold_set.queries:
-            retrievals += 1
-            try:
-                if retrieve_override is not None:
-                    result = retrieve_override(query.query)
-                else:
-                    result = engine.search_text_only(query.query, limit=deepest)
-                cache[query.query_id] = [
-                    hit.id.value
-                    for hit in result.results[:deepest]
-                    if getattr(hit.id, "space", None) == "logical"
-                ]
-            except Exception as exc:  # noqa: BLE001 -- typed per-query failure
-                errors[query.query_id] = f"{type(exc).__name__}: {exc}"
-    finally:
-        if engine is not None:
-            try:
-                engine.close()
-            except Exception:  # noqa: BLE001, S110
-                pass
-        shutil.rmtree(db_dir, ignore_errors=True)
-
-    def _cached(query: GoldQuery) -> list[str]:
-        if query.query_id in errors:
-            raise RuntimeError(errors[query.query_id])
-        return cache.get(query.query_id, [])
-
-    per_k = {k: aggregate(gold_set.queries, _cached, k=k) for k in ladder}
-    rows = _per_query_rows(gold_set.queries, cache, errors, ladder)
+    if execution.blocker is not None:
+        return _blocked_result(execution.blocker)
 
     outcome = _write(
         config_doc, experiments_root, experiment, ts, RunVerdict.COMPLETE,
-        _metrics_document(per_k), rows, (),
-        f"characterization over {len(items)} docs, {len(gold_set.queries)} queries",
+        _metrics_document(execution.per_k), execution.rows, (),
+        f"characterization over {execution.ingested} docs, "
+        f"{len(execution.queries)} queries",
         blank_provenance, deepest,
     )
     return CharacterizationResult(
         verdict=RunVerdict.COMPLETE,
         run_id=outcome.run_id,
         run_dir=outcome.run_dir,
-        ingested=len(items),
-        retrievals=retrievals,
+        ingested=execution.ingested,
+        retrievals=execution.retrievals,
         fanout_used=deepest,
-        per_k=per_k,
+        per_k=execution.per_k,
         document_metrics={"ndcg": resolve_ndcg(has_graded_relevance=False)},
-        per_query_rows=rows,
+        per_query_rows=execution.rows,
         config_doc=config_doc,
         code_sha=_git_sha(blank_provenance),
         python_version="" if blank_provenance else platform.python_version(),
@@ -544,10 +662,12 @@ def replay(
 
 
 __all__ = [
+    "ArmExecution",
     "CharacterizationResult",
     "Drift",
     "DriftAxis",
     "ReplayReport",
+    "execute_arm",
     "load_corpus",
     "replay",
     "run_characterization",

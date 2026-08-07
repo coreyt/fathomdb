@@ -443,7 +443,7 @@ def run_diagnostic(
                     )
                 )
 
-        call = query_override or _resolve_call(engine, scenario.query_call)
+        call = query_override or resolve_call(engine, scenario.query_call)
         params = {
             PARAM_RENAMES.get(key, key): value
             for key, value in scenario.query_params.items()
@@ -494,7 +494,11 @@ def run_diagnostic(
     )
 
 
-def _resolve_call(engine: Any, name: str) -> Callable[..., Any]:
+def resolve_call(engine: Any, name: str) -> Callable[..., Any]:
+    """Map a config `Engine.<method>` name to the bound engine method. Public
+    since S8: the characterization/comparison arm executor threads
+    `query_call`/`query_params` through the same seam as the diagnostic
+    runner, rather than growing a second rename table."""
     attribute = name.split(".", 1)[1]
     return getattr(engine, attribute)
 
@@ -589,5 +593,6 @@ __all__ = [
     "classify_delta",
     "classify_open",
     "load_fixture",
+    "resolve_call",
     "run_diagnostic",
 ]

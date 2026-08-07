@@ -42,6 +42,28 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  [{blocker.code.value}] {path}: {blocker.message}", file=sys.stderr)
         return 1
 
+    if result.arms:
+        print(f"earp: {args.path} resolves")
+        print(f"  campaign        {doc.get('campaign')}")
+        print(f"  arms            {len(result.arms)} ({', '.join(a.name for a in result.arms)})")
+        for arm in result.arms:
+            print(
+                f"    {arm.name}: {arm.scenario.query_call} "
+                f"[{arm.scenario.retrieval_mode.value}, limit {arm.scenario.max_measurable_k}]"
+            )
+        comparison = result.comparison
+        if comparison is not None:
+            print(f"  changed knobs   {list(comparison.changed_knobs)}")
+            print(
+                f"  statistics      metric={comparison.metric} "
+                f"method={comparison.ci_method} seed={comparison.seed} "
+                f"resamples={comparison.resamples} min_n={comparison.min_n}"
+            )
+        else:
+            print("  statistics      none (sweep: outcomes only, no claim)")
+        print(f"  decision rule   {result.decision_rule or 'none (no better-than claim)'}")
+        return 0
+
     scenario = result.scenario
     assert scenario is not None
     print(f"earp: {args.path} resolves")

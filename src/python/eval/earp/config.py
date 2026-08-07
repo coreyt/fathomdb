@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Mapping
@@ -65,17 +66,29 @@ CALL_PARAMS: Mapping[str, frozenset[str]] = {
     "Engine.search_text_only": frozenset({"limit"}),
 }
 
-#: Campaign kinds `earp.v1` structurally cannot represent: it has exactly one
-#: `scenario` object and no arms array.
+#: Campaign kinds `earp.v1` structurally cannot represent. EMPTY since S8: the
+#: `arms` array made `comparison` and `sweep` expressible, so every declared
+#: kind now has an owning, executable path. The mechanism stays for any future
+#: declared-but-unbuildable kind.
 #:
-#: `replay` is NOT here. It needs a pointer to a prior run, but that pointer is
-#: a CLI argument rather than a config key -- putting it in the config would
+#: `replay` was never here. It needs a pointer to a prior run, but that pointer
+#: is a CLI argument rather than a config key -- putting it in the config would
 #: change `config_sha256`, so the config-drift axis would fire on every replay
 #: including a perfect one, destroying the only case worth reporting.
-INEXPRESSIBLE: Mapping[str, str] = {
-    "comparison": "S8 (needs >= 2 arms; earp.v1 has one scenario and no arms array)",
-    "sweep": "S8 (needs N arms; earp.v1 has one scenario and no arms array)",
-}
+INEXPRESSIBLE: Mapping[str, str] = {}
+
+#: The S8 kind split. `scenario` and `arms` are mutually exclusive per kind
+#: (resolver-enforced; the schema cannot express it): single-scenario kinds
+#: require `scenario`, arms kinds require `arms` -- `comparison` with exactly
+#: 2 (arms[0] is control, arms[1] is treatment), `sweep` with >= 2.
+ARMS_CAMPAIGNS: frozenset[str] = frozenset({"comparison", "sweep"})
+SINGLE_SCENARIO_CAMPAIGNS: frozenset[str] = frozenset(
+    {"characterization", "replay", "diagnostic"}
+)
+
+#: The whole v1 strata vocabulary (scoped commitment, not vacuous): declaring
+#: `query_class` sets each per-query row's `stratum` to its gold query_class.
+STRATA_VOCABULARY: frozenset[str] = frozenset({"query_class"})
 
 #: metric name -> whether `@k` is required, and its emitting condition.
 METRIC_NAMES: Mapping[str, str] = {
@@ -106,11 +119,22 @@ def _diagnostic_only(doc: Mapping[str, Any]) -> bool:
     return doc.get("campaign") == "diagnostic"
 
 
-def _never(_doc: Mapping[str, Any]) -> bool:
-    """`comparison.*` is owned by S8 AND unusable in v1, because the only
-    campaign that could consume it is itself inexpressible. The
-    inexpressible-campaign refusal outranks carrying."""
-    return False
+def _comparison_only(doc: Mapping[str, Any]) -> bool:
+    """`comparison.*` is consumable ONLY by a comparison campaign. A sweep may
+    NOT carry the block in v1 -- sweep makes no claim and declares no knob
+    axis, so a carried block would be a declaration the run must silently
+    ignore. Same reasoning refuses it on characterizations, as before S8."""
+    return doc.get("campaign") == "comparison"
+
+
+def _arms_campaigns_only(doc: Mapping[str, Any]) -> bool:
+    return doc.get("campaign") in ARMS_CAMPAIGNS
+
+
+def _not_sweep(doc: Mapping[str, Any]) -> bool:
+    """A sweep records outcomes and makes NO comparative claim (S8 rule 2 /
+    D-4): a decision rule on a sweep is a claim path it must not have."""
+    return doc.get("campaign") != "sweep"
 
 
 CONSUMER_REGISTRY: Mapping[str, Consumer] = {
@@ -149,17 +173,24 @@ CONSUMER_REGISTRY: Mapping[str, Consumer] = {
     "metrics.evidence_recall_k": Consumer("S6"),
     "metrics.document_metrics": Consumer("S6"),
     "metrics.integrity": Consumer("S6"),
-    "decision_rule": Consumer("S8"),
+    # ONLY `arms` is registered for the arms array: `declared_paths` never
+    # descends into arrays, so no `arms.*` path is derivable. Arm-internal
+    # governance happens SOLELY in the per-arm resolution pass, which re-runs
+    # every consumer/applicability check on a synthesized single-scenario
+    # document.
+    "arms": Consumer("S8", _arms_campaigns_only),
+    "decision_rule": Consumer("S8", _not_sweep),
     "decision_rule.metric": Consumer("S3"),
     "decision_rule.direction": Consumer("S3"),
     "decision_rule.threshold": Consumer("S3"),
-    "comparison": Consumer("S8", _never),
-    "comparison.changed_knobs": Consumer("S8", _never),
-    "comparison.strata": Consumer("S8", _never),
-    "comparison.ci_method": Consumer("S8", _never),
-    "comparison.seed": Consumer("S8", _never),
-    "comparison.resamples": Consumer("S8", _never),
-    "comparison.min_n": Consumer("S8", _never),
+    "comparison": Consumer("S8", _comparison_only),
+    "comparison.changed_knobs": Consumer("S8", _comparison_only),
+    "comparison.metric": Consumer("S8", _comparison_only),
+    "comparison.strata": Consumer("S8", _comparison_only),
+    "comparison.ci_method": Consumer("S8", _comparison_only),
+    "comparison.seed": Consumer("S8", _comparison_only),
+    "comparison.resamples": Consumer("S8", _comparison_only),
+    "comparison.min_n": Consumer("S8", _comparison_only),
     "budget": Consumer("S9"),
     #: Carried unconditionally: there is no priced-arm declaration in earp.v1,
     #: so any applicability predicate would be undecidable.
@@ -194,13 +225,47 @@ class ResolvedScenario:
 
 
 @dataclass(frozen=True)
+class ResolvedArm:
+    """One named arm, resolved through the full single-scenario machinery on a
+    synthesized document. `scenario.config_sha256` is the synthesized-document
+    hash -- a supplementary label, NEVER the run identity (the whole-document
+    hash is; `make_run_id` keys on it and it covers both arms)."""
+
+    name: str
+    scenario: ResolvedScenario
+
+
+@dataclass(frozen=True)
+class ResolvedComparison:
+    """The comparison contract, fixed before the first retrieval (S8 rule 2)."""
+
+    metric: str
+    ci_method: str
+    seed: int
+    resamples: int
+    min_n: int
+    changed_knobs: tuple[str, ...]
+    strata: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class ConfigResolution:
-    """`blockers` is empty iff `scenario` is not None."""
+    """`blockers` is empty iff the config resolved: to `scenario` for
+    single-scenario campaigns, or to `arms` (with `comparison` for the
+    comparison kind) for arms campaigns -- never both."""
 
     blockers: tuple[Blocker, ...] = ()
     scenario: ResolvedScenario | None = None
     #: Non-fatal notes, e.g. paths carried for a later slice.
     notes: tuple[str, ...] = field(default_factory=tuple)
+    #: S8 -- arms campaigns only. (name, resolved scenario) in declared order;
+    #: for a comparison, arms[0] is control and arms[1] is treatment.
+    arms: tuple[ResolvedArm, ...] = ()
+    #: S8 -- comparison campaigns only; None for sweep.
+    comparison: ResolvedComparison | None = None
+    #: S8 -- arms campaigns only; a single-scenario campaign's rule lives on
+    #: its ResolvedScenario, as before.
+    decision_rule: DecisionRule | None = None
 
 
 def schema_paths() -> tuple[str, ...]:
@@ -293,6 +358,48 @@ def resolve_config(doc: Mapping[str, Any]) -> ConfigResolution:
             )
         )
 
+    # S8: `scenario` and `arms` are mutually exclusive per kind. The schema
+    # dropped `scenario` from its required list (an arms-only document must be
+    # able to validate), so per-kind presence is enforced here. An `arms` key
+    # on a single-scenario campaign is refused by the consumer loop below.
+    if isinstance(campaign_raw, str) and campaign_raw in ARMS_CAMPAIGNS:
+        if "scenario" in doc:
+            blockers.append(
+                _blocker(
+                    BlockerCode.CONFIG_UNUSED_KEY,
+                    (
+                        f"a `{campaign_raw}` campaign declares per-arm scenarios "
+                        f"under `arms`; a top-level `scenario` and `arms` are "
+                        f"mutually exclusive"
+                    ),
+                    "scenario",
+                )
+            )
+        if "arms" not in doc:
+            blockers.append(
+                _blocker(
+                    BlockerCode.CONFIG_MISSING_KEY,
+                    (
+                        f"a `{campaign_raw}` campaign requires `arms` "
+                        f"({'exactly 2' if campaign_raw == 'comparison' else '>= 2'} "
+                        f"named arms, each with a full scenario)"
+                    ),
+                    "arms",
+                )
+            )
+    elif isinstance(campaign_raw, str) and campaign_raw in SINGLE_SCENARIO_CAMPAIGNS:
+        if "scenario" not in doc:
+            blockers.append(
+                _blocker(
+                    BlockerCode.CONFIG_MISSING_KEY,
+                    (
+                        f"a `{campaign_raw}` campaign requires `scenario`; the schema "
+                        f"keeps it optional only so arms-only documents can validate"
+                    ),
+                    "scenario",
+                )
+            )
+
     declared = _declared_paths_of(doc)
     for path in sorted(declared):
         consumer = CONSUMER_REGISTRY.get(path)
@@ -302,8 +409,9 @@ def resolve_config(doc: Mapping[str, Any]) -> ConfigResolution:
                     BlockerCode.CONFIG_UNUSED_KEY,
                     (
                         f"`{path}` is inapplicable to this config; its owning slice "
-                        f"({consumer.slice_id}) can only consume it from a campaign "
-                        f"kind earp.v1 cannot express"
+                        f"({consumer.slice_id}) does not consume it from campaign "
+                        f"`{doc.get('campaign')}`, so carrying it would be a "
+                        f"declaration the run must silently ignore"
                     ),
                     path,
                 )
@@ -550,6 +658,21 @@ def resolve_config(doc: Mapping[str, Any]) -> ConfigResolution:
                 threshold=float(rule_doc["threshold"]),
             )
 
+    if isinstance(campaign_raw, str) and campaign_raw in ARMS_CAMPAIGNS:
+        resolved_arms = _resolve_arms(doc, blockers)
+        resolved_comparison = (
+            _resolve_comparison(doc, ladder, resolved_arms, blockers)
+            if campaign_raw == "comparison"
+            else None
+        )
+        if blockers:
+            return ConfigResolution(blockers=tuple(blockers))
+        return ConfigResolution(
+            arms=resolved_arms,
+            comparison=resolved_comparison,
+            decision_rule=decision_rule,
+        )
+
     if blockers:
         return ConfigResolution(blockers=tuple(blockers))
 
@@ -594,6 +717,331 @@ def resolve_config(doc: Mapping[str, Any]) -> ConfigResolution:
     )
 
 
+#: Walker array paths read `arms.[0]scenario...` (with a trailing dot on value
+#: defects); resolver paths read `arms[0].scenario...`. One normal form, so
+#: per-arm re-resolution can be deduplicated against whole-document walker
+#: findings instead of reporting the same defect in two spellings.
+_ARM_INDEX_RE = re.compile(r"\.\[(\d+)\]")
+
+
+def _norm_path(path: str) -> str:
+    return _ARM_INDEX_RE.sub(r"[\1].", path).rstrip(".")
+
+
+def _resolve_arms(doc: Mapping[str, Any], blockers: list[Blocker]) -> tuple[ResolvedArm, ...]:
+    """Resolve every arm as a synthesized single-scenario document.
+
+    This re-runs the EXISTING full resolution machinery per arm -- every
+    consumer/applicability check, S6a limit injection, S7 projection coherence
+    -- so `scenario.fixture` inside an arm is caught exactly as it would be at
+    top level. Shared sections (corpus/gold/metrics) are copied verbatim into
+    the synthesized document; defects in them are reported once, at the parent
+    level, and their per-arm duplicates are dropped.
+    """
+    arms_raw = doc.get("arms")
+    if not isinstance(arms_raw, list):
+        return ()
+
+    campaign_raw = doc.get("campaign")
+    if campaign_raw == "comparison" and len(arms_raw) != 2:
+        blockers.append(
+            _blocker(
+                BlockerCode.CONFIG_INVALID_VALUE,
+                (
+                    f"a comparison requires exactly 2 arms (arms[0] is control, "
+                    f"arms[1] is treatment); got {len(arms_raw)}"
+                ),
+                "arms",
+            )
+        )
+
+    seen = {
+        (b.code, _norm_path(str(b.detail["path"])))
+        for b in blockers
+        if "path" in b.detail
+    }
+    resolved: list[ResolvedArm] = []
+    names: list[str] = []
+    for index, arm in enumerate(arms_raw):
+        if not isinstance(arm, dict):
+            continue  # the walker already recorded the type defect
+        name_raw = arm.get("name")
+        name = name_raw if isinstance(name_raw, str) else ""
+        if "name" in arm and not name:
+            # Present but empty or mistyped; absence is the walker's finding.
+            blockers.append(
+                _blocker(
+                    BlockerCode.CONFIG_INVALID_VALUE,
+                    "arm `name` must be a non-empty string",
+                    f"arms[{index}].name",
+                )
+            )
+        if name:
+            names.append(name)
+        scenario_raw = arm.get("scenario")
+        if not isinstance(scenario_raw, dict):
+            continue  # the walker already recorded the missing/mistyped scenario
+        synthesized: dict[str, Any] = {
+            "schema_version": "earp.v1",
+            # `characterization` is the single-scenario kind with this arm's
+            # semantics: gold-measured retrieval, no fixture, no authored query
+            # text -- so the diagnostic-only consumers refuse inside an arm
+            # exactly as they would on a top-level characterization.
+            "campaign": "characterization",
+            "scenario": scenario_raw,
+        }
+        for key in ("corpus", "gold", "metrics"):
+            if key in doc:
+                synthesized[key] = doc[key]
+        sub = resolve_config(synthesized)
+        for sub_blocker in sub.blockers:
+            path = sub_blocker.detail.get("path")
+            if path is None:
+                # e.g. a depth blocker: arm-specific, path-less; keep, labeled.
+                blockers.append(
+                    Blocker(
+                        code=sub_blocker.code,
+                        message=f"arms[{index}] (`{name}`): {sub_blocker.message}",
+                        stage=sub_blocker.stage,
+                        detail={**sub_blocker.detail, "arm": name},
+                    )
+                )
+            elif str(path).startswith("scenario"):
+                new_path = f"arms[{index}].{path}"
+                if (sub_blocker.code, _norm_path(new_path)) in seen:
+                    continue  # the whole-document walker already reported it
+                blockers.append(
+                    Blocker(
+                        code=sub_blocker.code,
+                        message=f"arms[{index}]: {sub_blocker.message}",
+                        stage=sub_blocker.stage,
+                        detail={**sub_blocker.detail, "path": new_path, "arm": name},
+                    )
+                )
+            # else: a corpus/gold/metrics defect -- shared content, already
+            # reported once at the parent level.
+        if sub.scenario is not None and name:
+            resolved.append(ResolvedArm(name=name, scenario=sub.scenario))
+
+    duplicates = sorted({n for n in names if names.count(n) > 1})
+    if duplicates:
+        blockers.append(
+            _blocker(
+                BlockerCode.CONFIG_INVALID_VALUE,
+                f"arm names must be unique; duplicated: {duplicates}",
+                "arms",
+            )
+        )
+    return tuple(resolved)
+
+
+#: Sentinel for the symmetric diff: an absent path never equals a present one.
+_ABSENT = object()
+
+
+def _knob_projection(scenario: ResolvedScenario) -> dict[str, Any]:
+    """An arm's RESOLVED representation projected back to config paths.
+
+    Resolver defaults are materialized (`limit` 10 via query_params injection,
+    `use_default_embedder` false, `readiness_timeout_s` 30), so declaring a
+    default explicitly in one arm and omitting it in the other is NOT a
+    difference. Derived fields (`retrieval_mode`, `max_measurable_k`) are not
+    diffable paths: a derived divergence attributes to its causal config path.
+    """
+    projection: dict[str, Any] = {
+        "scenario.query.call": scenario.query_call,
+        "scenario.engine.use_default_embedder": scenario.use_default_embedder,
+        "scenario.projections.readiness_timeout_s": scenario.readiness_timeout_s,
+    }
+    for key, value in scenario.query_params.items():
+        projection[f"scenario.query.{key}"] = value
+    if scenario.projections:
+        projection["scenario.projections.declare"] = tuple(
+            (p.name, tuple(p.roles), p.fts, p.vector) for p in scenario.projections
+        )
+    return projection
+
+
+def _resolve_comparison(
+    doc: Mapping[str, Any],
+    ladder: tuple[Any, ...],
+    resolved_arms: tuple[ResolvedArm, ...],
+    blockers: list[Blocker],
+) -> ResolvedComparison | None:
+    """Enforce S8 rules 1 and 2: the effect is defined before it is seen, and
+    one-knob honesty is symmetric."""
+    comparison_raw = doc.get("comparison")
+    if not isinstance(comparison_raw, dict):
+        blockers.append(
+            _blocker(
+                BlockerCode.CONFIG_MISSING_KEY,
+                (
+                    "a comparison campaign requires the `comparison` block: metric, "
+                    "ci_method, seed, resamples, and min_n are fixed before the "
+                    "first retrieval"
+                ),
+                "comparison",
+            )
+        )
+        return None
+
+    complete = True
+    for field_name in ("metric", "ci_method", "seed", "resamples", "min_n"):
+        if field_name not in comparison_raw:
+            complete = False
+            blockers.append(
+                _blocker(
+                    BlockerCode.CONFIG_MISSING_KEY,
+                    (
+                        "required for comparison campaigns at resolution (the schema "
+                        "keeps it optional only because the block is shared); the "
+                        "effect is defined before it is seen"
+                    ),
+                    f"comparison.{field_name}",
+                )
+            )
+
+    ci_method = comparison_raw.get("ci_method")
+    if ci_method == "percentile_bootstrap":
+        complete = False
+        blockers.append(
+            _blocker(
+                BlockerCode.CONFIG_INVALID_VALUE,
+                (
+                    "v1 comparisons run exactly one method, `paired_bootstrap`; the "
+                    "unpaired percentile bootstrap stays schema-legal for future "
+                    "kinds and is refused here, deliberately"
+                ),
+                "comparison.ci_method",
+            )
+        )
+
+    strata: tuple[str, ...] = ()
+    strata_raw = comparison_raw.get("strata")
+    if isinstance(strata_raw, list):
+        unknown = [s for s in strata_raw if s not in STRATA_VOCABULARY]
+        if unknown:
+            blockers.append(
+                _blocker(
+                    BlockerCode.CONFIG_INVALID_VALUE,
+                    (
+                        f"v1 strata vocabulary is exactly "
+                        f"{sorted(STRATA_VOCABULARY)}; got {unknown}"
+                    ),
+                    "comparison.strata",
+                )
+            )
+        else:
+            strata = tuple(str(s) for s in strata_raw)
+
+    metric = comparison_raw.get("metric")
+    if isinstance(metric, str):
+        if not emits(metric, evidence_recall_k=ladder, has_negatives=True):
+            complete = False
+            blockers.append(
+                _blocker(
+                    BlockerCode.CONFIG_INVALID_VALUE,
+                    (
+                        f"comparison metric `{metric}` is not emittable by this "
+                        f"campaign (ladder {list(ladder)}); a comparison on an "
+                        f"unemittable metric would never produce a paired value"
+                    ),
+                    "comparison.metric",
+                )
+            )
+        else:
+            _base, _, suffix = metric.partition("@")
+            if suffix.isdigit():
+                for arm in resolved_arms:
+                    depth_blocker = check_depth(
+                        arm.scenario.retrieval_mode,
+                        int(suffix),
+                        arm.scenario.max_measurable_k,
+                    )
+                    if depth_blocker is not None:
+                        complete = False
+                        blockers.append(
+                            _blocker(
+                                BlockerCode.CONFIG_INVALID_VALUE,
+                                f"arm `{arm.name}` cannot measure `{metric}`: "
+                                f"{depth_blocker.message}",
+                                "comparison.metric",
+                            )
+                        )
+
+    changed_raw = comparison_raw.get("changed_knobs")
+    changed = (
+        tuple(k for k in changed_raw if isinstance(k, str))
+        if isinstance(changed_raw, list)
+        else ()
+    )
+    if len(resolved_arms) == 2 and isinstance(changed_raw, list):
+        control, treatment = (
+            _knob_projection(resolved_arms[0].scenario),
+            _knob_projection(resolved_arms[1].scenario),
+        )
+        differing = sorted(
+            path
+            for path in set(control) | set(treatment)
+            if control.get(path, _ABSENT) != treatment.get(path, _ABSENT)
+        )
+        for path in differing:
+            if path not in changed:
+                complete = False
+                blockers.append(
+                    _blocker(
+                        BlockerCode.CONFIG_INVALID_VALUE,
+                        (
+                            f"the resolved arms differ at `{path}`, which "
+                            f"`comparison.changed_knobs` does not declare; every "
+                            f"differing path must be declared"
+                        ),
+                        "comparison.changed_knobs",
+                    )
+                )
+        for path in changed:
+            if path not in differing:
+                complete = False
+                blockers.append(
+                    _blocker(
+                        BlockerCode.CONFIG_INVALID_VALUE,
+                        (
+                            f"`comparison.changed_knobs` declares `{path}`, but the "
+                            f"resolved arms do not differ there (defaults "
+                            f"materialized: an omitted `limit` resolves to 10, "
+                            f"`use_default_embedder` to false, `readiness_timeout_s` "
+                            f"to 30); a declared knob that does not differ is as "
+                            f"much a lie as an undeclared one that does"
+                        ),
+                        "comparison.changed_knobs",
+                    )
+                )
+
+    seed = comparison_raw.get("seed")
+    resamples = comparison_raw.get("resamples")
+    min_n = comparison_raw.get("min_n")
+    if not complete or not (
+        isinstance(metric, str)
+        and ci_method == "paired_bootstrap"
+        and isinstance(seed, int)
+        and not isinstance(seed, bool)
+        and isinstance(resamples, int)
+        and not isinstance(resamples, bool)
+        and isinstance(min_n, int)
+        and not isinstance(min_n, bool)
+    ):
+        return None
+    return ResolvedComparison(
+        metric=metric,
+        ci_method=ci_method,
+        seed=seed,
+        resamples=resamples,
+        min_n=min_n,
+        changed_knobs=changed,
+        strata=strata,
+    )
+
+
 CALL_PARAMS_ALL = frozenset().union(*CALL_PARAMS.values())
 
 
@@ -611,13 +1059,18 @@ def load_config(path: Path | str) -> Mapping[str, Any]:
 
 
 __all__ = [
+    "ARMS_CAMPAIGNS",
     "CALL_MODE",
     "CALL_PARAMS",
     "CONSUMER_REGISTRY",
     "INEXPRESSIBLE",
     "METRIC_NAMES",
+    "SINGLE_SCENARIO_CAMPAIGNS",
+    "STRATA_VOCABULARY",
     "ConfigResolution",
     "Consumer",
+    "ResolvedArm",
+    "ResolvedComparison",
     "ResolvedScenario",
     "emits",
     "load_config",

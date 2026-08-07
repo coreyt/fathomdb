@@ -292,11 +292,30 @@
               }
             },
             "underpowered": {
-              "type": "boolean"
+              "type": "boolean",
+              "description": "n < min_n, exactly. Meaningful only against the declared power rule."
+            },
+            "metric": {
+              "type": "string",
+              "description": "S8. The paired effect metric, fixed before the first retrieval."
+            },
+            "exclusions": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "integer"
+              },
+              "description": "S8. Reason -> count for gold queries excluded from the paired set (error, metric_inapplicable). n + sum(exclusions) reconciles exactly with the gold query count. Abstention correctness is a SCORED outcome, never an exclusion."
             }
           }
         }
       ]
+    },
+    "arms": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/arm_result"
+      },
+      "description": "S8. Per-arm record for comparison/sweep campaigns, keyed by arm name. When present it is the authoritative per-arm record; the top-level scenario/metrics blocks are written from the control arm (arms[0]). This is where sweep outcomes and a blocked comparison's surviving-arm partials live."
     },
     "witnesses": {
       "type": "array",
@@ -372,6 +391,63 @@
     }
   },
   "$defs": {
+    "arm_result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "query_call",
+        "retrieval_mode",
+        "fanout_used",
+        "arm_config_sha256",
+        "blockers"
+      ],
+      "description": "One arm's identity, metrics, and blockers (S8).",
+      "properties": {
+        "query_call": {
+          "type": "string"
+        },
+        "retrieval_mode": {
+          "enum": [
+            "fts_only",
+            "vector_only",
+            "hybrid"
+          ]
+        },
+        "fanout_used": {
+          "type": "integer",
+          "description": "The arm's resolved public result limit."
+        },
+        "arm_config_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "Hash of the arm's SYNTHESIZED single-scenario document -- a supplementary label, never the run identity. The run identity is the whole-document config_sha256 in the scenario block, which covers both arms."
+        },
+        "metrics": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "per_k": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/k_aggregate"
+              }
+            },
+            "document_metrics": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/metric_value"
+              }
+            }
+          }
+        },
+        "blockers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/blocker"
+          }
+        }
+      }
+    },
     "metric_value": {
       "type": "object",
       "additionalProperties": false,

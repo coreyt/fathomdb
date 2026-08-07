@@ -154,11 +154,14 @@ def test_later_slice_paths_are_carried_not_refused() -> None:
     doc["metrics"]["integrity"] = ["provenance"]
     result = resolve_config(doc)
     assert result.blockers == ()
+    assert result.scenario is not None
     assert "scenario.store.mode" in result.scenario.carried_paths
 
 
 def test_comparison_block_on_a_characterization_is_refused() -> None:
-    """Precedence: the inexpressible-campaign refusal outranks carrying."""
+    """Amended by S8: `comparison.*` flipped from `_never` to
+    campaign == "comparison" -- so a characterization carrying the block still
+    refuses, now because the block is consumable only by a comparison."""
     doc = _config()
     doc["comparison"] = {"changed_knobs": ["scenario.query.alpha"]}
     result = resolve_config(doc)
@@ -202,6 +205,7 @@ def test_search_without_embedder_is_fts_not_hybrid() -> None:
     doc = _config()
     doc["scenario"]["engine"]["use_default_embedder"] = False
     result = resolve_config(doc)
+    assert result.scenario is not None
     assert result.scenario.retrieval_mode is RetrievalMode.FTS_ONLY
 
 
@@ -274,16 +278,22 @@ def test_projection_name_rejected_for_other_calls() -> None:
     assert BlockerCode.CONFIG_INAPPLICABLE_KNOB in _codes(result)
 
 
-# --- AC-8: inexpressible campaigns -----------------------------------------
+# --- AC-8: campaign-kind coverage ------------------------------------------
 
 
 @pytest.mark.parametrize("kind", ["comparison", "sweep"])
-def test_inexpressible_campaigns_are_refused(kind: str) -> None:
-    """earp.v1 has one scenario and no arms array, so these cannot be
-    represented — accepting them silently is the worst option."""
+def test_arms_campaigns_are_expressible_but_not_scenario_shaped(kind: str) -> None:
+    """Amended by S8: `comparison` and `sweep` left INEXPRESSIBLE (the `arms`
+    array made them representable), so a scenario-shaped document of either
+    kind is now a missing-`arms` / inapplicable-`scenario` refusal, never the
+    inexpressible-campaign blocker."""
+    from eval.earp.config import INEXPRESSIBLE  # noqa: PLC0415
+
+    assert kind not in INEXPRESSIBLE
     result = resolve_config(_config(campaign=kind))
-    assert BlockerCode.CONFIG_CAMPAIGN_INEXPRESSIBLE in _codes(result)
-    assert any("S8" in b.message for b in result.blockers)
+    assert BlockerCode.CONFIG_CAMPAIGN_INEXPRESSIBLE not in _codes(result)
+    assert BlockerCode.CONFIG_MISSING_KEY in _codes(result)
+    assert any(b.detail.get("path") == "arms" for b in result.blockers)
 
 
 def test_replay_is_expressible() -> None:
@@ -333,11 +343,13 @@ def test_decision_rule_on_a_good_metric_resolves() -> None:
     }
     result = resolve_config(doc)
     assert result.blockers == ()
+    assert result.scenario is not None
     assert result.scenario.decision_rule is not None
 
 
 def test_absent_decision_rule_stays_absent() -> None:
     result = resolve_config(_config())
+    assert result.scenario is not None
     assert result.scenario.decision_rule is None
 
 
