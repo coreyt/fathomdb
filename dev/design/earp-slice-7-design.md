@@ -87,7 +87,7 @@ projection state from its true sources. Three invariants:
       "type": "object", "additionalProperties": false,
       "required": ["name", "roles"],
       "properties": {
-        "name":  { "type": "string", "minLength": 1 },
+        "name":  { "type": "string" },
         "roles": { "type": "array", "minItems": 1,
                    "items": { "enum": ["filterable", "searchable", "rankable"] } },
         "fts":    { "type": "boolean" },
