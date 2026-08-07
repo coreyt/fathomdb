@@ -16,6 +16,12 @@ The main `fathomdb` npm package publishes under `next` first. It is promoted
 to `latest` only after every platform's actual-runner registry smoke and the
 co-tagging check pass. Platform packages stay on `next`.
 
+This release also prepares the next scale-bound release without making a
+scale claim: it records the current documentation authority/debt inventory
+and pre-registers the future measurement protocol. Neither preparatory slice
+executes a scale run, changes a supported-scale statement, nor authorizes a
+publication.
+
 ## Requirements and acceptance criteria
 
 - The manifest, loader, npm metadata, and publish job agree on exactly five
@@ -28,6 +34,13 @@ co-tagging check pass. Platform packages stay on `next`.
   relies on GitHub OIDC, never a long-lived npm token.
 - The immutable candidate passes dry-run and full CI. A failed platform smoke
   leaves `latest` untouched and the version recoverable from its tag.
+- A two-phase `repo-prune` classification records current authorities and
+  document debt without deleting, moving, or silently rewriting historical
+  records.
+- The 0.8.23 scale-bound measurement protocol is pre-registered with fixture
+  identity, dependency/toolchain/hardware capture, repetitions, metrics, and
+  result-artifact schema; it explicitly records that no scale measurement or
+  supported-scale claim has been made.
 
 ## Slice ladder
 
@@ -36,19 +49,50 @@ co-tagging check pass. Platform packages stay on `next`.
 | 0 | Contract, acceptance, and npm OIDC bootstrap | — |
 | 5 | `rusqlite` 0.40 + `sqlite-vec` 0.1.9 migration | 0 |
 | 10 | Five-target platform package topology | 5 |
+| 12 | Current-authority and document-debt inventory | 10 |
+| 17 | Pre-registered 0.8.23 scale-measurement protocol (no run) | 5, 12 |
 | 15 | Native build, validation, and wheel-size coverage | 10 |
 | 20 | Ordered publish and real registry smokes | 15 |
 | 25 | `next` → `latest` promotion and release truth | 20 |
 
+### Slice 12 — DOC-BASELINE
+
+Run the existing two-phase `repo-prune` classifier against the candidate and
+commit a bounded inventory of current authority, historical records, and
+document debt. The inventory must identify each proposed follow-up's owner and
+release home. Historical records stay in place; this slice neither deletes nor
+moves documents, rewrites their content, or broadens Markdown/link validation.
+
+Acceptance is a reproducible classifier command, a versioned inventory with
+source revision/provenance, and a reviewable distinction between current
+authority, historical record, and unresolved debt. It must be useful to the
+0.8.23 architecture/contract-baseline work without pre-deciding that work.
+
+### Slice 17 — SCALE-PROTOCOL
+
+Pre-register, but do not execute, the 0.8.23 supported-scale characterization.
+The protocol must pin the candidate revision and corpus/fixture identity;
+record dependency-lock, schema, toolchain, CPU/GPU, and host-capacity evidence;
+specify repetitions, warm/cold treatment, metrics and percentile summaries;
+and define the result-artifact schema and interpretation rules.
+
+It must state that the protocol has no measured result, creates no supported
+scale limit, and cannot satisfy either the 0.8.23 advisory or 0.8.24 firm
+scale-bound outcome. Execution remains after the complete 0.8.22 dependency
+stack, including the coupled vector migration.
+
 ## Landed release state
 
 <!-- BEGIN GENERATED release-state:0.8.22:plan-landed-roll-up -->
-**LANDED on `origin/main`, in full:** Slices 0 (`55792858b2adce00d3d87193d02b23a5d8d52dd7`). SCHEMA is 25; remaining ladder = 5 → 10 → 15 → 20 → 25.<!-- END GENERATED release-state:0.8.22:plan-landed-roll-up -->
+**LANDED on `origin/main`, in full:** Slices 0 (`55792858b2adce00d3d87193d02b23a5d8d52dd7`) · 5 (`55792858b2adce00d3d87193d02b23a5d8d52dd7`) · 10 (`4c7bb26b`) · 12 (`72a83049`) · 17 (`5a7f2484`). SCHEMA is 25; remaining ladder = 15 → 20 → 25.<!-- END GENERATED release-state:0.8.22:plan-landed-roll-up -->
 
 ## Reserved-gap policy
 
-No reserved-gap work is authorized by this release plan. Unsupported targets
-remain explicitly unsupported rather than implied future package promises.
+Slices 12 and 17 are authorized reserved-gap preparatory work: they establish
+the current documentation baseline and the future scale-measurement protocol.
+They do not widen the supported target matrix, imply future package promises,
+or authorize a scale measurement or publication. Unsupported targets remain
+explicitly unsupported.
 
 ## Cross-cutting DoD
 
@@ -65,6 +109,6 @@ prepares and verifies the release path; it does not authorize a registry write.
 ## Immediate next slice
 
 <!-- BEGIN GENERATED release-state:0.8.22:plan-immediate-next -->
-**IMMEDIATE NEXT: Slice 5** (`SQLITE`) — rusqlite/sqlite-vec security migration and TC-76 regression proof
+**IMMEDIATE NEXT: Slice 15** (`NATIVE-CI`) — native build, validation, and wheel-size matrix
 
-**Remaining ladder:** 5 → 10 → 15 → 20 → 25.<!-- END GENERATED release-state:0.8.22:plan-immediate-next -->
+**Remaining ladder:** 15 → 20 → 25.<!-- END GENERATED release-state:0.8.22:plan-immediate-next -->

@@ -49,6 +49,125 @@ import sys
 
 path = Path(sys.argv[1])
 text = path.read_text()
+needle = (
+    "  github-release:\n"
+    "    runs-on: ubuntu-latest\n"
+    "    if: ${{ inputs.dry_run != true && !(github.event_name == 'workflow_dispatch' && "
+    "inputs.recovery_skip_npm == true && inputs.release_version == '0.8.20') }}\n"
+    "    needs:\n"
+    "      - promote-npm-latest\n"
+)
+if text.count(needle) != 1:
+    raise SystemExit("test fixture no longer contains the github-release promotion dependency")
+path.write_text(text.replace(needle, needle.replace("    needs:\n      - promote-npm-latest\n", "    needs: publish-npm\n")))
+PY
+expect_fail "$FIXTURE" 'rejects a GitHub Release that bypasses npm latest promotion'
+
+make_fixture "$FIXTURE"
+python3 - "$FIXTURE/.github/workflows/release.yml" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text()
+needle = "  post-publish-smoke:\n    runs-on: ubuntu-latest\n"
+if text.count(needle) != 1:
+    raise SystemExit("test fixture no longer contains the shared release-ready smoke job")
+path.write_text(text.replace(needle, needle + "    continue-on-error: true\n", 1))
+PY
+expect_fail "$FIXTURE" 'rejects a release-ready smoke job that continues after failure'
+
+make_fixture "$FIXTURE"
+python3 - "$FIXTURE/.github/workflows/release.yml" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text()
+needle = "      - name: Smoke AArch64 Python wheel\n        run: bash scripts/release/smoke/smoke-pypi-wheel.sh \"${{ steps.ver.outputs.version }}\"\n"
+if text.count(needle) != 1:
+    raise SystemExit("test fixture no longer contains the AArch64 Python smoke step")
+path.write_text(text.replace(needle, needle.replace("        run:", "        continue-on-error: true\n        run:"), 1))
+PY
+expect_fail "$FIXTURE" 'rejects a release-ready smoke step that continues after failure'
+
+make_fixture "$FIXTURE"
+python3 - "$FIXTURE/.github/workflows/release.yml" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text()
+needle = "  post-publish-smoke-darwin-x64:\n    runs-on: macos-15-intel\n"
+if text.count(needle) != 1:
+    raise SystemExit("test fixture no longer contains the Darwin x64 smoke job")
+path.write_text(text.replace(needle, needle + "    continue-on-error: ${{ inputs.dry_run != true }}\n", 1))
+PY
+expect_fail "$FIXTURE" 'rejects a dynamic release-ready smoke continuation'
+
+make_fixture "$FIXTURE"
+python3 - "$FIXTURE/.github/workflows/release.yml" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text()
+needle = "  promote-npm-latest:\n    runs-on: ubuntu-latest\n    if: ${{ inputs.dry_run != true && !(github.event_name == 'workflow_dispatch' && inputs.recovery_skip_npm == true && inputs.release_version == '0.8.20') }}\n"
+if text.count(needle) != 1:
+    raise SystemExit("test fixture no longer contains the npm promotion guard")
+path.write_text(text.replace(needle, needle.replace("inputs.dry_run != true", "always() && inputs.dry_run != true"), 1))
+PY
+expect_fail "$FIXTURE" 'rejects an npm promotion that bypasses failed smoke dependencies'
+
+make_fixture "$FIXTURE"
+python3 - "$FIXTURE/.github/workflows/release.yml" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text()
+needle = "  github-release:\n    runs-on: ubuntu-latest\n    if: ${{ inputs.dry_run != true && !(github.event_name == 'workflow_dispatch' && inputs.recovery_skip_npm == true && inputs.release_version == '0.8.20') }}\n"
+if text.count(needle) != 1:
+    raise SystemExit("test fixture no longer contains the GitHub Release guard")
+path.write_text(text.replace(needle, needle.replace("inputs.dry_run != true", "!cancelled() && inputs.dry_run != true"), 1))
+PY
+expect_fail "$FIXTURE" 'rejects a GitHub Release success-bypass condition'
+
+make_fixture "$FIXTURE"
+python3 - "$FIXTURE/.github/workflows/release.yml" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text()
+needle = "  github-release:\n    runs-on: ubuntu-latest\n    if: ${{ inputs.dry_run != true && !(github.event_name == 'workflow_dispatch' && inputs.recovery_skip_npm == true && inputs.release_version == '0.8.20') }}\n"
+if text.count(needle) != 1:
+    raise SystemExit("test fixture no longer contains the GitHub Release guard")
+path.write_text(text.replace(needle, needle.replace("inputs.dry_run != true", "!(success()) && inputs.dry_run != true"), 1))
+PY
+expect_fail "$FIXTURE" 'rejects a GitHub Release parenthesized success-bypass condition'
+
+make_fixture "$FIXTURE"
+python3 - "$FIXTURE/.github/workflows/release.yml" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text()
+needle = "  github-release:\n    runs-on: ubuntu-latest\n    if: ${{ inputs.dry_run != true && !(github.event_name == 'workflow_dispatch' && inputs.recovery_skip_npm == true && inputs.release_version == '0.8.20') }}\n"
+if text.count(needle) != 1:
+    raise SystemExit("test fixture no longer contains the GitHub Release guard")
+path.write_text(text.replace(needle, needle.replace("inputs.dry_run != true", "! ( success() ) && inputs.dry_run != true"), 1))
+PY
+expect_fail "$FIXTURE" 'rejects a spaced parenthesized success-bypass condition'
+
+make_fixture "$FIXTURE"
+python3 - "$FIXTURE/.github/workflows/release.yml" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text()
 needle = "    runs-on: ${{ matrix.runner }}\n"
 if text.count(needle) != 2:
     raise SystemExit("test fixture no longer contains both matrix runner bindings")

@@ -53,11 +53,17 @@ if [ -z "$workspace_version" ]; then
   exit 1
 fi
 
+# A workflow_dispatch rehearsal is anchored to an immutable commit rather
+# than the mutable branch ref selected in the UI. Use the same full revision
+# for this local rehearsal before any build or dry-run publish command runs.
+candidate_commit="$(git -C "$REPO_ROOT" rev-parse --verify 'HEAD^{commit}')"
+
 log "Step 1/5: scripts/verify-release-gates.sh"
 GITHUB_EVENT_NAME=workflow_dispatch \
 DRY_RUN=true \
 RELEASE_DISPATCH_VERSION="$workspace_version" \
 RELEASE_GATES_TAG="v$workspace_version" \
+RELEASE_GATES_CANDIDATE_COMMIT="$candidate_commit" \
 RELEASE_GATES_REQUIRE_TAG_CHECKOUT=0 \
 RELEASE_GATES_HEAD_REF=refs/remotes/origin/main \
 bash scripts/verify-release-gates.sh

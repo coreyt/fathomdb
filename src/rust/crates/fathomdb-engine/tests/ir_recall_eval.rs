@@ -20,15 +20,15 @@ mod corpus_subset;
 #[path = "support/ir_eval.rs"]
 mod ir_eval;
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 
 use corpus_subset::Doc;
 use ir_eval::{
     evaluate_gold_set, evidence_recall_at_k, experiment_to_json, load_gold_set, negative_abstained,
     parse_gold_set, required_doc_ids, run_experiment, run_mode_bodies, validate_gold_set,
-    EvidenceUnit, GoldQuery, GoldSet, Locator, Necessity, QueryClass, QueryOrigin, RetrievalMode,
-    Span, HEADLINE_K, K_LADDER, RUNNABLE_NOW_MODES,
+    EvidenceUnit, ExperimentResult, GoldQuery, GoldSet, Locator, Necessity, QueryClass,
+    QueryOrigin, RetrievalMode, Span, HEADLINE_K, K_LADDER, RUNNABLE_NOW_MODES,
 };
 
 // ── Test constructors (keep the unit tests terse) ───────────────────────────
@@ -82,7 +82,7 @@ fn strict_is_all_of_graded_is_fraction_same_denominator() {
     let m = evidence_recall_at_k(&q, &ids(&["A", "C", "Z"]), 10);
     assert_eq!(m.strict, 0.0);
     assert_eq!(m.graded, 0.5);
-    assert_eq!(m.supporting_coverage, 1.0);
+    assert_eq!(m.supporting_coverage, Some(1.0));
     assert_eq!((m.required_n, m.required_hits), (2, 1));
 
     // Both required retrieved: strict hit, graded = 1.0.
@@ -104,6 +104,7 @@ fn strict_all_of_respects_the_k_cut() {
     // @5: B not in top-5 → strict 0, graded 0.5.
     let m5 = evidence_recall_at_k(&q, &ranked, 5);
     assert_eq!((m5.strict, m5.graded), (0.0, 0.5));
+    assert_eq!(m5.supporting_coverage, None);
     // @10: B in top-10 → strict 1.
     let m10 = evidence_recall_at_k(&q, &ranked, 10);
     assert_eq!((m10.strict, m10.graded), (1.0, 1.0));
@@ -121,7 +122,63 @@ fn supporting_evidence_is_in_neither_recall_number() {
     let m = evidence_recall_at_k(&q, &ids(&["B"]), 10);
     assert_eq!(m.strict, 0.0, "supporting hit must NOT satisfy strict recall");
     assert_eq!(m.graded, 0.0, "supporting hit must NOT inflate graded recall");
-    assert_eq!(m.supporting_coverage, 1.0, "but it IS counted in supporting-coverage");
+    assert_eq!(m.supporting_coverage, Some(1.0), "but it IS counted in supporting-coverage");
+}
+
+#[test]
+fn supporting_coverage_aggregate_uses_only_support_bearing_queries() {
+    let gold = GoldSet {
+        corpus_hash: "deadbeef".to_string(),
+        qrels_version: "v1".to_string(),
+        note: None,
+        queries: vec![
+            gq(
+                "has-support",
+                QueryClass::Commitment,
+                vec![
+                    ev("required", "A", Necessity::Required),
+                    ev("support-1", "S1", Necessity::Supporting),
+                    ev("support-2", "S2", Necessity::Supporting),
+                ],
+                &[],
+            ),
+            gq(
+                "no-support",
+                QueryClass::Action,
+                vec![ev("required", "B", Necessity::Required)],
+                &[],
+            ),
+        ],
+    };
+
+    let results = evaluate_gold_set(&gold, &[HEADLINE_K], |q| {
+        Ok(match q.query_id.as_deref() {
+            Some("has-support") => ids(&["A", "S1"]),
+            Some("no-support") => ids(&["B"]),
+            other => panic!("unexpected query: {other:?}"),
+        })
+    })
+    .expect("no error");
+
+    let aggregate = &results[&HEADLINE_K].overall;
+    assert_eq!(aggregate.supporting_query_n, 1);
+    assert_eq!(aggregate.supporting(), Some(0.5));
+    assert_eq!(results[&HEADLINE_K].per_class[&QueryClass::Action].supporting_query_n, 0);
+    assert_eq!(results[&HEADLINE_K].per_class[&QueryClass::Action].supporting(), None);
+
+    let result = ExperimentResult {
+        fanout: HEADLINE_K,
+        per_mode: BTreeMap::from([(RetrievalMode::RrfHybrid, results)]),
+        deferred_modes: vec![],
+    };
+    let json = experiment_to_json(&gold, &result);
+    let overall = &json["per_mode"]["rrf_hybrid"][HEADLINE_K.to_string()]["overall"];
+    assert_eq!(overall["supporting_coverage"], 0.5);
+    assert_eq!(overall["supporting_query_n"], 1);
+    let commitment =
+        &json["per_mode"]["rrf_hybrid"][HEADLINE_K.to_string()]["per_class"]["commitment"];
+    assert_eq!(commitment["supporting_coverage"], 0.5);
+    assert_eq!(commitment["supporting_query_n"], 1);
 }
 
 // ── (f) Legacy eu8 reduction: expected_top_k_doc_ids as the fallback unit ───
@@ -508,9 +565,11 @@ fn experiment_runner_mode_k_class_loop_wires_end_to_end() {
         for &k in &K_LADDER {
             let r = &by_k[&k];
             assert_eq!(r.overall.n, 2, "two non-negative queries");
-            for v in [r.overall.strict(), r.overall.graded(), r.overall.supporting()] {
+            for v in [r.overall.strict(), r.overall.graded()] {
                 assert!((0.0..=1.0).contains(&v), "aggregate {v} out of [0,1] at K={k}");
             }
+            assert_eq!(r.overall.supporting(), None, "no smoke query has supporting evidence");
+            assert_eq!(r.overall.supporting_query_n, 0);
             assert_eq!(r.negative.n, 1);
             assert!((0.0..=1.0).contains(&r.negative.false_positive_rate()));
         }
@@ -524,5 +583,13 @@ fn experiment_runner_mode_k_class_loop_wires_end_to_end() {
     let v = experiment_to_json(&gold, &result);
     assert_eq!(v["headline_k"], HEADLINE_K);
     assert!(v["per_mode"]["rrf_hybrid"]["10"]["overall"].is_object());
+    assert!(v["per_mode"]["rrf_hybrid"]["10"]["overall"]["supporting_coverage"].is_null());
+    assert_eq!(v["per_mode"]["rrf_hybrid"]["10"]["overall"]["supporting_query_n"], 0);
+    assert!(v["per_mode"]["rrf_hybrid"]["10"]["per_class"]["commitment"]["supporting_coverage"]
+        .is_null());
+    assert_eq!(
+        v["per_mode"]["rrf_hybrid"]["10"]["per_class"]["commitment"]["supporting_query_n"],
+        0
+    );
     assert_eq!(v["deferred_modes"][0], "fts_write_cursor");
 }

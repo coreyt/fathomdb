@@ -62,6 +62,14 @@ PROMOTION_COMMAND = re.compile(
     r'^        run: npm dist-tag add "fathomdb@\$\{RELEASE_TAG#v\}" latest\s*$',
     re.MULTILINE,
 )
+CONTINUE_ON_ERROR = re.compile(
+    r"^\s+continue-on-error:\s*(?P<value>[^#\n]+?)(?:\s+#.*)?$",
+    re.MULTILINE,
+)
+SUCCESS_BYPASS = re.compile(
+    r"(?:\b(?:always|cancelled|failure)\s*\(|!\s*(?:\(\s*)*success\s*\()",
+    re.IGNORECASE,
+)
 
 
 def root() -> Path:
@@ -196,6 +204,20 @@ def require_smoke_commands(job_name: str, block: str, runner: str) -> None:
         fail(f"{job_name} must execute Python-wheel and npm-package smoke commands")
 
 
+def require_failing_smoke_stops(job_name: str, block: str) -> None:
+    for match in CONTINUE_ON_ERROR.finditer(block):
+        if match.group("value").strip().lower() != "false":
+            fail(f"{job_name} must not use a non-false continue-on-error setting")
+
+
+def require_implicit_success(job_name: str, block: str) -> None:
+    conditions = re.findall(r"^    if:\s*(.+)$", block, re.MULTILINE)
+    if len(conditions) != 1:
+        fail(f"{job_name} must have exactly one recognized job-level if condition")
+    if SUCCESS_BYPASS.search(conditions[0]):
+        fail(f"{job_name} must not bypass failed dependencies with a status condition")
+
+
 def main() -> None:
     repo = root()
     manifest = read_json(repo / "dev/platform-capabilities.json")
@@ -294,6 +316,7 @@ def main() -> None:
         if "publish-npm" not in needs(smoke_job, smoke_block):
             fail(f"{smoke_job} must depend on publish-npm")
         require_smoke_commands(smoke_job, smoke_block, entry["runner"])
+        require_failing_smoke_stops(smoke_job, smoke_block)
         smoke_jobs.append(smoke_job)
 
     publish_main = jobs.get("publish-npm")
@@ -312,9 +335,17 @@ def main() -> None:
         fail("promote-npm-latest must depend on every release-ready platform smoke")
     if "co-tagging-assert" not in promotion_needs:
         fail("promote-npm-latest must depend on co-tagging-assert")
+    require_implicit_success("promote-npm-latest", promotion)
     promotion_command_count = promotion.count("npm dist-tag add")
     if promotion_command_count != 1 or not PROMOTION_COMMAND.search(promotion):
         fail("promote-npm-latest must promote only fathomdb@${RELEASE_TAG#v} to latest")
+
+    github_release = jobs.get("github-release")
+    if github_release is None:
+        fail("release workflow lacks github-release")
+    if "promote-npm-latest" not in needs("github-release", github_release):
+        fail("github-release must depend on promote-npm-latest")
+    require_implicit_success("github-release", github_release)
 
     print(f"ok    release-contract-truth: {release} has {len(ready)} release-ready native triples")
 

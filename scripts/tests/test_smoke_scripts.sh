@@ -47,6 +47,18 @@ assert_matches() {
   fi
 }
 
+assert_next_line() {
+  local label="$1" file="$2" command="$3" expected="$4"
+  if awk -v command="$command" -v expected="$expected" '
+    $0 == command { getline; if ($0 == expected) { found = 1 } }
+    END { exit(found ? 0 : 1) }
+  ' "$file"; then
+    pass "$label"
+  else
+    fail "$label (native command is not immediately followed by: $expected)"
+  fi
+}
+
 check_common() {
   local script="$1" label_prefix="$2"
   [ -x "$script" ] || fail "$label_prefix: not executable"
@@ -112,6 +124,26 @@ assert_contains "windows PyPI smoke: pinned install" "$PYPI_WINDOWS" '"fathomdb=
 assert_contains "windows PyPI smoke: closes engine" "$PYPI_WINDOWS" 'engine.close()'
 assert_contains "windows npm smoke: pinned install" "$NPM_WINDOWS" '"fathomdb@$Version"'
 assert_contains "windows npm smoke: closes engine" "$NPM_WINDOWS" 'await engine.close()'
+
+# `$ErrorActionPreference` does not reliably turn a nonzero native-process
+# exit into a terminating PowerShell error.  Every native command therefore
+# needs an adjacent `$LASTEXITCODE` guard, so a later successful command
+# cannot mask an install or runtime failure.
+native_exit_guard='  if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }'
+assert_next_line "windows PyPI smoke: venv propagates native failure" "$PYPI_WINDOWS" \
+  '  python -m venv "$work/venv"' "$native_exit_guard"
+assert_next_line "windows PyPI smoke: pip upgrade propagates native failure" "$PYPI_WINDOWS" \
+  '  & $python -m pip install --quiet --upgrade pip' "$native_exit_guard"
+assert_next_line "windows PyPI smoke: wheel install propagates native failure" "$PYPI_WINDOWS" \
+  '  & $python -m pip install --quiet "fathomdb==$Version"' "$native_exit_guard"
+assert_next_line "windows PyPI smoke: SDK exercise propagates native failure" "$PYPI_WINDOWS" \
+  "'@ | & \$python - \$db" "$native_exit_guard"
+assert_next_line "windows npm smoke: npm init propagates native failure" "$NPM_WINDOWS" \
+  '  npm init -y | Out-Null' "$native_exit_guard"
+assert_next_line "windows npm smoke: npm install propagates native failure" "$NPM_WINDOWS" \
+  '  npm install --silent "fathomdb@$Version"' "$native_exit_guard"
+assert_next_line "windows npm smoke: Node exercise propagates native failure" "$NPM_WINDOWS" \
+  "  node smoke.mjs (Join-Path \$work 'smoke.fdb')" "$native_exit_guard"
 
 # Run each smoke with a bad version arg — must exit non-zero BEFORE doing
 # any network work, with a usage-shaped diagnostic.

@@ -89,6 +89,55 @@ else
   fail "local release rehearsal must not require an uncreated tag"
 fi
 
+# The local helper must exercise the same immutable-candidate gate as a
+# workflow_dispatch dry run.  Its full release steps are deliberately not
+# run here: a fixture gate records the supplied candidate then exits with a
+# sentinel, proving the helper reaches the gate before any build or publish
+# command could run.
+LOCAL_DRY_RUN_FIXTURE="$(mktemp -d)"
+cleanup_local_dry_run_fixture() { rm -rf "$LOCAL_DRY_RUN_FIXTURE"; }
+trap cleanup_local_dry_run_fixture EXIT
+mkdir -p "$LOCAL_DRY_RUN_FIXTURE/scripts/release"
+cp "$local_dry_run" "$LOCAL_DRY_RUN_FIXTURE/scripts/release/local-dry-run.sh"
+cat > "$LOCAL_DRY_RUN_FIXTURE/Cargo.toml" <<'EOF'
+[workspace]
+members = []
+
+[workspace.package]
+version = "0.8.22"
+EOF
+cat > "$LOCAL_DRY_RUN_FIXTURE/scripts/verify-release-gates.sh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+: "${RELEASE_GATES_CANDIDATE_COMMIT:?missing immutable candidate}"
+printf '%s\n' "$RELEASE_GATES_CANDIDATE_COMMIT" > "$ROOT/candidate-commit"
+exit 47
+EOF
+chmod +x "$LOCAL_DRY_RUN_FIXTURE/scripts/verify-release-gates.sh"
+git -C "$LOCAL_DRY_RUN_FIXTURE" init -q
+git -C "$LOCAL_DRY_RUN_FIXTURE" add Cargo.toml scripts
+git -C "$LOCAL_DRY_RUN_FIXTURE" -c user.name=release-test -c user.email=release-test@example.invalid \
+  commit -qm 'fixture'
+fixture_head="$(git -C "$LOCAL_DRY_RUN_FIXTURE" rev-parse HEAD)"
+set +e
+local_dry_run_out="$(bash "$LOCAL_DRY_RUN_FIXTURE/scripts/release/local-dry-run.sh" 2>&1)"
+local_dry_run_status=$?
+set -e
+fixture_candidate_commit=''
+if [ -f "$LOCAL_DRY_RUN_FIXTURE/candidate-commit" ]; then
+  fixture_candidate_commit="$(<"$LOCAL_DRY_RUN_FIXTURE/candidate-commit")"
+fi
+if [ "$local_dry_run_status" -eq 0 ]; then
+  fail "local release rehearsal fixture should stop at its sentinel gate"
+elif [ -f "$LOCAL_DRY_RUN_FIXTURE/candidate-commit" ] \
+  && [ "$fixture_candidate_commit" = "$fixture_head" ] \
+  && [ "$local_dry_run_status" -eq 47 ]; then
+  pass "local release rehearsal reaches dispatch gate with its immutable candidate commit"
+else
+  fail "local release rehearsal must pass its immutable candidate commit to the dispatch gate; got: $local_dry_run_out"
+fi
+
 if [ "$(grep -c -- '--allow-dirty' "$local_dry_run" || true)" -eq 2 ]; then
   pass "local release rehearsal can package the uncommitted version-bump candidate"
 else
