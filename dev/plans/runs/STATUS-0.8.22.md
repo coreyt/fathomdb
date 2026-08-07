@@ -6,7 +6,7 @@
 
 ## Current state
 
-<!-- BEGIN GENERATED release-state:0.8.22:status-current-state -->**Next is Slice 20 (PUBLISH), NOT_STARTED.** Landed on `origin/main`: 0 (`55792858b2adce00d3d87193d02b23a5d8d52dd7`) · 5 (`55792858b2adce00d3d87193d02b23a5d8d52dd7`) · 10 (`4c7bb26b`) · 12 (`72a83049`) · 17 (`5a7f2484`) · 15 (`13341688fca3d02d11c10bb10eb26232156f8032`) — verified reachable, not asserted.<!-- END GENERATED release-state:0.8.22:status-current-state -->
+<!-- BEGIN GENERATED release-state:0.8.22:status-current-state -->**Next is Slice 18 (RETRIEVAL-LIMITS), NOT_STARTED.** Landed on `origin/main`: 0 (`55792858b2adce00d3d87193d02b23a5d8d52dd7`) · 5 (`55792858b2adce00d3d87193d02b23a5d8d52dd7`) · 10 (`4c7bb26b`) · 12 (`72a83049`) · 17 (`5a7f2484`) · 15 (`13341688fca3d02d11c10bb10eb26232156f8032`) — verified reachable, not asserted.<!-- END GENERATED release-state:0.8.22:status-current-state -->
 
 | | |
 | --- | --- |
@@ -32,4 +32,4 @@
 
 | | |
 | --- | --- |
-| **Immediate next action** | <!-- BEGIN GENERATED release-state:0.8.22:status-next-action -->**Commission Slice 20 (PUBLISH)** — ordered platform publication and registry smokes. **Remaining ladder:** 20 → 25.<!-- END GENERATED release-state:0.8.22:status-next-action --> |
+| **Immediate next action** | <!-- BEGIN GENERATED release-state:0.8.22:status-next-action -->**Commission Slice 18 (RETRIEVAL-LIMITS)** — ranked retrieval result limits and SDK parity. **Remaining ladder:** 18 → 20 → 25.<!-- END GENERATED release-state:0.8.22:status-next-action --> |

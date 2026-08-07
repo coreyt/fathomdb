@@ -678,6 +678,17 @@ only the named declared `SEARCHABLE` property-FTS projection, applying metadata,
 validity, and attribute filters. It does not body-scan, use vectors, or fuse;
 hits are text branch with no soft fallback or explanation.
 
+## Planned Slice 18 — ranked result limits (not yet shipped)
+
+The accepted 0.8.22 contract in `design/retrieval-result-limits.md` adds
+keyword-only `limit=10` to `engine.search`, `engine.search_text_only`, and
+`engine.search_projected_text`. It adds keyword-only `search_limit=10` to
+`graph.search_expand`. Each accepts `1..=100`; `0`, a negative value, and a
+value above 100 raise `InvalidArgumentError` rather than silently clamping.
+`graph.neighbors` remains a separately bounded traversal API with its existing
+50-result cap. These signatures are planned, not callable, until Slice 18
+lands.
+
 ## Non-presence
 
 Python does not expose recovery verbs or doctor-only flags. In particular,

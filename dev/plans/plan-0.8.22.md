@@ -22,6 +22,11 @@ and pre-registers the future measurement protocol. Neither preparatory slice
 executes a scale run, changes a supported-scale statement, nor authorizes a
 publication.
 
+It also makes ranked retrieval cardinality explicit before publication. The
+default result count is 10 and the validated maximum is 100 for the direct
+ranked-search families. This closes the existing unbounded FTS result paths and
+makes EARP's `K = 20` and `K = 50` measurements accessible through public SDKs.
+
 ## Requirements and acceptance criteria
 
 - The manifest, loader, npm metadata, and publish job agree on exactly five
@@ -41,6 +46,11 @@ publication.
   identity, dependency/toolchain/hardware capture, repetitions, metrics, and
   result-artifact schema; it explicitly records that no scale measurement or
   supported-scale claim has been made.
+- Ranked `search`, `search_text_only`, and `search_projected_text` default to
+  10 results, accept a caller-selected result limit through 100, and reject an
+  out-of-range request rather than silently clamping it.
+- `search_expand.search_hits` uses the same `search_limit` contract; graph
+  expansion retains its separate 50-per-root traversal cap.
 
 ## Slice ladder
 
@@ -52,7 +62,8 @@ publication.
 | 12 | Current-authority and document-debt inventory | 10 |
 | 17 | Pre-registered 0.8.23 scale-measurement protocol (no run) | 5, 12 |
 | 15 | Native build, validation, and wheel-size coverage | 10 |
-| 20 | Ordered publish and real registry smokes | 15 |
+| 18 | Ranked retrieval result limits and SDK parity | 15 |
+| 20 | Ordered publish and real registry smokes | 15, 18 |
 | 25 | `next` → `latest` promotion and release truth | 20 |
 
 ### Slice 12 — DOC-BASELINE
@@ -81,10 +92,27 @@ scale limit, and cannot satisfy either the 0.8.23 advisory or 0.8.24 firm
 scale-bound outcome. Execution remains after the complete 0.8.22 dependency
 stack, including the coupled vector migration.
 
+### Slice 18 — RETRIEVAL-LIMITS
+
+Implement the accepted ranked-result contract in
+`dev/design/retrieval-result-limits.md`: default to 10 hits, accept a requested
+limit through 100, and reject invalid requests rather than silently clamping
+them. The scope is hybrid search, text-only search, projected-text search, and
+the initial `search_hits` result of `search_expand`, across Rust, Python, and
+TypeScript.
+
+The slice must prove the default, `K = 5/20/50`, the maximum, and invalid
+boundary behavior on all three layers. It must also prove that vector rerank
+depth follows the requested K, and that FTS/filter ordering cannot return fewer
+valid hits because filtered candidates consumed the limit. Traversal expansion
+and enumerative read limits are expressly out of scope: `graph_neighbors` keeps
+its current 50-per-root cap, and `read_list`/operational-log pagination retain
+their own policies.
+
 ## Landed release state
 
 <!-- BEGIN GENERATED release-state:0.8.22:plan-landed-roll-up -->
-**LANDED on `origin/main`, in full:** Slices 0 (`55792858b2adce00d3d87193d02b23a5d8d52dd7`) · 5 (`55792858b2adce00d3d87193d02b23a5d8d52dd7`) · 10 (`4c7bb26b`) · 12 (`72a83049`) · 15 (`13341688fca3d02d11c10bb10eb26232156f8032`) · 17 (`5a7f2484`). SCHEMA is 25; remaining ladder = 20 → 25.<!-- END GENERATED release-state:0.8.22:plan-landed-roll-up -->
+**LANDED on `origin/main`, in full:** Slices 0 (`55792858b2adce00d3d87193d02b23a5d8d52dd7`) · 5 (`55792858b2adce00d3d87193d02b23a5d8d52dd7`) · 10 (`4c7bb26b`) · 12 (`72a83049`) · 15 (`13341688fca3d02d11c10bb10eb26232156f8032`) · 17 (`5a7f2484`). SCHEMA is 25; remaining ladder = 18 → 20 → 25.<!-- END GENERATED release-state:0.8.22:plan-landed-roll-up -->
 
 ## Reserved-gap policy
 
@@ -109,6 +137,6 @@ prepares and verifies the release path; it does not authorize a registry write.
 ## Immediate next slice
 
 <!-- BEGIN GENERATED release-state:0.8.22:plan-immediate-next -->
-**IMMEDIATE NEXT: Slice 20** (`PUBLISH`) — ordered platform publication and registry smokes
+**IMMEDIATE NEXT: Slice 18** (`RETRIEVAL-LIMITS`) — ranked retrieval result limits and SDK parity
 
-**Remaining ladder:** 20 → 25.<!-- END GENERATED release-state:0.8.22:plan-immediate-next -->
+**Remaining ladder:** 18 → 20 → 25.<!-- END GENERATED release-state:0.8.22:plan-immediate-next -->
