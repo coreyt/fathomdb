@@ -20,10 +20,14 @@ them separate and typed.
 
 1. `Engine.configure_projections(specs, drop)` returns a `ProjectionDelta`
    with `built / dropped / deferred / unchanged` and
-   `vector_unsupported_kinds`. FTS sub-targets build same-transaction
-   (`built=['title']` observed); vector sub-targets defer
-   (`deferred=['body']` observed). `vector_unsupported_kinds` exists **only**
-   on this delta — `read.projections()` never carries it.
+   `vector_unsupported_kinds`. FTS sub-targets build same-transaction;
+   vector sub-targets defer — and the two lists are **not disjoint**: a
+   spec with both sub-targets appears in both (`built=['title','body']`,
+   `deferred=['body']` observed for a title-fts + body-fts+vector pair).
+   "In `built`" must never be read as "fully built"; the witness
+   interpretation keys on `deferred` for the dense portion.
+   `vector_unsupported_kinds` exists **only** on this delta —
+   `read.projections()` never carries it.
 2. `read.projections(engine)` returns `ProjectionSpec`s whose
    `vector_dense_readiness` is binding-enforced to `"ready"`, `"embedding"`,
    or `None` (`read.py:227`; observed `'ready'` after deferred build, `None`
@@ -43,6 +47,13 @@ them separate and typed.
 6. Custom embedder implementations are unsupported by the Python SDK
    (`earp.md:182-185`); the only embedder lever remains
    `scenario.engine.use_default_embedder`.
+7. **Vacuous readiness (review-corrected):** with NO embedder configured, a
+   `vector: true` spec reads `'ready'` on the very first poll — readiness
+   derives from outstanding embed work, and with no embedder no work is
+   ever enqueued, so it is vacuously ready with zero dense vectors behind
+   it. (Control: embedder on → `embedding` → `ready`.) The poll witness can
+   therefore **never detect** a dense declaration without an embedder;
+   config-time refusal is the only honest gate.
 
 ## Contract
 
@@ -82,11 +93,16 @@ projection state from its true sources. Three invariants:
         "fts":    { "type": "boolean" },
         "vector": { "type": "boolean" }
       }}},
-    "readiness_timeout_s": { "type": "number", "exclusiveMinimum": 0, "maximum": 300 }
+    "readiness_timeout_s": { "type": "number", "minimum": 0.1, "maximum": 300 }
   },
   "required": ["declare"]
 }
 ```
+
+Walker constraint (review-verified): the stdlib walker interprets
+`minimum`/`maximum` but not `exclusiveMinimum` or `minLength`, so the window
+is `minimum: 0.1` and non-empty `name` is enforced by the **resolver** as a
+collected error, not by the schema.
 
 Deliberately **excluded** from v1: `fts_tokenizer` and `vector_embedder`
 (fact 6 — no supported custom implementations; a stored identity is not
@@ -96,24 +112,39 @@ than the witnesses this slice owes; deferring keeps the knob catalog
 honest). Each exclusion is a catalog `UNSUPPORTED` entry with the reason, so
 the refusal is self-documenting.
 
-Absent `projections` block = today's behaviour, byte-for-byte; hashes of
-existing configs do not move (raw-doc hashing, as established in S6a).
+Absent `projections` block = today's behaviour, byte-for-byte, **for
+configs not calling `Engine.search_projected_text`**; hashes of existing
+configs do not move (raw-doc hashing, as established in S6a).
 `readiness_timeout_s` defaults to 30.
+
+`Engine.search_projected_text` now **requires** a `projections` block
+declaring the named projection. This is a resolution-behaviour change owned
+openly: today such a config resolves and then dies at run time with
+`InvalidFilterError` on every run (fresh DB per scenario — there is never a
+pre-existing projection to find), so no working config is affected; the
+error simply moves from twenty minutes into the run to resolution, per the
+matrix invariant. No existing test asserts clean resolution of a
+projected-text config.
 
 ### `config.py`
 
-- `CONSUMER_REGISTRY`: `scenario.projections.declare` and
+- `CONSUMER_REGISTRY`: **three** registrations (the walker yields the object
+  node itself): `scenario.projections`, `scenario.projections.declare`, and
   `scenario.projections.readiness_timeout_s` → `Consumer("S7")`.
 - Resolution validates matrix coherence, collected:
   - `Engine.search_projected_text` with a `projection_name` not among the
     declared FTS-bearing specs (`fts: true` and `"searchable"` in roles) →
     `CONFIG_INVALID_VALUE` naming the declared set;
   - a declared spec with `vector: true` while
-    `scenario.engine.use_default_embedder` is false → collected error (a
-    dense sub-target with no embedder can never become ready; declaring it
-    is a config that cannot be honestly executed);
+    `scenario.engine.use_default_embedder` is false → collected error.
+    Rationale (fact 7): readiness goes **vacuously ready** with zero dense
+    vectors behind it, so the poll witness would *lie* rather than time
+    out — resolution is the only place this dishonest config can be caught;
   - `fts: true` requires `"searchable"` in roles (mirror of the engine's
-    sub-target rule), same for `vector: true`.
+    sub-target rule, which refuses typed — verified), same for
+    `vector: true`;
+  - a declared spec whose `name` is empty → collected error (walker cannot
+    express `minLength`).
 - `ResolvedScenario` gains `projections: tuple[DeclaredProjection, ...]` and
   `readiness_timeout_s: float`.
 
@@ -126,8 +157,12 @@ existing configs do not move (raw-doc hashing, as established in S6a).
   `readiness` (mapping name → `ready|embedding|not_declared`),
   `open_report` (dense_disabled, dense_disabled_reason, query_backend,
   refusal_count).
-- New `BlockerCode` members: `PROJECTION_UNSUPPORTED_KINDS`,
-  `PROJECTION_READINESS_TIMEOUT`, `DENSE_DISABLED`.
+- **No new `BlockerCode` members.** The three conditions were pre-declared
+  for exactly this slice and already pass the result schema's closed enum
+  (review-verified by executing the validator): `VECTOR_UNSUPPORTED_KINDS`
+  ("from the projection delta"), `DENSE_READINESS_TIMEOUT` ("stayed
+  embedding past the declared timeout"), and `DENSE_DISABLED` — which
+  `classify_open` already emits today. Zero result-schema edits for codes.
 
 ### `runner.py`
 
@@ -136,17 +171,33 @@ open-report witness → `configure_projections(declared)` **before ingest** →
 capture delta witness → ingest → poll readiness → query.
 
 - **Delta witness** (source: `configure_projections` return): non-empty
-  `vector_unsupported_kinds` → typed blocker `PROJECTION_UNSUPPORTED_KINDS`
-  (permanent, per `earp.md`). The delta is recorded verbatim either way.
+  `vector_unsupported_kinds` → typed blocker `VECTOR_UNSUPPORTED_KINDS`
+  (permanent, per `earp.md`). The delta is recorded verbatim either way,
+  including the non-disjoint built/deferred lists (fact 1).
 - **Readiness witness** (source: `read.projections()` poll): after ingest,
   poll every 0.5 s until every `vector: true` spec reads `ready`, or
   `readiness_timeout_s` elapses. A timeout with any spec still `embedding` →
-  typed blocker `PROJECTION_READINESS_TIMEOUT` recording the stuck specs.
-  Specs with `vector: false` are recorded `not_declared`, never polled-for.
-- **Open-report witness** (source: `open_report()` at open): recorded
-  always; `dense_disabled: true` while the scenario declares any
-  `vector: true` spec → typed blocker `DENSE_DISABLED` carrying the reason
-  and `vector_equivalence_refusal_count()`.
+  typed blocker `DENSE_READINESS_TIMEOUT` recording the stuck specs.
+  Specs with `vector: false` are recorded `not_declared` (meaning: no
+  *vector sub-target* declared — the projection itself is), never
+  polled-for. The `poll_override` seam replaces **both** the
+  `read.projections` call and the clock — it supplies the (specs, elapsed)
+  view per iteration, so the timeout test performs zero real waiting
+  (mirrors S5's `query_override` precedent).
+- **Open-report witness** (source: `open_report()` at open): this is an
+  **amendment to `classify_open`, not an addition** — the function already
+  captures the open-report fields and already emits `DENSE_DISABLED`
+  unconditionally (`runner.py:98-143`), pinned by
+  `test_dense_disabled_is_blocked`. It gains scenario-awareness (a
+  `dense_required: bool` parameter derived from the declared specs):
+  `dense_disabled` is the typed blocker only when the scenario declares a
+  `vector: true` spec (matching `earp.md`'s "typed blocker when dense
+  retrieval was required"), and is otherwise recorded in the witness
+  without blocking. `test_dense_disabled_is_blocked` is amended
+  accordingly (listed under "existing tests that change").
+  `vector_equivalence_refusal_count()` is an Engine method, so it is read
+  by the runner at capture time and passed into the witness alongside the
+  report mapping — `classify_open` stays a pure function.
 - Witnesses land in the sidecar as a `projection_witnesses` object (see
   result schema); the existing `projection_coverage` witness stays.
 - When no `projections` block is declared, the runner records the
@@ -159,11 +210,22 @@ capture delta witness → ingest → poll readiness → query.
 Optional `projection_witnesses` object on the scenario block mirroring
 `ProjectionWitnesses` (additive; absent for pre-S7 sidecars and
 projection-less runs — no version bump, same rule as S6a's `fanout_used`).
+The scenario block's pre-existing, never-written `projections` **array**
+slot is **retired in place**: its description is amended to point at
+`projection_witnesses` as the owner of projection state, and it remains
+unwritten (removing it would be the only breaking edit in the slice; a
+pointer costs nothing and keeps old validators working).
 
 ### `knobs.py`
 
-- `projections.declare` → SEMANTIC, call path
-  `Engine.configure_projections(specs=)`, witness = the delta.
+- The existing `configure_projections` entry (INDEXING, call path
+  `Engine.configure_projections`, witness `projection_delta`) is
+  **replaced** by `projections.declare` → SEMANTIC, call path
+  `Engine.configure_projections(specs=)`, witness = the delta. One call
+  path, one entry: the old entry classified the capability before any
+  config could express it; now that one can, the config-facing name and the
+  SEMANTIC classification (it alters stored data and results) are the
+  truthful record.
 - `projections.readiness_timeout_s` → RUNTIME, call path
   `fathomdb.read.projections` (poll bound), witness = readiness map.
 - UNSUPPORTED entries with reasons: `fts_tokenizer`, `vector_embedder`,
@@ -184,14 +246,16 @@ projection-less runs — no version bump, same rule as S6a's `fanout_used`).
    `ready`, `embedding`, or `not_declared`, and `not_declared` occurs only
    for `vector: false` specs.
 4. A `vector: true` declaration with `use_default_embedder: false` is a
-   collected config error, not a run that times out.
-5. A readiness timeout is the typed blocker `PROJECTION_READINESS_TIMEOUT`
+   collected config error, not a run that records a vacuously-`ready`
+   witness (fact 7: it would never time out — it would lie).
+5. A readiness timeout is the typed blocker `DENSE_READINESS_TIMEOUT`
    (blocked-run recording per S4 — indexed with a blocked verdict, no
-   metrics); simulated via a `poll_override` seam, not a real 30 s wait.
+   metrics); simulated via the `poll_override` seam with zero real waiting.
 6. Non-empty `vector_unsupported_kinds` is the typed blocker
-   `PROJECTION_UNSUPPORTED_KINDS`; `dense_disabled` with a dense-requiring
-   scenario is the typed blocker `DENSE_DISABLED`. Neither is representable
-   as an empty result.
+   `VECTOR_UNSUPPORTED_KINDS`; `dense_disabled` with a dense-requiring
+   scenario is the typed blocker `DENSE_DISABLED`, and without one it is
+   witness-recorded, not blocking. Neither is representable as an empty
+   result.
 7. A projection-less config produces a sidecar whose `configure_delta` and
    `readiness` are absent (not empty), and whose open-report witness is
    present.
@@ -210,11 +274,15 @@ projection-less runs — no version bump, same rule as S6a's `fanout_used`).
    `vector: true` spec is a contract violation (assert).
 4. Runner (real engine, small fixture): declared FTS projection →
    `search_projected_text` succeeds end-to-end with the delta witness
-   recorded; readiness map `ready` for a vector spec with embedder on
-   (skip-marked if the default embedder is unavailable in CI, per D-2's
-   opt-in rule); timeout path via `poll_override`; sidecar shape per AC-7.
-5. Existing-suite regressions: none expected — additive block; the S5
-   diagnostic fixture runs unchanged.
+   recorded; timeout path via `poll_override` (no real waiting); sidecar
+   shape per AC-7. The embedder-on readiness test (real model load) is
+   **opt-in behind the established `integration` marker / env-gate pattern
+   (`pyproject.toml:89-96`), visibly SKIPPED by default with a reason** —
+   D-2's rule as prior slices implement it, not availability-conditional.
+5. Existing tests that change (deliberate): `test_dense_disabled_is_blocked`
+   gains the scenario-awareness arm (blocks only when dense is required;
+   witness-recorded otherwise). No other regressions expected — additive
+   block; the S5 diagnostic fixture runs unchanged.
 
 ## Out of scope
 
@@ -226,4 +294,21 @@ projection-less runs — no version bump, same rule as S6a's `fanout_used`).
 
 ## Review
 
-Pending independent code-grounded review.
+Independent code-grounded executing review, 2026-08-07. Verdict: **PROCEED
+WITH REVISIONS**. The three-signal contract, witness structure, and
+test-first sequence verified sound; two blockers and one overturned engine
+fact caught before implementation. All 11 required edits incorporated above:
+
+| # | Severity | Finding | Resolution |
+| ---: | --- | --- | --- |
+| 1 | BLOCKER | Proposed "new" BlockerCodes duplicate pre-declared ones and fail the result schema's closed enum — the blocked-run path would crash in `write_run` | Reuse `VECTOR_UNSUPPORTED_KINDS` / `DENSE_READINESS_TIMEOUT` / `DENSE_DISABLED`; zero schema edits |
+| 2 | BLOCKER | `exclusiveMinimum` silently uninterpreted and `minLength` loudly unsupported by the stdlib walker | `minimum: 0.1`; empty-name enforcement moved to the resolver |
+| 3 | MAJOR | "Can never become ready" is false — readiness goes **vacuously ready** with no embedder (executed) | Fact 7 added; AC-4 rationale rewritten: the witness would lie, not time out |
+| 4 | MAJOR | Conditional `DENSE_DISABLED` is an unlisted amendment to `classify_open` (pure, unconditional today, pinned by a test) | Spelled out: scenario-awareness parameter, pure-function preservation, test amendment listed |
+| 5 | MAJOR | Absent-block × `search_projected_text` contradiction | Projected-text calls now require the block; byte-for-byte claim scoped |
+| 6 | MAJOR | Embedder-availability skip violates D-2's opt-in pattern | `integration`-marker opt-in, visibly skipped by default |
+| 7 | MINOR | Registry needs three paths (walker yields the object node) | Three registrations listed |
+| 8 | MINOR | Fact 1's built/deferred observation wrong — lists are non-disjoint | Corrected; witness interpretation keys on `deferred` |
+| 9 | MINOR | Catalog would carry two entries for one call path | Old `configure_projections` entry replaced, rationale recorded |
+| 10 | MINOR | Result schema already has a dead `scenario.projections` array slot | Retired in place with a pointer description |
+| 11 | MINOR | `poll_override` contract underspecified | Pinned: replaces poll + clock; zero real waiting |
