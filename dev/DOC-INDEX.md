@@ -45,6 +45,7 @@ refresh in the closing commit when you touch a doc).
 |------|---------|-------------------|--------------|
 | `dev/README.md` | Entry map for the engineering docs tree | — | 2026-05-02 |
 | `dev/needs.md` | Product/consumer needs driving requirements | — | 2026-05-28 |
+| `dev/notes/0.8.23-architecture-tradeoffs.md` | 0.8.23 architecture documentation follow-up | 0.8.23 planning | 2026-08-07 |
 | `dev/requirements.md` | Numbered requirements (REQ-*); REQ-053 = governed SDK surface (allowlist + parity + recovery-denylist + typed boundary) | 25 amended REQ-053 (Q3) | 2026-06-04 |
 | `dev/acceptance.md` | Acceptance criteria (AC-*); AC-057a five-verb cap superseded by AC-074 (governed surface); AC-074 Rust-facade... | 25 (AC-057a→AC-074); 27 fills AC-074 Rust clause; 27 fix-1 method-level; 40/GA-2 mints AC-075/076 | 2026-06-08 |
 | `dev/interfaces/rust.md` | Rust public interface (owner of the Rust-visible symbol spelling + the governed Rust-facade surface contract... | 27 (governed-surface contract); 27 fix-1 (operator feature gate); 0.8.20 15b fix-1 (node-validity write fields); 0.8.20 15b fix-2 (search validity + `ReadView` on search); 0.8.20 20b (`DenseReadiness` + `ProjectionVector::dense_readiness`); ground-truth engine type names | 2026-07-25 |
@@ -84,6 +85,9 @@ refresh in the closing commit when you touch a doc).
 | `dev/adr/ADR-0.8.18-full-publish-pipeline.md` | #11-full full publish pipeline | 0.8.18 Slice 0 gates; Slice 20 implements | 2026-07-09 |
 | `dev/design/0.8.16-slice-0-f9-onnx-design.md` | 0.8.16 Slice-0 design package — F9 importance/confidence ranking + cross-vendor ONNX embedder | 0.8.16 Slice 0 | 2026-07-08 |
 | `dev/design/0.8.18-slice-5-vector-equivalence-probe.md` | 0.8.18 Slice 5 — #5 vector-equivalence probe (SHIPPED surface) | 0.8.18 Slice 5 | 2026-07-09 |
+| `dev/design/0.8.22-slice-19-join-index.md` | Draft design for canonical FTS join indexes | 0.8.22 Slice 19 | 2026-08-07 |
+| `dev/design/0.8.22-slice-21-projection-state.md` | Draft design for truthful projection runtime state | 0.8.22 Slice 21 | 2026-08-07 |
+| `dev/design/0.8.22-slice-22-projection-status.md` | Draft design for governed projection status reads | 0.8.22 Slice 22 | 2026-08-07 |
 | `dev/design/0.8.2-m1-multihop-harness.md` | 0.8.2 / M1 multi-hop answer-accuracy harness — design + FROZEN pre-registration (AMENDED 2026-06-16; re-frozen... | 0.8.2 Slice 0-rev2 | 2026-06-19 |
 | `dev/design/0.8.3-mem0-parity.md` | 0.8.3 Slice-0 design + FROZEN pre-registration (Mem0-parity resolution) | 0.8.3 Slice 0 | 2026-06-21 |
 | `dev/design/0.8.5-ce-rerank-slice-design.md` · `dev/plans/0.8.5-ce-rerank-alpha-expose-slice.md` | 0.8.5 (EXP-0) — expose tuned CE-rerank α / pool_n / ce_score | 0.8.5 (EXP-0) | 2026-06-25 |
@@ -187,6 +191,9 @@ refresh in the closing commit when you touch a doc).
 | `dev/plans/prompts/PLAN-TEMPLATE.md` | Per-release plan authoring template | authors every plan-<release>.md | 2026-06-26 |
 | `dev/plans/prompts/0.8.0-SLICE-TEMPLATE.md` | Per-slice prompt template | authors every slice prompt | 2026-06-03 |
 | `dev/plans/prompts/0.8.0-slice-*.md` | Self-contained per-slice subagent prompts | per slice | (per slice) |
+| `dev/plans/prompts/0.8.22-slice-19-join-index.md` | Draft Slice 19 canonical join-index plan | 0.8.22 Slice 19 | 2026-08-07 |
+| `dev/plans/prompts/0.8.22-slice-21-projection-state.md` | Draft Slice 21 projection-runtime-state plan | 0.8.22 Slice 21 | 2026-08-07 |
+| `dev/plans/prompts/0.8.22-slice-22-projection-status.md` | Draft Slice 22 projection-status API plan | 0.8.22 Slice 22 | 2026-08-07 |
 | `dev/plans/runs/0.8.0-slice-*-output.json` / `-review-*.md` | Per-slice closure artifacts + promoted codex verdicts | per slice | (per slice) |
 | `dev/plans/runs/0.8.0-slice-6-tokenizer-experiment-*.md` | Slice 6 (B2) FTS5 tokenizer latency experiment | Slice 6 (B2) | 2026-06-07 |
 | `dev/plans/0.8.1-plan.md` | 0.8.1 mod-5 ladder | 0.8.1 Slice 0 authors; every slice advances the pointer | 2026-06-12 |
