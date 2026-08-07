@@ -14,7 +14,8 @@ from __future__ import annotations
 import json
 import shutil
 import tempfile
-from dataclasses import dataclass, field
+import time
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
@@ -24,6 +25,8 @@ from eval.earp.schema.models import (
     SCHEMA_VERSION_RESULT,
     Blocker,
     BlockerCode,
+    DeclaredProjection,
+    ProjectionWitnesses,
     RunVerdict,
     Witness,
     WitnessSource,
@@ -95,12 +98,23 @@ def load_fixture(path: Path) -> list[dict[str, Any]]:
     return items
 
 
-def classify_open(report: Mapping[str, Any]) -> tuple[tuple[Witness, ...], tuple[Blocker, ...]]:
+def classify_open(
+    report: Mapping[str, Any], *, dense_required: bool = False
+) -> tuple[tuple[Witness, ...], tuple[Blocker, ...]]:
     """Turn an open report into witnesses and blockers.
 
     A pure function over a mapping, deliberately: a real embedder fetch is
     forbidden by the default-deny network policy, so if this decision lived
     inline in the run path its blocker branch could never be exercised.
+    (`vector_equivalence_refusal_count()` is an Engine METHOD, so the runner
+    reads it at capture time and carries it in the projection witnesses --
+    it never enters this function.)
+
+    S7 amendment: `dense_disabled` is the typed blocker only when the scenario
+    declared a `vector: true` projection (`dense_required`) -- per `earp.md`,
+    "a typed blocker when dense retrieval was REQUIRED". Otherwise the
+    condition is witness-recorded, not blocking: the open-report witness below
+    carries the full report either way.
     """
     witnesses: list[Witness] = []
     blockers: list[Blocker] = []
@@ -128,19 +142,104 @@ def classify_open(report: Mapping[str, Any]) -> tuple[tuple[Witness, ...], tuple
                 detail={"embedder_download_ms": download_ms},
             )
         )
-    if report.get("dense_disabled"):
+    if report.get("dense_disabled") and dense_required:
         blockers.append(
             Blocker(
                 code=BlockerCode.DENSE_DISABLED,
                 message=(
                     "the engine opened degraded: the vector-equivalence self-check "
-                    "found a divergence, so vector-dependent arms refuse at query time"
+                    "found a divergence, so vector-dependent arms refuse at query "
+                    "time -- and this scenario declared a dense projection"
                 ),
                 stage="runner.open",
                 detail={"reason": report.get("dense_disabled_reason")},
             )
         )
     return tuple(witnesses), tuple(blockers)
+
+
+def classify_delta(delta_value: Mapping[str, Any]) -> tuple[Witness, Blocker | None]:
+    """Turn a `ProjectionDelta` mapping into its witness and (maybe) blocker.
+
+    Pure over the delta mapping for the same reason `classify_open` is pure
+    over the report: on the S7 order (configure BEFORE ingest, fresh database)
+    the corpus has no kinds yet, so `vector_unsupported_kinds` is empty on
+    every honest run and the blocker branch is only exercisable synthetically.
+
+    The delta is recorded VERBATIM either way -- including the non-disjoint
+    built/deferred lists: "in `built`" must never be read as "fully built";
+    the dense portion keys on `deferred`.
+    """
+    witness = Witness(
+        name="projection_delta",
+        source=WitnessSource.PROJECTION_DELTA,
+        call_path="Engine.configure_projections",
+        status=WitnessStatus.OBSERVED,
+        value=dict(delta_value),
+    )
+    kinds = list(delta_value.get("vector_unsupported_kinds") or ())
+    if not kinds:
+        return witness, None
+    return witness, Blocker(
+        code=BlockerCode.VECTOR_UNSUPPORTED_KINDS,
+        message=(
+            f"the vector writer can never embed kinds {kinds}; this is PERMANENT, "
+            f"not a deferred build -- such rows stay FTS-searchable only"
+        ),
+        stage="runner.configure_projections",
+        detail={"vector_unsupported_kinds": kinds},
+    )
+
+
+#: Real-poll cadence. The `poll_override` seam replaces BOTH the
+#: `read.projections` call and the clock, so tests never sleep.
+_POLL_INTERVAL_S = 0.5
+
+
+def _readiness_view(engine: Any) -> Callable[[], tuple[Sequence[Any], float]]:
+    """The real (specs, elapsed) view: sleeps between polls, never before the
+    first, so a ready-at-once projection costs zero wall time."""
+    from fathomdb import read as fathom_read  # noqa: PLC0415 -- native import
+
+    start = time.monotonic()
+    polled = False
+
+    def view() -> tuple[Sequence[Any], float]:
+        nonlocal polled
+        if polled:
+            time.sleep(_POLL_INTERVAL_S)
+        polled = True
+        return fathom_read.projections(engine), time.monotonic() - start
+
+    return view
+
+
+def _poll_readiness(
+    view: Callable[[], tuple[Sequence[Any], float]],
+    declared: Sequence[DeclaredProjection],
+    timeout_s: float,
+) -> tuple[dict[str, str], list[str]]:
+    """Poll until every `vector: true` spec reads `ready`, or `timeout_s`
+    elapses. Returns the readiness map and the still-`embedding` names (empty
+    on success). `vector: false` specs are recorded `not_declared` -- meaning
+    no VECTOR SUB-TARGET is declared; the projection itself is -- and are
+    never polled-for.
+    """
+    while True:
+        specs, elapsed = view()
+        by_name = {spec.name: spec for spec in specs}
+        readiness: dict[str, str] = {}
+        stuck: list[str] = []
+        for projection in declared:
+            spec = by_name[projection.name]
+            state = ProjectionWitnesses.readiness_state(
+                vector=spec.vector, vector_dense_readiness=spec.vector_dense_readiness
+            )
+            readiness[projection.name] = state
+            if state == "embedding":
+                stuck.append(projection.name)
+        if not stuck or elapsed >= timeout_s:
+            return readiness, stuck
 
 
 def _doc_ids(results: Sequence[Any]) -> tuple[list[str], list[str]]:
@@ -165,10 +264,20 @@ def run_diagnostic(
     experiment: str,
     ts: datetime,
     query_override: Callable[..., Any] | None = None,
+    poll_override: Callable[[], tuple[Sequence[Any], float]] | None = None,
 ) -> DiagnosticResult:
-    """Run one diagnostic scenario against a real engine."""
+    """Run one diagnostic scenario against a real engine.
+
+    S7 order: open -> open-report witness (+refusal count) ->
+    `configure_projections(declared)` BEFORE ingest -> delta witness -> ingest
+    -> poll readiness -> query. `poll_override` supplies the (specs, elapsed)
+    view per iteration, replacing both the `read.projections` call and the
+    clock (the S5 `query_override` precedent) -- the timeout path is testable
+    with zero real waiting.
+    """
     from fathomdb import Engine  # noqa: PLC0415 -- native import, S5 only
     from fathomdb import read as fathom_read  # noqa: PLC0415
+    from fathomdb.types import ProjectionSpec  # noqa: PLC0415
 
     fixture_path = Path(str(config_doc["scenario"]["fixture"]))
     query_text = str(config_doc["scenario"]["query"].get("text", ""))
@@ -202,16 +311,62 @@ def run_diagnostic(
     verdict = RunVerdict.COMPLETE
     hit_doc_ids: list[str] = []
     engine = None
+    declared = scenario.projections
+    dense_required = any(projection.vector for projection in declared)
+    projection_witnesses: ProjectionWitnesses | None = None
 
     try:
         engine = Engine.open(
             str(Path(db_dir) / "diagnostic.db"),
             use_default_embedder=scenario.use_default_embedder,
         )
-        report = engine.open_report()
-        open_witnesses, open_blockers = classify_open(_report_mapping(report))
+        report_value = _report_mapping(engine.open_report())
+        open_witnesses, open_blockers = classify_open(
+            report_value, dense_required=dense_required
+        )
         witnesses.extend(open_witnesses)
         blockers.extend(open_blockers)
+        # The refusal count is an Engine method, not an open-report field, so
+        # it is read here at capture time and carried in the witness -- which
+        # keeps classify_open a pure function over the report mapping.
+        projection_witnesses = ProjectionWitnesses(
+            open_report={
+                "dense_disabled": bool(report_value["dense_disabled"]),
+                "dense_disabled_reason": report_value["dense_disabled_reason"],
+                "query_backend": report_value["query_backend"],
+                "refusal_count": engine.vector_equivalence_refusal_count(),
+            }
+        )
+
+        if declared:
+            # BEFORE ingest: the engine backfills same-transaction FTS builds,
+            # and the delta on a fresh, empty database is the declaration's
+            # honest diff.
+            delta = engine.configure_projections(
+                [
+                    ProjectionSpec(
+                        name=projection.name,
+                        roles=frozenset(projection.roles),
+                        fts=projection.fts,
+                        vector=projection.vector,
+                    )
+                    for projection in declared
+                ]
+            )
+            delta_value = {
+                "built": list(delta.built),
+                "dropped": list(delta.dropped),
+                "deferred": list(delta.deferred),
+                "unchanged": delta.unchanged,
+                "vector_unsupported_kinds": list(delta.vector_unsupported_kinds),
+            }
+            delta_witness, delta_blocker = classify_delta(delta_value)
+            witnesses.append(delta_witness)
+            if delta_blocker is not None:
+                blockers.append(delta_blocker)
+            projection_witnesses = replace(
+                projection_witnesses, configure_delta=delta_value
+            )
 
         receipt = engine.write(list(items))
         witnesses.append(
@@ -255,6 +410,39 @@ def run_diagnostic(
             )
         )
 
+        if declared:
+            readiness, stuck = _poll_readiness(
+                poll_override or _readiness_view(engine),
+                declared,
+                scenario.readiness_timeout_s,
+            )
+            witnesses.append(
+                Witness(
+                    name="projection_readiness",
+                    source=WitnessSource.READ_PROJECTIONS,
+                    call_path="fathomdb.read.projections",
+                    status=WitnessStatus.OBSERVED,
+                    value=dict(readiness),
+                )
+            )
+            projection_witnesses = replace(projection_witnesses, readiness=readiness)
+            if stuck:
+                blockers.append(
+                    Blocker(
+                        code=BlockerCode.DENSE_READINESS_TIMEOUT,
+                        message=(
+                            f"vector_dense_readiness stayed `embedding` past the "
+                            f"declared timeout ({scenario.readiness_timeout_s}s) "
+                            f"for {stuck}"
+                        ),
+                        stage="runner.readiness",
+                        detail={
+                            "stuck": stuck,
+                            "readiness_timeout_s": scenario.readiness_timeout_s,
+                        },
+                    )
+                )
+
         call = query_override or _resolve_call(engine, scenario.query_call)
         params = {
             PARAM_RENAMES.get(key, key): value
@@ -292,6 +480,7 @@ def run_diagnostic(
         scenario, config_doc, experiments_root, experiment, ts,
         verdict, tuple(witnesses), tuple(blockers),
         failure or f"diagnostic run: {len(hit_doc_ids)} hit(s)",
+        projection_witnesses=projection_witnesses,
     )
     return DiagnosticResult(
         verdict=verdict,
@@ -332,6 +521,7 @@ def _write(
     witnesses: tuple[Witness, ...],
     blockers: tuple[Blocker, ...],
     read: str,
+    projection_witnesses: ProjectionWitnesses | None = None,
 ) -> WriteOutcome:
     """Hand the run to S4. `metrics` is structurally `{}` -- a diagnostic makes
     no relevance claim, so there is no code path by which one could appear."""
@@ -364,6 +554,10 @@ def _write(
             for b in blockers
         ],
     }
+    if projection_witnesses is not None:
+        # Absent signals stay ABSENT (never empty): as_value omits what was
+        # not captured, so a reader can tell "not declared" from "not captured".
+        sidecar["scenario"]["projection_witnesses"] = projection_witnesses.as_value()
     run_id = _lib_run_id(experiment, ts, scenario.config_sha256)
     sidecar["run_id"] = run_id
     return write_run(
@@ -392,6 +586,7 @@ def _lib_run_id(experiment: str, ts: datetime, sha: str) -> str:
 __all__ = [
     "PARAM_RENAMES",
     "DiagnosticResult",
+    "classify_delta",
     "classify_open",
     "load_fixture",
     "run_diagnostic",

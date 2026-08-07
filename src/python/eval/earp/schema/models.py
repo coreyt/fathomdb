@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
+from typing import Any, Mapping
 
 SCHEMA_VERSION_CONFIG = "earp.v1"
 SCHEMA_VERSION_RESULT = "earp.result.v1"
@@ -200,6 +200,74 @@ class Blocker:
     message: str
     stage: str
     detail: dict[str, Any] = field(default_factory=dict)
+
+
+# --- projections (S7) -------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class DeclaredProjection:
+    """One `scenario.projections.declare[]` entry, resolved.
+
+    The config-facing subset of the SDK's `ProjectionSpec`: tokenizer/embedder
+    identities and `source` segments are deliberately inexpressible in earp.v1
+    (each is a catalog UNSUPPORTED entry with its reason)."""
+
+    name: str
+    roles: tuple[str, ...]
+    fts: bool = False
+    vector: bool = False
+
+
+@dataclass(frozen=True)
+class ProjectionWitnesses:
+    """The three projection-state signals, each under its OWN source's name.
+
+    They come from three different APIs and are not interchangeable: a poll
+    result never stands in for the delta, and the delta never stands in for the
+    open report. `configure_delta` and `readiness` are None -- and OMITTED from
+    the serialized value -- when the scenario declared no projections, so a
+    sidecar reader can distinguish "not declared" from "not captured".
+    """
+
+    #: From `open_report()` at open time (+ the refusal count, an Engine method
+    #: read by the runner at capture time): dense_disabled,
+    #: dense_disabled_reason, query_backend, refusal_count.
+    open_report: Mapping[str, Any]
+    #: The `ProjectionDelta` exactly as `configure_projections` returned it,
+    #: including the NON-DISJOINT built/deferred lists -- "in built" must never
+    #: be read as "fully built"; the dense portion keys on `deferred`.
+    configure_delta: Mapping[str, Any] | None = None
+    #: name -> ready|embedding|not_declared, from polling `read.projections()`.
+    readiness: Mapping[str, str] | None = None
+
+    @staticmethod
+    def readiness_state(*, vector: bool, vector_dense_readiness: str | None) -> str:
+        """Derive the reported readiness from `(spec.vector, readiness)`.
+
+        `None` is never reported bare: it means "no vector sub-target declared
+        on this spec", and the disambiguator is the spec's own round-tripping
+        `vector` flag. `None` WITH `vector=True` is outside the engine's
+        binding-enforced contract (`read.py`), so it is an assertion failure,
+        never a silently-recorded value.
+        """
+        if not vector:
+            return "not_declared"
+        if vector_dense_readiness not in ("ready", "embedding"):
+            raise AssertionError(
+                f"contract violation: a vector spec must read ready|embedding from "
+                f"read.projections, got {vector_dense_readiness!r}"
+            )
+        return vector_dense_readiness
+
+    def as_value(self) -> dict[str, Any]:
+        """The sidecar mapping. Absent signals are OMITTED, never empty."""
+        value: dict[str, Any] = {"open_report": dict(self.open_report)}
+        if self.configure_delta is not None:
+            value["configure_delta"] = dict(self.configure_delta)
+        if self.readiness is not None:
+            value["readiness"] = dict(self.readiness)
+        return value
 
 
 # --- knob catalog -----------------------------------------------------------
@@ -384,12 +452,14 @@ __all__ = [
     "CorpusIdentity",
     "CostLedger",
     "DecisionRule",
+    "DeclaredProjection",
     "Direction",
     "GoldIdentity",
     "KnobClass",
     "KnobEntry",
     "MetricStatus",
     "MetricValue",
+    "ProjectionWitnesses",
     "QueryClass",
     "QueryOutcome",
     "RetrievalMode",

@@ -101,6 +101,58 @@
             }
           }
         },
+        "projections": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "declare"
+          ],
+          "description": "S7. Declared projections, applied via Engine.configure_projections on the fresh per-scenario database BEFORE ingest. Deliberately excluded from earp.v1: fts_tokenizer / vector_embedder (no supported custom implementations -- a stored identity is not proof of a runtime), drop (a fresh database has nothing to drop), and source segments (deferred). Each exclusion is a catalog UNSUPPORTED entry.",
+          "properties": {
+            "declare": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "name",
+                  "roles"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "description": "Non-emptiness is a RESOLVER-collected error: the stdlib walker does not interpret minLength."
+                  },
+                  "roles": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "enum": [
+                        "filterable",
+                        "searchable",
+                        "rankable"
+                      ]
+                    }
+                  },
+                  "fts": {
+                    "type": "boolean"
+                  },
+                  "vector": {
+                    "type": "boolean",
+                    "description": "Requires scenario.engine.use_default_embedder: true. Without an embedder, readiness goes VACUOUSLY ready with zero dense vectors behind it, so the poll witness would lie rather than time out -- resolution is the only honest gate."
+                  }
+                }
+              }
+            },
+            "readiness_timeout_s": {
+              "type": "number",
+              "minimum": 0.1,
+              "maximum": 300,
+              "description": "Poll bound for vector_dense_readiness. Absent means 30. minimum is 0.1 (not exclusiveMinimum 0): the stdlib walker does not interpret exclusiveMinimum."
+            }
+          }
+        },
         "query": {
           "type": "object",
           "additionalProperties": false,

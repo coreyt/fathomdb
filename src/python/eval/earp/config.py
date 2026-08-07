@@ -30,6 +30,7 @@ from eval.earp.schema.models import (
     Blocker,
     BlockerCode,
     CampaignKind,
+    DeclaredProjection,
     DecisionRule,
     Direction,
     RetrievalMode,
@@ -129,6 +130,11 @@ CONSUMER_REGISTRY: Mapping[str, Consumer] = {
     "scenario.engine.use_default_embedder": Consumer("S3"),
     "scenario.store": Consumer("S5"),
     "scenario.store.mode": Consumer("S5"),
+    # THREE registrations, not one: the walker yields the object node itself as
+    # well as its children (review finding 7).
+    "scenario.projections": Consumer("S7"),
+    "scenario.projections.declare": Consumer("S7"),
+    "scenario.projections.readiness_timeout_s": Consumer("S7"),
     "scenario.fixture": Consumer("S5", _diagnostic_only),
     "scenario.query": Consumer("S3"),
     "scenario.query.call": Consumer("S3"),
@@ -180,6 +186,11 @@ class ResolvedScenario:
     decision_rule: DecisionRule | None
     consumed_paths: frozenset[str]
     carried_paths: frozenset[str]
+    #: S7 -- the declared projection matrix, applied by the runner via
+    #: `Engine.configure_projections` BEFORE ingest. Empty means "no block".
+    projections: tuple[DeclaredProjection, ...] = ()
+    #: S7 -- bound on the `read.projections()` readiness poll.
+    readiness_timeout_s: float = 30.0
 
 
 @dataclass(frozen=True)
@@ -312,6 +323,80 @@ def resolve_config(doc: Mapping[str, Any]) -> ConfigResolution:
 
     call = query.get("call")
     use_default_embedder = bool(engine.get("use_default_embedder", False))
+
+    # --- S7: the projection matrix is validated BEFORE it is run. -----------
+    projections_doc = _mapping(scenario, "projections")
+    declare_raw = projections_doc.get("declare")
+    declared_projections: list[DeclaredProjection] = []
+    if isinstance(declare_raw, list):
+        for index, item in enumerate(declare_raw):
+            if not isinstance(item, dict):
+                continue  # the walker already recorded the type defect
+            item_path = f"scenario.projections.declare[{index}]"
+            name = item.get("name")
+            roles_raw = item.get("roles")
+            roles = (
+                tuple(role for role in roles_raw if isinstance(role, str))
+                if isinstance(roles_raw, list)
+                else ()
+            )
+            fts = item.get("fts") is True
+            vector = item.get("vector") is True
+            if not isinstance(name, str) or not name:
+                # The walker cannot express minLength, so non-emptiness is a
+                # resolver-collected error rather than a schema one.
+                blockers.append(
+                    _blocker(
+                        BlockerCode.CONFIG_INVALID_VALUE,
+                        "projection `name` must be a non-empty string",
+                        f"{item_path}.name",
+                    )
+                )
+            for flag, flag_name in ((fts, "fts"), (vector, "vector")):
+                if flag and "searchable" not in roles:
+                    # Mirror of the engine's own sub-target rule, which refuses
+                    # typed: an FTS/vector sub-target hangs off `searchable`.
+                    blockers.append(
+                        _blocker(
+                            BlockerCode.CONFIG_INVALID_VALUE,
+                            f"`{flag_name}: true` requires the `searchable` role",
+                            f"{item_path}.{flag_name}",
+                        )
+                    )
+            if vector and not use_default_embedder:
+                # With NO embedder, readiness goes VACUOUSLY ready with zero
+                # dense vectors behind it -- the poll witness would LIE rather
+                # than time out, so resolution is the only honest gate.
+                blockers.append(
+                    _blocker(
+                        BlockerCode.CONFIG_INVALID_VALUE,
+                        (
+                            "`vector: true` requires `scenario.engine."
+                            "use_default_embedder: true`; without an embedder the "
+                            "readiness witness reads vacuously `ready` with zero "
+                            "dense vectors behind it"
+                        ),
+                        f"{item_path}.vector",
+                    )
+                )
+            declared_projections.append(
+                DeclaredProjection(
+                    name=name if isinstance(name, str) else "",
+                    roles=roles,
+                    fts=fts,
+                    vector=vector,
+                )
+            )
+
+    readiness_timeout_raw = projections_doc.get("readiness_timeout_s")
+    readiness_timeout_s = 30.0
+    if (
+        isinstance(readiness_timeout_raw, (int, float))
+        and not isinstance(readiness_timeout_raw, bool)
+        and 0.1 <= readiness_timeout_raw <= 300
+    ):
+        readiness_timeout_s = float(readiness_timeout_raw)
+
     mode: RetrievalMode | None = None
     if isinstance(call, str) and (call, use_default_embedder) in CALL_MODE:
         mode = CALL_MODE[(call, use_default_embedder)]
@@ -338,6 +423,31 @@ def resolve_config(doc: Mapping[str, Any]) -> ConfigResolution:
                     "scenario.query.projection_name",
                 )
             )
+        projection_name = query.get("projection_name")
+        if call == "Engine.search_projected_text" and isinstance(projection_name, str):
+            # S7 matrix coherence (owned behaviour change): the scenario owns a
+            # FRESH database, so a projection the config does not declare can
+            # never exist -- pre-S7 such a config resolved and then died at run
+            # time with InvalidFilterError on every run. The error moves to
+            # resolution, naming the declared set.
+            fts_bearing = sorted(
+                p.name
+                for p in declared_projections
+                if p.fts and "searchable" in p.roles
+            )
+            if projection_name not in fts_bearing:
+                blockers.append(
+                    _blocker(
+                        BlockerCode.CONFIG_INVALID_VALUE,
+                        (
+                            f"`Engine.search_projected_text` names projection "
+                            f"`{projection_name}`, which `scenario.projections` does "
+                            f"not declare as FTS-bearing (`fts: true` + role "
+                            f"`searchable`); declared: {fts_bearing}"
+                        ),
+                        "scenario.query.projection_name",
+                    )
+                )
 
     ladder = tuple(metrics.get("evidence_recall_k", ()) or ())
     document_metrics = tuple(metrics.get("document_metrics", ()) or ())
@@ -478,6 +588,8 @@ def resolve_config(doc: Mapping[str, Any]) -> ConfigResolution:
             decision_rule=decision_rule,
             consumed_paths=frozenset(declared - carried),
             carried_paths=frozenset(carried),
+            projections=tuple(declared_projections),
+            readiness_timeout_s=readiness_timeout_s,
         )
     )
 

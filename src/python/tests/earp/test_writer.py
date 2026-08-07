@@ -98,7 +98,7 @@ def test_pre_derived_run_id_matches_write_record(tmp_path: Path) -> None:
     expected = _lib.make_run_id("earp-diagnostic", TS, _lib.config_sha256(dict(doc)))
     assert outcome.run_id == expected
     assert outcome.run_dir == tmp_path / "runs" / expected
-    assert outcome.run_dir.is_dir()
+    assert outcome.run_dir is not None and outcome.run_dir.is_dir()
 
 
 # --- AC-2: one canonicalisation, pinned by non-ASCII ------------------------
@@ -106,8 +106,13 @@ def test_pre_derived_run_id_matches_write_record(tmp_path: Path) -> None:
 
 def test_resolver_hash_matches_lib_on_non_ascii() -> None:
     """All-ASCII configs agree even with two implementations, so only a
-    non-ASCII config can tell them apart."""
+    non-ASCII config can tell them apart. (S7: a projected-text call now
+    requires the named projection DECLARED, so the non-ASCII name appears in
+    the declaration and the query alike -- the hash covers both.)"""
     doc = _config()
+    doc["scenario"]["projections"] = {
+        "declare": [{"name": "café", "roles": ["searchable"], "fts": True}]
+    }
     doc["scenario"]["query"] = {
         "call": "Engine.search_projected_text",
         "projection_name": "café",
@@ -208,6 +213,7 @@ def test_blocked_run_is_indexed_with_a_blocked_verdict(tmp_path: Path) -> None:
     assert outcome.blocker is None
     row = json.loads((tmp_path / "index.jsonl").read_text().strip())
     assert row["verdict"] == "blocked"
+    assert outcome.run_dir is not None
     sidecar = json.loads((outcome.run_dir / "earp.result.v1.json").read_text())
     assert sidecar["verdict"] == "blocked"
     assert sidecar["blockers"]
@@ -254,7 +260,7 @@ def test_config_mutation_after_derivation_cannot_move_the_directory(
     doc = _config()
     outcome = _write(tmp_path, doc)
     doc["campaign"] = "characterization"
-    assert outcome.run_dir.is_dir()
+    assert outcome.run_dir is not None and outcome.run_dir.is_dir()
 
 
 # --- AC-8/9: the walker covers all three schemas ---------------------------

@@ -194,11 +194,70 @@ CATALOG: tuple[KnobEntry, ...] = (
         ),
     ),
     KnobEntry(
-        name="configure_projections",
-        classification=KnobClass.INDEXING,
-        call_path="Engine.configure_projections",
-        witness="projection_delta",
-        reason="Declares filter/FTS/vector projections; requires a fresh database per scenario by policy.",
+        name="projections.declare",
+        classification=KnobClass.SEMANTIC,
+        call_path="Engine.configure_projections(specs=)",
+        witness="projection_witnesses.configure_delta",
+        reason=(
+            "REPLACES the pre-S7 `configure_projections` INDEXING entry -- one call "
+            "path, one entry. That entry classified the capability before any config "
+            "could express it; now that `scenario.projections.declare` can, the "
+            "config-facing name and SEMANTIC (it alters stored data and results) are "
+            "the truthful record. Fresh database per scenario by policy."
+        ),
+    ),
+    KnobEntry(
+        name="projections.readiness_timeout_s",
+        classification=KnobClass.RUNTIME,
+        call_path="fathomdb.read.projections",
+        witness="projection_witnesses.readiness",
+        reason=(
+            "Bound on the vector-readiness poll. A spec still `embedding` at the "
+            "bound is the typed blocker dense_readiness_timeout, never an empty "
+            "retrieval result."
+        ),
+    ),
+    KnobEntry(
+        name="fts_tokenizer",
+        classification=KnobClass.UNSUPPORTED,
+        call_path=None,
+        witness=None,
+        reason=(
+            "No supported custom tokenizer implementations in the Python SDK; a "
+            "stored identity is not proof of a runtime, so earp.v1 cannot honestly "
+            "declare one."
+        ),
+    ),
+    KnobEntry(
+        name="vector_embedder",
+        classification=KnobClass.UNSUPPORTED,
+        call_path=None,
+        witness=None,
+        reason=(
+            "Custom embedder implementations are unsupported by the Python SDK "
+            "(earp.md); the only embedder lever is scenario.engine."
+            "use_default_embedder."
+        ),
+    ),
+    KnobEntry(
+        name="projections.drop",
+        classification=KnobClass.UNSUPPORTED,
+        call_path=None,
+        witness=None,
+        reason=(
+            "Scenarios own a fresh database per run, so there is never anything to "
+            "drop; a drop surface would be untestable dead weight."
+        ),
+    ),
+    KnobEntry(
+        name="projections.source",
+        classification=KnobClass.UNSUPPORTED,
+        call_path=None,
+        witness=None,
+        reason=(
+            "Nested source-segment projections are a wider surface than the "
+            "witnesses S7 owes; deferred to keep the catalog honest."
+        ),
     ),
     KnobEntry(
         name="attach_logging_subscriber",

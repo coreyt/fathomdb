@@ -233,10 +233,17 @@ def test_cache_hit_is_not_blocked() -> None:
 
 
 def test_dense_disabled_is_blocked() -> None:
-    _witnesses, blockers = classify_open(
-        {"embedder_download_ms": None, "dense_disabled": True, "embedder_events": []}
-    )
+    """S7 amendment: `dense_disabled` blocks only when the scenario DECLARED a
+    dense projection (matching earp.md's "typed blocker when dense retrieval
+    was required"); otherwise the degraded open is witness-recorded, not
+    blocking -- the witness value carries the full report either way."""
+    report = {"embedder_download_ms": None, "dense_disabled": True, "embedder_events": []}
+    _witnesses, blockers = classify_open(report, dense_required=True)
     assert any(b.code is BlockerCode.DENSE_DISABLED for b in blockers)
+
+    witnesses, blockers = classify_open(report, dense_required=False)
+    assert not any(b.code is BlockerCode.DENSE_DISABLED for b in blockers)
+    assert {w.name: w.value for w in witnesses}["open_report"]["dense_disabled"] is True
 
 
 # --- AC-8: lifecycle --------------------------------------------------------

@@ -72,6 +72,97 @@
           "type": "array",
           "items": {
             "type": "object"
+          },
+          "description": "RETIRED IN PLACE (S7): never written by any slice. Projection state is owned by `projection_witnesses`; this slot is kept unwritten only so pre-S7 validators keep working -- removing it would be the sole breaking edit of the slice."
+        },
+        "projection_witnesses": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "open_report"
+          ],
+          "description": "S7. The three projection-state signals, each from its OWN API under its own name; never interchangeable, never converted into an empty retrieval result. `configure_delta` and `readiness` are ABSENT (not empty) for a projection-less scenario, so a reader can distinguish 'not declared' from 'not captured'.",
+          "properties": {
+            "open_report": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "dense_disabled",
+                "dense_disabled_reason",
+                "query_backend",
+                "refusal_count"
+              ],
+              "description": "From open_report() at open time; refusal_count from Engine.vector_equivalence_refusal_count(), read by the runner at capture time.",
+              "properties": {
+                "dense_disabled": {
+                  "type": "boolean"
+                },
+                "dense_disabled_reason": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "query_backend": {
+                  "type": "string"
+                },
+                "refusal_count": {
+                  "type": "integer"
+                }
+              }
+            },
+            "configure_delta": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "built",
+                "dropped",
+                "deferred",
+                "unchanged",
+                "vector_unsupported_kinds"
+              ],
+              "description": "The ProjectionDelta exactly as configure_projections returned it. built/deferred are NON-DISJOINT: a both-sub-target spec appears in both, so 'in built' must never be read as 'fully built' -- the dense portion keys on deferred.",
+              "properties": {
+                "built": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "dropped": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "deferred": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "unchanged": {
+                  "type": "boolean"
+                },
+                "vector_unsupported_kinds": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "readiness": {
+              "type": "object",
+              "additionalProperties": {
+                "enum": [
+                  "ready",
+                  "embedding",
+                  "not_declared"
+                ]
+              },
+              "description": "Declared projection name -> readiness, from polling read.projections(). None never appears: not_declared is derived from the spec's own vector flag and occurs only for specs without a vector sub-target."
+            }
           }
         }
       }
