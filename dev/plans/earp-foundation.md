@@ -91,7 +91,8 @@ declarative schema with no behaviour to test.
 | 4 | Durable writer: sidecar schemas, `_lib` integration, run-id derivation + collision policy, blocked-run recording | 3 |
 | 5 | Diagnostic runner on the fixture: fresh DB, real SDK ingest + search, integrity and open evidence, typed blockers | 4 |
 | 6 | Corpus-scale characterization + replay verification: frozen snapshot + v2 gold, Evidence Recall@{5,10} + abstention | 1, 5 |
-| 7 | Store/projection/query matrix + readiness witnesses (split by real source) | 6 |
+| 6a | Public result-limit adoption (D-5 retirement successor; 0.8.22 Slice 18): `limit` knob, K ≤ limit ≤ 100 for every mode, limit recorded with every number — interstitial slice added 2026-08-07 | 6 |
+| 7 | Store/projection/query matrix + readiness witnesses (split by real source) | 6a |
 | 8 | Comparison and sweep statistics: pairing, strata, fixed CI method/seed, declared power rules | 7 |
 | 9 | Opt-in priced arms (R2, Mem0, extractor, GPU) behind the D-3 cumulative budget gate | 8 |
 
@@ -240,7 +241,8 @@ because the prior draft declared `diagnostic` and delivered it nowhere:
 | Slice | Requirement | Acceptance criterion |
 | ---: | --- | --- |
 | 1 | Gold is trustworthy before it is measured against | Pinned SHA-256 matches; `corpus_hash` equals the snapshot hash; `ir-c-reused-v1` refused as `gold_stale_qrels_version`; absent root refused as `corpus_root_absent`; snapshot and manifest recorded separately |
-| 2 | Ported metrics are the reference's metrics | Byte-parity with Rust output on `synthetic_gold.json`, no excluded fields, including `null` supporting coverage and `supporting_query_n`; depth rules refuse K>10 for vector/hybrid and admit it for FTS-only |
+| 2 | Ported metrics are the reference's metrics | Byte-parity with Rust output on `synthetic_gold.json`, no excluded fields, including `null` supporting coverage and `supporting_query_n`; ~~depth rules refuse K>10 for vector/hybrid and admit it for FTS-only~~ (retired with D-5, 2026-08-07 — superseded by the S6a rule below) |
+| 6a | Depth follows the engine's public limit, not a mode table | `@K` admitted for every mode when `K ≤ limit ≤ 100`, refused typed above it; limit recorded (`fanout_used`) with every number; a limit-less config resolves to the engine default 10 with its `config_sha256` unmoved |
 | 3 | A config cannot express a run that cannot be honestly executed | Unknown, missing, invalid, and unused keys rejected; unmeasurable K rejected; ineligible metric rejected or `not_applicable`; decision rule predeclared or absent; every catalog entry has a call path and witness |
 | 4 | A partial run can never appear complete | Sidecar staged and validated before the index line exists; run id pre-derived and stable across `write_record`; colliding run dir with differing sidecar refused; blocked runs indexed only with a blocked verdict |
 | 5 | The machinery works end to end without a quality claim | Fresh DB, real SDK ingest with `source_id`, named search call, integrity and `open_report` witnesses, typed blockers; no metric emitted that gold cannot support |
