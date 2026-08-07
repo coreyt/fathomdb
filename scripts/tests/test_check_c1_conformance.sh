@@ -310,6 +310,68 @@ run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$CLEAN_ROOT"
 expect_rc 0 "an unmodified COPY of the contract + a copied source root passes"
 expect_out 'ok +c1-contract-conformance' "the copied-fixture pass says ok"
 
+# === Arm 2a (RED): the approved three-value readiness contract ==============
+#
+# Slice 21's HITL ruling closes the C1 vocabulary as exactly
+# {unavailable, embedding, ready}.  This fixture is deliberately the complete
+# future public enum shape: the enum, outbound spellings, and inbound
+# accept-inert parsing all agree.  Until the contract/pin/checker are re-derived
+# together, the old two-member gate MUST reject it.  The expectation is already
+# the post-ruling contract, so this is a real RED witness rather than a test of
+# the previous vocabulary.
+THREE_VALUE_ROOT="$(make_root readiness-three-value-contract)"
+python3 - "$THREE_VALUE_ROOT/src/rust/crates/fathomdb-engine/src/lib.rs" <<'PY'
+import sys
+
+p = sys.argv[1]
+text = open(p, encoding="utf-8").read()
+old_enum = '''pub enum DenseReadiness {
+    /// Every row in the vector projection's row set has reached a projection
+    /// terminal — the dense arm is caught up. Because the vector INSERT and the
+    /// terminal record are written in ONE transaction
+    /// ([`commit_projection_outcomes`]), `Ready` can never be observed with the
+    /// vector row absent (design §4.1 invariant 1).
+    Ready,
+    /// At least one row in the projection's row set has not yet reached a
+    /// projection terminal — embedding is outstanding. This is the ONLY
+    /// tolerable torn state: readiness `embedding` with the vector absent (the
+    /// dense arm reads as partial and RRF under-ranks; it does not hide).
+    Embedding,
+}'''
+new_enum = '''pub enum DenseReadiness {
+    /// No usable dense runtime is available for this session.
+    Unavailable,
+    /// At least one row in the vector projection's row set has not yet reached a
+    /// projection terminal — embedding is outstanding. This is the ONLY
+    /// tolerable torn state: readiness `embedding` with the vector absent (the
+    /// dense arm reads as partial and RRF under-ranks; it does not hide).
+    Embedding,
+    /// Every row in the vector projection's row set has reached a projection
+    /// terminal — the dense arm is caught up. Because the vector INSERT and the
+    /// terminal record are written in ONE transaction
+    /// ([`commit_projection_outcomes`]), `Ready` can never be observed with the
+    /// vector row absent (design §4.1 invariant 1).
+    Ready,
+}'''
+assert old_enum in text
+text = text.replace(old_enum, new_enum, 1)
+text = text.replace(
+    '        match self {\n            DenseReadiness::Ready => "ready",\n            DenseReadiness::Embedding => "embedding",\n',
+    '        match self {\n            DenseReadiness::Unavailable => "unavailable",\n            DenseReadiness::Embedding => "embedding",\n            DenseReadiness::Ready => "ready",\n',
+    1,
+)
+text = text.replace(
+    '        match value {\n            "ready" => Some(DenseReadiness::Ready),\n            "embedding" => Some(DenseReadiness::Embedding),\n',
+    '        match value {\n            "unavailable" => Some(DenseReadiness::Unavailable),\n            "embedding" => Some(DenseReadiness::Embedding),\n            "ready" => Some(DenseReadiness::Ready),\n',
+    1,
+)
+open(p, "w", encoding="utf-8").write(text)
+PY
+run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$THREE_VALUE_ROOT"
+expect_rc 0 "the closed C1 contract recognizes exactly unavailable / embedding / ready"
+expect_out 'ok +c1-contract-conformance' \
+  "the three-value readiness fixture passes the closed C1 contract"
+
 # ============ Arm 3 (RED): the contract text moved (substantive) =============
 # The load-bearing pin: the clause registry was derived from THIS text, so a
 # changed contract means the registry is no longer known to describe the doc.
