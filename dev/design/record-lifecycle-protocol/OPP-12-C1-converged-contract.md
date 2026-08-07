@@ -57,7 +57,11 @@ Policy (Memex-owned; the promotion gate is a **design commitment, not yet built*
 
 - Cheap same-transaction projections (`filterable`, `searchable→FTS`) build **immediately** for provisional
   types (instant lexical/filter recall for the adaptive loop).
-- The expensive `searchable→vector` (async embed + `dense_readiness` + atomic flip) **defers to `promote()`**.
+- The expensive `searchable→vector` (async embed + engine-set, accept-inert
+  `dense_readiness` + atomic flip) **defers to `promote()`**. By the 0.8.22
+  Slice 21 F5 ruling (HITL `steward-ledger` seq-246), `DenseReadiness` is
+  exactly `{unavailable, embedding, ready}`; `pending` remains reserved for the
+  orthogonal admission axis and is never a readiness spelling.
 - A rejected provisional drops **only** the cheap projections → no embedding rebuild-churn.
 
 **Mechanism refinement (FathomDB, P2·S0 confirm — does not change Memex policy):** the **engine needs no
