@@ -21,7 +21,7 @@ use std::time::Instant;
 
 use rusqlite::Connection;
 
-pub const SCHEMA_VERSION: u32 = 25;
+pub const SCHEMA_VERSION: u32 = 26;
 
 /// SQLite `PRAGMA` name carrying the on-disk schema-version sentinel.
 ///
@@ -895,6 +895,16 @@ pub const MIGRATIONS: &[Migration] = &[
         step_id: 25,
         sql: "-- MIGRATION-ACCRETION-EXEMPTION: Slice-45 nested projection source declaration; additive registry column only, no data migration or canonical-body rewrite.
               ALTER TABLE _fathomdb_projection_registry ADD COLUMN source TEXT;",
+    },
+    // 0.8.22 Slice 19 — the FTS hydration paths join canonical rows by
+    // `write_cursor`. The node partial active-state index cannot cover the
+    // ownerless-preserving body-FTS join, and edges had no cursor index at all.
+    // These unconditional, non-unique B-trees preserve retrieval semantics and
+    // are index-only, so the migration-accretion guard needs no exemption.
+    Migration {
+        step_id: 26,
+        sql: "CREATE INDEX IF NOT EXISTS canonical_nodes_write_cursor_idx ON canonical_nodes(write_cursor);
+              CREATE INDEX IF NOT EXISTS canonical_edges_write_cursor_idx ON canonical_edges(write_cursor);",
     },
 ];
 

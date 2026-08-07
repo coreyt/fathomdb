@@ -36,7 +36,7 @@ fn step25_adds_nullable_source_without_rewriting_registry_rows() {
     .unwrap();
 
     migrate_with_steps(&conn, MIGRATIONS).unwrap();
-    assert_eq!(SCHEMA_VERSION, 25);
+    assert_eq!(SCHEMA_VERSION, 26);
     let source: Option<String> = conn
         .query_row(
             "SELECT source FROM _fathomdb_projection_registry WHERE name = 'status'",

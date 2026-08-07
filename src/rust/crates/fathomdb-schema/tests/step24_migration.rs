@@ -192,10 +192,10 @@ fn s24_precedes_the_nested_source_head_migration() {
     migrate_with_steps(&conn, MIGRATIONS).expect("migration must succeed");
 
     assert_eq!(user_version(&conn), SCHEMA_VERSION);
-    assert_eq!(SCHEMA_VERSION, 25, "SCHEMA_VERSION must be 25 at the Slice-45 head");
+    assert_eq!(SCHEMA_VERSION, 26, "SCHEMA_VERSION must be 26 at the Slice-19 head");
     assert_eq!(
         MIGRATIONS.last().expect("at least one migration").step_id,
-        25,
-        "step-25 (nested-source projection registry column) must be the last (head) migration"
+        26,
+        "step-26 (canonical FTS-hydration join indexes) must be the last (head) migration"
     );
 }

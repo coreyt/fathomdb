@@ -53,8 +53,9 @@ published Python and npm packages in this release.
 
 ## On-disk schema
 
-`SCHEMA_VERSION` is **25** in 0.8.21 (0.8.20 shipped **24**). Migration
-runs at `Engine.open` and only there.
+The 0.8.22 development line sets `SCHEMA_VERSION` to **26** (the released
+0.8.21 line is **25**; 0.8.20 shipped **24**). Migration runs at
+`Engine.open` and only there.
 
 ⚠ **Migration step 23 does not preserve edge data.** The step recreates
 `canonical_edges` so `t_valid` / `t_invalid` are INTEGER epoch seconds
