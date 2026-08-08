@@ -539,9 +539,10 @@ Types:
   - **Residual — it is computed at DECLARE time.** A non-committable kind written
     *after* the call is not in a delta the caller already holds. To refresh it,
     re-apply the same spec: an idempotent no-op that returns a current report.
-  - It is **not an error and not a readiness change**: readiness still reaches
-    `Ready` (see the enrolment bullet below), nothing is rejected, and no
-    `projection_failures` row is written.
+  - It is **not an error and not a readiness change**: with a usable dense
+    runtime, readiness still reaches `Ready` (see the enrolment bullet below),
+    nothing is rejected, and no `projection_failures` row is written. Without
+    a usable runtime, runtime selection remains `Unavailable`.
 
 **Spec-validation reject — an `fts`/`vector` sub-object REQUIRES the `searchable`
 role (0.8.20 Slice 23, `R-20-SV`).** ⚠ **BREAKING.**
@@ -660,8 +661,10 @@ in Rust, Python and TypeScript:
   `{email, article, paper, meeting, note, todo, doc}` (plus the engine-internal
   `edge_fact` for edge bodies). Rows of ANY other `kind` are accepted and stay
   lexically searchable, but get **no vector** and are not counted as outstanding
-  work, so readiness still reaches `Ready`. This is **not** an error condition:
-  the write is not rejected and no typed error is raised.
+  work, so readiness reaches `Ready` only with a usable dense runtime. An
+  absent or equivalence-refused runtime instead selects `Unavailable`. This is
+  **not** an error condition: the write is not rejected and no typed error is
+  raised.
   **Since 0.8.20 Slice 22 (`TC-67`) it is no longer silent, either:** the excluded
   kinds are named in `ProjectionDelta::vector_unsupported_kinds`. Only the
   reporting changed — the exclusion, the readiness semantics and the absence of an

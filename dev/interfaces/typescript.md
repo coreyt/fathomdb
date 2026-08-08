@@ -375,9 +375,10 @@ never be embedded" (permanent) both arrived as the same `deferred` entry.
 - **Residual — computed at DECLARE time.** A non-committable kind written *after*
   the call is not in a delta you already hold. To refresh, re-apply the same spec:
   an idempotent no-op that returns a current report.
-- **Not an error, not a readiness change.** Nothing is rejected and
-  `vectorDenseReadiness` still reaches `"ready"` — an un-enrolled kind is not
-  outstanding work.
+- **Not an error, not a readiness change.** Nothing is rejected and, with a
+  usable dense runtime, `vectorDenseReadiness` still reaches `"ready"` — an
+  un-enrolled kind is not outstanding work. Without a usable runtime, runtime
+  selection remains `"unavailable"`.
 
 ### `vectorDenseReadiness` (0.8.20 Slice 20, R-20-DR)
 
@@ -463,9 +464,10 @@ Rust, Python and TypeScript:
   `searchable→vector` declaration turns the dense arm on for node kinds in
   `{email, article, paper, meeting, note, todo, doc}`. Rows of ANY other `kind`
   are accepted and stay lexically searchable, but get **no vector** and are not
-  counted as outstanding work, so readiness still reaches `"ready"`. This is
-  **not** an error condition: `engine.write` does not reject them, nothing
-  rejects, and there is no verb to ask about it.
+  counted as outstanding work, so readiness reaches `"ready"` only with a usable
+  dense runtime. An absent or equivalence-refused runtime instead selects
+  `"unavailable"`. This is **not** an error condition: `engine.write` does not
+  reject them, nothing rejects, and there is no verb to ask about it.
 - **Idempotent.** Re-applying an already-satisfied declaration re-embeds nothing
   and resolves `{ unchanged: true }`.
 - **Dropping the last `searchable→vector` declaration turns the dense arm back
