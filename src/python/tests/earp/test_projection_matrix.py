@@ -17,6 +17,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import os
+import typing
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -178,9 +179,10 @@ def test_projected_text_without_a_projections_block_is_refused() -> None:
 
 
 def test_vector_without_the_default_embedder_is_refused_at_config_time() -> None:
-    """Fact 7: with no embedder, readiness goes VACUOUSLY ready with zero dense
-    vectors behind it -- the poll witness would lie rather than time out, so
-    resolution is the only honest gate."""
+    """With no embedder the engine reports the dense sub-target `unavailable`
+    (0.8.22 Slice 21), so the config declares a dense arm the run can never
+    exercise -- resolution refuses it up front (S10 rewrote the pre-Slice-21
+    vacuous-ready story; the refusal semantics are unchanged)."""
     doc = _config()
     doc["scenario"]["projections"]["declare"] = [_declare(vector=True)]
     result = resolve_config(doc)
@@ -272,8 +274,9 @@ def test_ready_and_embedding_pass_through() -> None:
 
 
 def test_none_readiness_on_a_vector_spec_is_a_contract_violation() -> None:
-    """read.py binding-enforces ready|embedding|None, and None with vector=True
-    is outside the engine's contract -- assert, never silently reported."""
+    """read.py binding-enforces unavailable|embedding|ready|None, and None with
+    vector=True is outside the engine's contract -- assert, never silently
+    reported."""
     with pytest.raises(AssertionError):
         ProjectionWitnesses.readiness_state(vector=True, vector_dense_readiness=None)
 
@@ -366,9 +369,10 @@ def test_readiness_timeout_is_typed_and_performs_zero_real_waiting(tmp_path: Pat
     clock (S5's query_override precedent), so no wall time passes.
 
     The scenario is built by dataclasses.replace: the resolver deliberately
-    refuses `vector: true` without the embedder (fact 7), so the embedder-on
-    shape is simulated the same way classify_open is driven by a synthetic
-    report -- the readiness view is synthetic either way.
+    refuses `vector: true` without the embedder (the engine would report the
+    dense sub-target `unavailable`), so the embedder-on shape is simulated the
+    same way classify_open is driven by a synthetic report -- the readiness
+    view is synthetic either way.
     """
     pytest.importorskip("fathomdb._fathomdb", reason="native binding not built")
     from eval.earp.runner import run_diagnostic  # noqa: PLC0415
@@ -445,6 +449,240 @@ def test_non_empty_unsupported_kinds_is_the_typed_blocker() -> None:
     assert none_blocker is None
 
 
+# --- 5. S10: engine adoption -- `unavailable` + the status witness -----------
+#
+# Design of record: `dev/design/earp-slice-10-design.md`. Slice 21 gave the
+# engine a THIRD readiness spelling (`unavailable`) and Slice 22 the pure
+# `read.projection_status` verb; S10 adopts both and fixes the reachable
+# degraded-open crash (fact 3 / AC-7).
+
+
+def test_unavailable_passes_through_on_a_vector_spec() -> None:
+    """Slice 21: `unavailable` is the ENGINE's value for an absent or
+    equivalence-refused runtime -- passed through, never derived by EARP."""
+    assert (
+        ProjectionWitnesses.readiness_state(vector=True, vector_dense_readiness="unavailable")
+        == "unavailable"
+    )
+
+
+@pytest.mark.parametrize("bad", [None, "pending", "built"])
+def test_unknown_readiness_still_raises_naming_the_binding_vocabulary(bad: Any) -> None:
+    """The assertion narrows to its REAL contract -- `None` or an unknown
+    spelling with vector=True -- and its message names all three binding
+    values, so the next vocabulary change announces itself in the failure."""
+    with pytest.raises(AssertionError) as excinfo:
+        ProjectionWitnesses.readiness_state(vector=True, vector_dense_readiness=bad)
+    message = str(excinfo.value)
+    for member in ("unavailable", "embedding", "ready"):
+        assert member in message, (member, message)
+
+
+def test_drift_alarm_pins_the_binding_readiness_vocabulary() -> None:
+    """R4/AC-3: EARP's suite stayed green through Slice 21 because nothing
+    pinned the binding set. The alarm pins EARP's HANDLING at the binding
+    seam: the Literal set is exactly the three spellings, and readiness_state
+    accepts EVERY member by iteration (not literals) -- a fourth value breaks
+    the set equality and, until handled, the acceptance loop."""
+    pytest.importorskip("fathomdb._fathomdb", reason="native binding not built")
+    from fathomdb.types import DenseReadiness  # noqa: PLC0415
+
+    members = typing.get_args(DenseReadiness)
+    assert set(members) == {"unavailable", "embedding", "ready"}
+    for member in members:
+        assert (
+            ProjectionWitnesses.readiness_state(vector=True, vector_dense_readiness=member)
+            == member
+        ), member
+
+
+def test_projection_status_witness_value_is_json_ready() -> None:
+    """Witness.value flows RAW into json.dumps and a raw dataclass raises
+    TypeError there (review-executed), so as_value() is the required seam."""
+    from eval.earp.schema.models import ProjectionStatusWitness  # noqa: PLC0415
+
+    status = ProjectionStatusWitness(
+        runtime_embedder_available=False,
+        runtime_unavailability_reason="no_runtime",
+        readiness={"title": "unavailable"},
+        vector_unsupported_kinds=("event",),
+    )
+    assert json.loads(json.dumps(status.as_value())) == {
+        "runtime_embedder_available": False,
+        "runtime_unavailability_reason": "no_runtime",
+        "readiness": {"title": "unavailable"},
+        "vector_unsupported_kinds": ["event"],
+    }
+
+
+def _vector_scenario(doc: dict[str, Any]) -> Any:
+    """The S7 synthetic-shape precedent: the resolver deliberately refuses
+    `vector: true` without the embedder, so the embedder-declared shape is
+    built by dataclasses.replace and driven through poll_override."""
+    resolution = resolve_config(doc)
+    assert resolution.blockers == ()
+    assert resolution.scenario is not None
+    return dataclasses.replace(
+        resolution.scenario,
+        projections=(
+            DeclaredProjection(name="title", roles=("searchable",), fts=True, vector=True),
+        ),
+    )
+
+
+def test_unavailable_is_a_settled_poll_state(tmp_path: Path) -> None:
+    """`unavailable` never resolves by waiting, so the poll exits on the FIRST
+    read -- stated semantics now, no longer an accident of the `== "embedding"`
+    comparison -- and never becomes DENSE_READINESS_TIMEOUT."""
+    pytest.importorskip("fathomdb._fathomdb", reason="native binding not built")
+    from eval.earp.runner import run_diagnostic  # noqa: PLC0415
+    from fathomdb.types import ProjectionSpec  # noqa: PLC0415
+
+    doc = _config(_fixture_file(tmp_path))
+    scenario = _vector_scenario(doc)
+    calls = 0
+
+    def poll() -> tuple[list[ProjectionSpec], float]:
+        nonlocal calls
+        calls += 1
+        specs = [
+            ProjectionSpec(
+                name="title",
+                roles=frozenset({"searchable"}),
+                fts=True,
+                vector=True,
+                vector_dense_readiness="unavailable",
+            )
+        ]
+        return specs, 0.0 if calls == 1 else scenario.readiness_timeout_s + 1.0
+
+    result = run_diagnostic(
+        scenario=scenario,
+        config_doc=doc,
+        experiments_root=tmp_path / "experiments",
+        experiment="earp-s10",
+        ts=TS,
+        poll_override=poll,
+    )
+    assert calls == 1
+    assert result.failure is None, result.failure
+    assert BlockerCode.DENSE_READINESS_TIMEOUT not in {b.code for b in result.blockers}
+    assert _sidecar(result)["scenario"]["projection_witnesses"]["readiness"] == {
+        "title": "unavailable"
+    }
+
+
+def test_degraded_open_with_a_dense_declaration_is_blocked_not_failed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """AC-7 -- the fact-3 defect, fixed: classify_open only ACCUMULATES the
+    DENSE_DISABLED blocker and the run proceeds to the poll, which pre-S10
+    crashed the run to verdict=FAILED (bare AssertionError, empty blockers,
+    no readiness in the sidecar). There is no open-report seam, so the
+    degraded report is synthesized by patching `_report_mapping` -- the same
+    synthetic-shape rationale as poll_override."""
+    pytest.importorskip("fathomdb._fathomdb", reason="native binding not built")
+    from eval.earp import runner as runner_module  # noqa: PLC0415
+    from fathomdb.types import ProjectionSpec  # noqa: PLC0415
+
+    real_mapping = runner_module._report_mapping
+
+    def degraded(report: Any) -> dict[str, Any]:
+        value = real_mapping(report)
+        value["dense_disabled"] = True
+        value["dense_disabled_reason"] = "vector_equivalence_disabled"
+        return value
+
+    monkeypatch.setattr(runner_module, "_report_mapping", degraded)
+
+    doc = _config(_fixture_file(tmp_path))
+    scenario = _vector_scenario(doc)
+
+    def poll() -> tuple[list[ProjectionSpec], float]:
+        specs = [
+            ProjectionSpec(
+                name="title",
+                roles=frozenset({"searchable"}),
+                fts=True,
+                vector=True,
+                vector_dense_readiness="unavailable",
+            )
+        ]
+        return specs, 0.0
+
+    result = runner_module.run_diagnostic(
+        scenario=scenario,
+        config_doc=doc,
+        experiments_root=tmp_path / "experiments",
+        experiment="earp-s10",
+        ts=TS,
+        poll_override=poll,
+    )
+    assert result.verdict is RunVerdict.BLOCKED, (result.verdict, result.failure)
+    assert result.failure is None, result.failure
+    codes = {b.code for b in result.blockers}
+    assert BlockerCode.DENSE_DISABLED in codes
+    sidecar = _sidecar(result)
+    assert sidecar["verdict"] == "blocked"
+    assert sidecar["scenario"]["projection_witnesses"]["readiness"] == {
+        "title": "unavailable"
+    }
+
+
+def test_projection_status_is_captured_as_the_fourth_witness(tmp_path: Path) -> None:
+    """R3: SUPPLEMENTARY -- the three true sources stay untouched and the
+    status snapshot rides under its own source name. On this no-embedder,
+    FTS-only run the engine reports `no_runtime` and an ENGINE-produced
+    `not_declared` (fact 6: same spelling as the poll map's EARP-derived
+    value, different producer)."""
+    result = _run(tmp_path, _config(_fixture_file(tmp_path)))
+    assert result.verdict is RunVerdict.COMPLETE, (result.failure, result.blockers)
+    by_name = {w.name: w for w in result.witnesses}
+    status = by_name["projection_status"]
+    assert status.source is WitnessSource.PROJECTION_STATUS
+    assert status.call_path == "fathomdb.read.projection_status"
+    assert status.value == {
+        "runtime_embedder_available": False,
+        "runtime_unavailability_reason": "no_runtime",
+        "readiness": {"title": "not_declared"},
+        "vector_unsupported_kinds": [],
+    }
+    for name in ("open_report", "projection_delta", "projection_readiness"):
+        assert name in by_name, name
+    sidecar_block = _sidecar(result)["scenario"]["projection_witnesses"]
+    assert sidecar_block["projection_status"] == status.value
+
+
+def test_projection_less_run_captures_no_status(tmp_path: Path) -> None:
+    """Absent, never empty (S7's rule): a projection-less run records neither
+    the witness nor the object -- the always-captured open-report witness
+    already carries runtime availability."""
+    doc = _config(_fixture_file(tmp_path), projections=None)
+    doc["scenario"]["query"] = {"call": "Engine.search_text_only", "text": "deal sheet"}
+    result = _run(tmp_path, doc)
+    assert result.verdict is RunVerdict.COMPLETE
+    assert not any(w.name == "projection_status" for w in result.witnesses)
+    assert "projection_status" not in _sidecar(result)["scenario"]["projection_witnesses"]
+
+
+def test_the_refusal_message_cites_the_engines_unavailable_state() -> None:
+    """R2/AC-4 -- a NEW pin (review-verified that none existed): the refusal
+    stays, and its message names the engine's honest `unavailable` state
+    instead of the pre-Slice-21 vacuous-ready story."""
+    doc = _config()
+    doc["scenario"]["projections"]["declare"] = [_declare(vector=True)]
+    result = resolve_config(doc)
+    blocker = next(
+        b
+        for b in result.blockers
+        if b.code is BlockerCode.CONFIG_INVALID_VALUE
+        and str(b.detail.get("path", "")).endswith(".vector")
+    )
+    assert "unavailable" in blocker.message, blocker.message
+    assert "use_default_embedder" in blocker.message
+    assert "vacuous" not in blocker.message
+
+
 # --- opt-in: real embedder, real readiness -----------------------------------
 
 _EARP_INTEGRATION = os.environ.get("FDB_EARP_INTEGRATION") == "1"
@@ -460,8 +698,9 @@ _EARP_INTEGRATION = os.environ.get("FDB_EARP_INTEGRATION") == "1"
     ),
 )
 def test_embedder_on_readiness_reaches_ready(tmp_path: Path) -> None:
-    """The control for fact 7: WITH the embedder the dense sub-target defers at
-    configure time and the poll reads embedding -> ready, never vacuously."""
+    """The control for the no-embedder refusal: WITH the embedder the dense
+    sub-target defers at configure time and the poll reads embedding -> ready,
+    never `unavailable`."""
     doc = _config(_fixture_file(tmp_path), engine={"use_default_embedder": True})
     doc["scenario"]["projections"]["declare"] = [_declare(vector=True)]
     result = _run(tmp_path, doc)

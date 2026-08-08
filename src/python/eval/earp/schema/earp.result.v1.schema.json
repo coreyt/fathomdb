@@ -158,10 +158,53 @@
                 "enum": [
                   "ready",
                   "embedding",
+                  "unavailable",
                   "not_declared"
                 ]
               },
-              "description": "Declared projection name -> readiness, from polling read.projections(). None never appears: not_declared is derived from the spec's own vector flag and occurs only for specs without a vector sub-target."
+              "description": "Declared projection name -> readiness, from polling read.projections(). None never appears: not_declared is derived by EARP from the spec's own vector flag and occurs only for specs without a vector sub-target. unavailable (S10; engine 0.8.22 Slice 21) is the ENGINE's value for an absent or equivalence-refused runtime, passed through -- a SETTLED state that never becomes dense_readiness_timeout."
+            },
+            "projection_status": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "runtime_embedder_available",
+                "runtime_unavailability_reason",
+                "readiness",
+                "vector_unsupported_kinds"
+              ],
+              "description": "S10. The read.projection_status snapshot (engine 0.8.22 Slice 22), captured once after the readiness poll settles and before the query -- including on blocked paths. SUPPLEMENTARY: it never replaces the three true sources above, and on any disagreement both are recorded as-is (capture is not atomic with the poll; EARP records, it does not reconcile). ABSENT for pre-S10 sidecars and projection-less runs.",
+              "properties": {
+                "runtime_embedder_available": {
+                  "type": "boolean"
+                },
+                "runtime_unavailability_reason": {
+                  "enum": [
+                    "none",
+                    "no_runtime",
+                    "vector_equivalence_disabled"
+                  ],
+                  "description": "The Literal spelling 'none' (never null) occurs exactly when runtime_embedder_available is true."
+                },
+                "readiness": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "enum": [
+                      "not_declared",
+                      "unavailable",
+                      "embedding",
+                      "ready"
+                    ]
+                  },
+                  "description": "Projection name -> dense readiness, the ENGINE's four-value set. The not_declared here is ENGINE-produced -- same spelling as the sibling readiness map's EARP-derived value, different producer."
+                },
+                "vector_unsupported_kinds": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
             }
           }
         }
@@ -532,9 +575,10 @@
             "store_query",
             "write_receipt",
             "filesystem",
-            "answer_arm"
+            "answer_arm",
+            "projection_status"
           ],
-          "description": "Not interchangeable: vector_dense_readiness comes only from read_projections, vector_unsupported_kinds only from projection_delta, dense_disabled only from open_report. answer_arm (S9) carries the visible-skip witness, the cheap-validate witness, and the ledger-preflight witness — one source, three named witnesses."
+          "description": "Not interchangeable: vector_dense_readiness comes only from read_projections, vector_unsupported_kinds only from projection_delta, dense_disabled only from open_report. answer_arm (S9) carries the visible-skip witness, the cheap-validate witness, and the ledger-preflight witness — one source, three named witnesses. projection_status (S10) is the supplementary read.projection_status snapshot; it never replaces the three true projection sources."
         },
         "call_path": {
           "type": "string"

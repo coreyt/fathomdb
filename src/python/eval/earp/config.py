@@ -573,17 +573,19 @@ def resolve_config(doc: Mapping[str, Any]) -> ConfigResolution:
                         )
                     )
             if vector and not use_default_embedder:
-                # With NO embedder, readiness goes VACUOUSLY ready with zero
-                # dense vectors behind it -- the poll witness would LIE rather
-                # than time out, so resolution is the only honest gate.
+                # With NO embedder the engine reports the dense sub-target
+                # `unavailable` (0.8.22 Slice 21) and vector-dependent queries
+                # refuse at query time -- the config declares a dense arm the
+                # run can never exercise, so resolution refuses it up front.
                 blockers.append(
                     _blocker(
                         BlockerCode.CONFIG_INVALID_VALUE,
                         (
                             "`vector: true` requires `scenario.engine."
                             "use_default_embedder: true`; without an embedder the "
-                            "readiness witness reads vacuously `ready` with zero "
-                            "dense vectors behind it"
+                            "engine reports the dense sub-target `unavailable`, so "
+                            "the declared dense arm can never be exercised -- an "
+                            "honest config declares only what it measures"
                         ),
                         f"{item_path}.vector",
                     )

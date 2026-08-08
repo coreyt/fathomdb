@@ -26,6 +26,7 @@ from eval.earp.schema.models import (
     Blocker,
     BlockerCode,
     DeclaredProjection,
+    ProjectionStatusWitness,
     ProjectionWitnesses,
     RunVerdict,
     Witness,
@@ -219,11 +220,17 @@ def _poll_readiness(
     declared: Sequence[DeclaredProjection],
     timeout_s: float,
 ) -> tuple[dict[str, str], list[str]]:
-    """Poll until every `vector: true` spec reads `ready`, or `timeout_s`
-    elapses. Returns the readiness map and the still-`embedding` names (empty
-    on success). `vector: false` specs are recorded `not_declared` -- meaning
-    no VECTOR SUB-TARGET is declared; the projection itself is -- and are
-    never polled-for.
+    """Poll until every `vector: true` spec reads a SETTLED state, or
+    `timeout_s` elapses. Returns the readiness map and the still-`embedding`
+    names (empty on success). `vector: false` specs are recorded
+    `not_declared` -- meaning no VECTOR SUB-TARGET is declared; the projection
+    itself is -- and are never polled-for.
+
+    Settled states (S10, stated rather than an accident of the comparison):
+    `ready` AND `unavailable` -- the Slice-21 absent-or-equivalence-refused
+    runtime never resolves by waiting, so the poll exits immediately for it
+    and never emits DENSE_READINESS_TIMEOUT; only `embedding` spins. Blocked-
+    verdict coverage for the degraded open comes from DENSE_DISABLED instead.
     """
     while True:
         specs, elapsed = view()
@@ -442,6 +449,38 @@ def run_diagnostic(
                         },
                     )
                 )
+
+        if declared:
+            # S10: capture `read.projection_status` ONCE -- after the poll
+            # settles (including on the DENSE_READINESS_TIMEOUT / degraded-open
+            # blocked paths, the S7 delta-witness precedent) and BEFORE the
+            # query, so a query-time FAILED run still carries it while a
+            # poll-raise skips capture. Projection-less runs never capture
+            # (absent, not empty). Supplementary: the three true sources above
+            # are untouched, and on any disagreement both are recorded as-is --
+            # capture is not atomic with the poll, so transient disagreement is
+            # legitimate; EARP records, it does not reconcile.
+            status = fathom_read.projection_status(engine)
+            status_value = ProjectionStatusWitness(
+                runtime_embedder_available=status.runtime_embedder_available,
+                runtime_unavailability_reason=status.runtime_unavailability_reason,
+                readiness={
+                    entry.name: entry.dense_readiness for entry in status.projections
+                },
+                vector_unsupported_kinds=tuple(status.vector_unsupported_kinds),
+            )
+            witnesses.append(
+                Witness(
+                    name="projection_status",
+                    source=WitnessSource.PROJECTION_STATUS,
+                    call_path="fathomdb.read.projection_status",
+                    status=WitnessStatus.OBSERVED,
+                    value=status_value.as_value(),
+                )
+            )
+            projection_witnesses = replace(
+                projection_witnesses, projection_status=status_value
+            )
 
         call = query_override or resolve_call(engine, scenario.query_call)
         params = {

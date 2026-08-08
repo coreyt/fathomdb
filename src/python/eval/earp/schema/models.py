@@ -108,6 +108,10 @@ class WitnessSource(str, Enum):
     #: visible-skip witness (D-2), the cheap-validate witness, and the
     #: ledger-preflight witness (D-3).
     ANSWER_ARM = "answer_arm"
+    #: S10 — `read.projection_status` (0.8.22 Slice 22). A SUPPLEMENTARY
+    #: fourth witness: it is derived from the same internals as the three
+    #: true projection sources and never replaces any of them.
+    PROJECTION_STATUS = "projection_status"
 
 
 class WitnessStatus(str, Enum):
@@ -224,14 +228,50 @@ class DeclaredProjection:
 
 
 @dataclass(frozen=True)
+class ProjectionStatusWitness:
+    """The `read.projection_status` snapshot (S10; engine 0.8.22 Slice 22).
+
+    SUPPLEMENTARY evidence, never a gate: blockers still key on the three true
+    sources, and on any disagreement between this snapshot and a true-source
+    witness both are recorded as-is -- capture is not atomic with the poll, so
+    transient disagreement is legitimate; EARP records, it does not reconcile.
+
+    `readiness` values are the ENGINE's four-value set
+    ``{not_declared, unavailable, embedding, ready}``: the `not_declared` here
+    is ENGINE-produced, the same spelling as the poll map's EARP-derived value
+    but a different producer. `runtime_unavailability_reason` is the Literal
+    spelling ``"none"`` (never null) exactly when the runtime is available.
+    """
+
+    runtime_embedder_available: bool
+    runtime_unavailability_reason: str
+    #: Projection name -> engine-produced dense readiness, from
+    #: `ProjectionRuntimeStatus.projections` (sorted by name at the source).
+    readiness: Mapping[str, str]
+    vector_unsupported_kinds: tuple[str, ...] = ()
+
+    def as_value(self) -> dict[str, Any]:
+        """The JSON-ready mapping. Required: `Witness.value` flows raw into
+        `json.dumps`, and the raw dataclass raises `TypeError` there."""
+        return {
+            "runtime_embedder_available": self.runtime_embedder_available,
+            "runtime_unavailability_reason": self.runtime_unavailability_reason,
+            "readiness": dict(self.readiness),
+            "vector_unsupported_kinds": list(self.vector_unsupported_kinds),
+        }
+
+
+@dataclass(frozen=True)
 class ProjectionWitnesses:
-    """The three projection-state signals, each under its OWN source's name.
+    """The three projection-state signals, each under its OWN source's name --
+    plus the supplementary S10 status snapshot.
 
     They come from three different APIs and are not interchangeable: a poll
     result never stands in for the delta, and the delta never stands in for the
-    open report. `configure_delta` and `readiness` are None -- and OMITTED from
-    the serialized value -- when the scenario declared no projections, so a
-    sidecar reader can distinguish "not declared" from "not captured".
+    open report. `configure_delta`, `readiness`, and `projection_status` are
+    None -- and OMITTED from the serialized value -- when the scenario declared
+    no projections, so a sidecar reader can distinguish "not declared" from
+    "not captured".
     """
 
     #: From `open_report()` at open time (+ the refusal count, an Engine method
@@ -242,8 +282,12 @@ class ProjectionWitnesses:
     #: including the NON-DISJOINT built/deferred lists -- "in built" must never
     #: be read as "fully built"; the dense portion keys on `deferred`.
     configure_delta: Mapping[str, Any] | None = None
-    #: name -> ready|embedding|not_declared, from polling `read.projections()`.
+    #: name -> ready|embedding|unavailable|not_declared, from polling
+    #: `read.projections()`.
     readiness: Mapping[str, str] | None = None
+    #: S10 -- the `read.projection_status` snapshot, captured once after the
+    #: readiness poll settles. Supplementary; never consulted for control flow.
+    projection_status: ProjectionStatusWitness | None = None
 
     @staticmethod
     def readiness_state(*, vector: bool, vector_dense_readiness: str | None) -> str:
@@ -251,15 +295,20 @@ class ProjectionWitnesses:
 
         `None` is never reported bare: it means "no vector sub-target declared
         on this spec", and the disambiguator is the spec's own round-tripping
-        `vector` flag. `None` WITH `vector=True` is outside the engine's
+        `vector` flag -- `not_declared` remains the DERIVED value for
+        `vector=False`. The engine's three `DenseReadiness` spellings pass
+        through untouched: `unavailable` (Slice 21 -- absent or
+        equivalence-refused runtime) is the ENGINE's value, never derived by
+        EARP. `None` or an unknown spelling WITH `vector=True` is outside the
         binding-enforced contract (`read.py`), so it is an assertion failure,
         never a silently-recorded value.
         """
         if not vector:
             return "not_declared"
-        if vector_dense_readiness not in ("ready", "embedding"):
+        if vector_dense_readiness not in ("unavailable", "embedding", "ready"):
             raise AssertionError(
-                f"contract violation: a vector spec must read ready|embedding from "
+                f"contract violation: a vector spec must read one of the binding's "
+                f"DenseReadiness values unavailable|embedding|ready from "
                 f"read.projections, got {vector_dense_readiness!r}"
             )
         return vector_dense_readiness
@@ -271,6 +320,8 @@ class ProjectionWitnesses:
             value["configure_delta"] = dict(self.configure_delta)
         if self.readiness is not None:
             value["readiness"] = dict(self.readiness)
+        if self.projection_status is not None:
+            value["projection_status"] = self.projection_status.as_value()
         return value
 
 
@@ -463,6 +514,7 @@ __all__ = [
     "KnobEntry",
     "MetricStatus",
     "MetricValue",
+    "ProjectionStatusWitness",
     "ProjectionWitnesses",
     "QueryClass",
     "QueryOutcome",
