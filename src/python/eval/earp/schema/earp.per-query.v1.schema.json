@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "earp.per-query.v1",
+  "title": "EARP per-query outcome (earp.per-query.v1)",
+  "description": "One JSON object per line of earp.per-query.v1.jsonl -- one line per (query, K). Only outcome=scored carries metric numbers; skipped, blocked, and error carry a reason and no score, and are never folded into a recall denominator as an ordinary miss.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "query_id", "k", "outcome"],
+  "properties": {
+    "schema_version": { "const": "earp.per-query.v1" },
+    "query_id": {
+      "type": "string",
+      "description": "Immutable gold query id. Comparison pairing keys on this."
+    },
+    "query_class": {
+      "enum": ["commitment", "action", "exact_fact", "preference", "exploratory", "negative"]
+    },
+    "k": {
+      "type": ["integer", "null"],
+      "minimum": 1,
+      "description": "The K rung for retrieval rows; null EXACTLY for answer-arm rows (S9), whose outcome is K-independent. Additive-nullable, same no-bump rule."
+    },
+    "outcome": { "enum": ["scored", "skipped", "blocked", "error"] },
+    "reason": {
+      "type": ["string", "null"],
+      "description": "Required when outcome is not 'scored'."
+    },
+    "blocker_code": {
+      "type": ["string", "null"],
+      "description": "Set when outcome is 'blocked'; matches the result sidecar's blocker vocabulary."
+    },
+    "strict": { "type": ["number", "null"] },
+    "graded": { "type": ["number", "null"] },
+    "required_n": { "type": ["integer", "null"] },
+    "required_hits": { "type": ["integer", "null"] },
+    "supporting_coverage": {
+      "type": ["number", "null"],
+      "description": "null when the query has no supporting units -- the reference returns Option<f64>. null means inapplicable, NOT a zero score."
+    },
+    "abstained": {
+      "type": ["boolean", "null"],
+      "description": "Negative-class queries only: correct iff top-K returned nothing."
+    },
+    "retrieved_n": { "type": ["integer", "null"] },
+    "retrieved_doc_ids": {
+      "type": ["array", "null"],
+      "items": { "type": "string" }
+    },
+    "stratum": {
+      "type": ["string", "null"],
+      "description": "Populated when comparison.strata declares 'query_class' (the whole v1 vocabulary): the query's gold query_class."
+    },
+    "arm": {
+      "type": "string",
+      "description": "S8. The arm this row was measured under (comparison/sweep campaigns only; absent for single-scenario campaigns)."
+    },
+    "answer_outcome": {
+      "enum": ["correct", "incorrect", "abstained_miss", "false_positive", "correct_abstention"],
+      "description": "S9 answer-arm rows only. PerClassScorer semantics: correct/correct_abstention score 1.0; incorrect, abstained_miss (abstention against a positive), and false_positive (an answered negative) score 0.0. Never folded into a retrieval recall denominator."
+    },
+    "answer_text_sha": {
+      "type": ["string", "null"],
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "S9. sha256 of the (normalized) answer text; null when the answerer abstained. The text itself never lands in the sidecar."
+    },
+    "answer_reason": {
+      "type": ["string", "null"],
+      "description": "S9. Populated on non-scored answer rows (error/halt); null on scored ones."
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "outcome": { "const": "scored" } }, "required": ["outcome"] },
+      "then": { "required": ["strict", "graded", "required_n", "required_hits"] }
+    },
+    {
+      "if": {
+        "properties": { "outcome": { "enum": ["skipped", "blocked", "error"] } },
+        "required": ["outcome"]
+      },
+      "then": { "required": ["reason"] }
+    }
+  ]
+}

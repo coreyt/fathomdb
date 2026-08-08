@@ -105,7 +105,11 @@ include = ["fathomdb", "tests", "eval"]
 # own directory on sys.path), so sibling helper imports like
 # `from _test_hooks_gate import ...` in tests/conftest.py are resolvable at
 # runtime but invisible to pyright without this.
-extraPaths = ["tests"]
+# `tests/` for sibling helper imports (see above), and the repo root so
+# `eval/earp/_experiments.py` can resolve the top-level `experiments` package.
+# EARP's writer wraps `experiments/_lib`, which lives at the repo root rather
+# than under this source tree.
+extraPaths = ["tests", "../.."]
 typeCheckingMode = "standard"
 pythonVersion = "3.10"
 venvPath = "../.."

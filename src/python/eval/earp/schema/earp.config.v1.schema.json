@@ -1,0 +1,377 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "earp.config.v1",
+  "title": "EARP campaign configuration (earp.v1)",
+  "description": "Strict, versioned campaign configuration. Unknown keys, absent required keys, and invalid knob values are hard errors. References data by identity; never embeds corpus payloads.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "campaign"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "earp.v1"
+    },
+    "campaign": {
+      "enum": [
+        "characterization",
+        "comparison",
+        "sweep",
+        "replay",
+        "diagnostic"
+      ]
+    },
+    "corpus": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "snapshot"
+      ],
+      "properties": {
+        "snapshot": {
+          "type": "string",
+          "description": "The GoldSet's identity (D-6.2)."
+        },
+        "manifest": {
+          "type": "string",
+          "description": "Raw-corpus provenance. Distinct from snapshot; never conflated."
+        },
+        "data_root": {
+          "type": "string",
+          "description": "Explicit root for gitignored corpus/gold data. Absence is a typed blocker, never a silent empty gold set."
+        }
+      }
+    },
+    "gold": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "sha256",
+        "corpus_hash",
+        "qrels_version"
+      ],
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "Full 64-hex content pin (D-6.1). A truncated hash cannot be matched."
+        },
+        "corpus_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "Must equal the frozen snapshot hash."
+        },
+        "qrels_version": {
+          "type": "string",
+          "description": "ir-c-reused-v1 is refused as stale (D-6.3)."
+        }
+      }
+    },
+    "scenario": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "query"
+      ],
+      "properties": {
+        "engine": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "use_default_embedder": {
+              "type": "boolean",
+              "description": "The only EngineConfig-adjacent setting reaching native open."
+            }
+          }
+        },
+        "store": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "mode": {
+              "enum": [
+                "canonical_docs"
+              ]
+            }
+          }
+        },
+        "projections": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "declare"
+          ],
+          "description": "S7. Declared projections, applied via Engine.configure_projections on the fresh per-scenario database BEFORE ingest. Deliberately excluded from earp.v1: fts_tokenizer / vector_embedder (no supported custom implementations -- a stored identity is not proof of a runtime), drop (a fresh database has nothing to drop), and source segments (deferred). Each exclusion is a catalog UNSUPPORTED entry.",
+          "properties": {
+            "declare": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "name",
+                  "roles"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "description": "Non-emptiness is a RESOLVER-collected error: the stdlib walker does not interpret minLength."
+                  },
+                  "roles": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "enum": [
+                        "filterable",
+                        "searchable",
+                        "rankable"
+                      ]
+                    }
+                  },
+                  "fts": {
+                    "type": "boolean"
+                  },
+                  "vector": {
+                    "type": "boolean",
+                    "description": "Requires scenario.engine.use_default_embedder: true. Without an embedder, readiness goes VACUOUSLY ready with zero dense vectors behind it, so the poll witness would lie rather than time out -- resolution is the only honest gate."
+                  }
+                }
+              }
+            },
+            "readiness_timeout_s": {
+              "type": "number",
+              "minimum": 0.1,
+              "maximum": 300,
+              "description": "Poll bound for vector_dense_readiness. Absent means 30. minimum is 0.1 (not exclusiveMinimum 0): the stdlib walker does not interpret exclusiveMinimum."
+            }
+          }
+        },
+        "query": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "call"
+          ],
+          "properties": {
+            "call": {
+              "enum": [
+                "Engine.search",
+                "Engine.search_projected_text",
+                "Engine.search_text_only"
+              ],
+              "description": "A named SDK call, never a symbolic label."
+            },
+            "rerank_depth": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "use_graph_arm": {
+              "type": "boolean"
+            },
+            "alpha": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1,
+              "description": "The engine CLAMPS an out-of-range alpha rather than refusing, so an unbounded value would run as something other than what the sidecar records. Bounded here instead."
+            },
+            "pool_n": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "CE-rerank pool size. NOT a result-depth control."
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "description": "The public result limit (0.8.22 Slice 18), mirroring the engine's own window: validate_search_result_limit refuses values outside 1..=100 with a typed error, never a clamp. Absent means 10, the engine default -- config_sha256 covers the raw document, so absence keeps every existing config's hash unmoved. Bounds visible result cardinality on every search verb; @K is measurable exactly when K <= limit."
+            },
+            "projection_name": {
+              "type": "string",
+              "description": "The projection to query. Required exactly when call is Engine.search_projected_text, which takes it as a required positional argument -- without it a config resolves cleanly and cannot run."
+            },
+            "text": {
+              "type": "string",
+              "description": "The query string actually issued. Without it a config names a call it cannot make."
+            }
+          }
+        },
+        "fixture": {
+          "type": "string",
+          "description": "Path to a human-authored fixture (JSONL of write items). Required for a diagnostic campaign, which has no corpus and no gold."
+        },
+        "answer_arm": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "max_queries"
+          ],
+          "description": "S9. The opt-in priced answer arm, behind the enforced D-3 budget gate. Declaring it REQUIRES a `budget` block (resolver-collected): a priced arm without a declared worst case cannot be projected against the ceiling.",
+          "properties": {
+            "kind": {
+              "enum": [
+                "r2_identical_answerer"
+              ],
+              "description": "The only commissioned priced adapter: the r2_parity_eval identical-answerer protocol (R2_RUN + R2_ANSWERER_*), scored by its own $0 PerClassScorer. Mem0/extractor/GPU arms are catalog UNSUPPORTED entries; commissioning them is an HITL scope decision."
+            },
+            "answerer_model": {
+              "type": "string",
+              "description": "REQUIRED (resolver-collected) whenever a decision_rule or comparison consumes answer_accuracy: config_sha256 covers this document, so an env-defaulted model would let two different-model runs share a sha and poison S8 pairing/replay. The R2_ANSWERER_MODEL env default is permitted only for claim-free characterizations, and the sidecar marks the resolved value env-resolved."
+            },
+            "max_queries": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "REQUIRED: bounds the priced call count, and the preflight cross-check multiplies by it — gate 1 has no meaning without it."
+            }
+          }
+        }
+      }
+    },
+    "arms": {
+      "type": "array",
+      "minItems": 2,
+      "description": "S8. Named arms for comparison/sweep campaigns; each carries a FULL scenario object (no sparse overrides -- inheritance is a resolver concern earp.v1 deliberately does not have; explicit arms are hashable and diff-able as written). `scenario` and `arms` are mutually exclusive per campaign kind, resolver-enforced: diagnostic/characterization/replay require `scenario`; comparison (exactly 2 arms; arms[0]=control, arms[1]=treatment) and sweep (>= 2) require `arms`. `scenario` also left the top-level required list for this key: an arms-only document must be able to validate.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "scenario"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Arm name; uniqueness and non-emptiness are RESOLVER-collected errors (the stdlib walker does not interpret minLength)."
+          },
+          "scenario": {
+            "$ref": "#/properties/scenario"
+          }
+        }
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "evidence_recall_k": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "uniqueItems": true,
+          "description": "Depth ladder. One rule for every retrieval mode (S6a, the D-5 successor): @K is measurable exactly when K <= the resolved scenario.query.limit (absent means 10; at most 100, the engine's MAX_SEARCH_RESULT_LIMIT). K > 100 is permanently unmeasurable and rejected with metric_not_measurable."
+        },
+        "document_metrics": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "mrr",
+              "ndcg"
+            ]
+          },
+          "uniqueItems": true,
+          "description": "ndcg requires graded relevance, which no gold set in this repo carries; requesting it yields not_applicable."
+        },
+        "integrity": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "projection_coverage",
+              "provenance"
+            ]
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "decision_rule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "metric",
+        "direction",
+        "threshold"
+      ],
+      "description": "Optional. Predeclared before the run (D-4). Absent means metrics may be reported but no better-than claim may be made.",
+      "properties": {
+        "metric": {
+          "type": "string"
+        },
+        "direction": {
+          "enum": [
+            "greater",
+            "less"
+          ]
+        },
+        "threshold": {
+          "type": "number"
+        }
+      }
+    },
+    "comparison": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "changed_knobs"
+      ],
+      "description": "Only a comparison campaign may claim a one-knob causal result; resolved arms must differ only at these paths. A sweep may NOT carry this block in v1 (sweep makes no claim and declares no knob axis); the schema keeps metric/ci_method/seed/resamples/min_n optional because future kinds share the block, but a comparison campaign requires them all at resolution.",
+      "properties": {
+        "changed_knobs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "metric": {
+          "type": "string",
+          "description": "The paired effect metric (e.g. strict_evidence_recall@10), fixed before the first retrieval. Must be emittable by the declared ladder and measurable at each arm's resolved mode and limit."
+        },
+        "strata": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "ci_method": {
+          "enum": [
+            "percentile_bootstrap",
+            "paired_bootstrap"
+          ]
+        },
+        "seed": {
+          "type": "integer"
+        },
+        "resamples": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "min_n": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "estimated_usd"
+      ],
+      "properties": {
+        "estimated_usd": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Declared worst case. Summed against experiments/index.jsonl and refused if the cumulative projection exceeds the D-3 authorization."
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,521 @@
+{
+  "_generated_by": "scratch emitter run against the IR-B reference; not committed",
+  "_reference": "src/rust/crates/fathomdb-engine/tests/support/ir_eval.rs",
+  "class_agg": {
+    "k": 10,
+    "negative": {
+      "abstained": 1,
+      "false_positive_rate": 0.0,
+      "n": 1
+    },
+    "overall": {
+      "graded": 1.0,
+      "n": 2,
+      "strict": 1.0,
+      "supporting": 0.0,
+      "supporting_query_n": 1
+    },
+    "per_class": [
+      {
+        "class": "commitment",
+        "graded": 1.0,
+        "n": 1,
+        "strict": 1.0,
+        "supporting": null,
+        "supporting_query_n": 0
+      },
+      {
+        "class": "exact_fact",
+        "graded": 1.0,
+        "n": 1,
+        "strict": 1.0,
+        "supporting": 0.0,
+        "supporting_query_n": 1
+      }
+    ],
+    "why": "a1 has no supporting, a2 does -> supporting averages over 1, not 2; the negative is routed out of the recall means entirely"
+  },
+  "negative_abstained": [
+    {
+      "case_id": "abstain.empty",
+      "expected": true,
+      "k": 10,
+      "retrieved": []
+    },
+    {
+      "case_id": "abstain.nonempty",
+      "expected": false,
+      "k": 10,
+      "retrieved": [
+        "d1"
+      ]
+    },
+    {
+      "case_id": "abstain.beyond_k",
+      "expected": true,
+      "k": 0,
+      "retrieved": [
+        "d1"
+      ]
+    }
+  ],
+  "per_query": [
+    {
+      "case_id": "mirror.strict_all_of_hit",
+      "expected": {
+        "graded": 1.0,
+        "required_hits": 2,
+        "required_n": 2,
+        "strict": 1.0,
+        "supporting_coverage": null
+      },
+      "gold_query": {
+        "expected_top_k_doc_ids": [],
+        "query": "q for m1",
+        "query_class": "commitment",
+        "query_id": "m1",
+        "query_origin": "human_dataset",
+        "required_evidence": [
+          {
+            "doc_id": "d1",
+            "evidence_id": "e1",
+            "locator": {
+              "kind": "whole_body"
+            },
+            "necessity": "required"
+          },
+          {
+            "doc_id": "d2",
+            "evidence_id": "e2",
+            "locator": {
+              "kind": "whole_body"
+            },
+            "necessity": "required"
+          }
+        ]
+      },
+      "k": 10,
+      "retrieved": [
+        "d1",
+        "d2"
+      ],
+      "why": "both required present"
+    },
+    {
+      "case_id": "mirror.strict_all_of_partial",
+      "expected": {
+        "graded": 0.5,
+        "required_hits": 1,
+        "required_n": 2,
+        "strict": 0.0,
+        "supporting_coverage": null
+      },
+      "gold_query": {
+        "expected_top_k_doc_ids": [],
+        "query": "q for m1",
+        "query_class": "commitment",
+        "query_id": "m1",
+        "query_origin": "human_dataset",
+        "required_evidence": [
+          {
+            "doc_id": "d1",
+            "evidence_id": "e1",
+            "locator": {
+              "kind": "whole_body"
+            },
+            "necessity": "required"
+          },
+          {
+            "doc_id": "d2",
+            "evidence_id": "e2",
+            "locator": {
+              "kind": "whole_body"
+            },
+            "necessity": "required"
+          }
+        ]
+      },
+      "k": 10,
+      "retrieved": [
+        "d1",
+        "zz"
+      ],
+      "why": "one of two required -> strict 0, graded 0.5"
+    },
+    {
+      "case_id": "mirror.k_cut_excludes",
+      "expected": {
+        "graded": 0.5,
+        "required_hits": 1,
+        "required_n": 2,
+        "strict": 0.0,
+        "supporting_coverage": null
+      },
+      "gold_query": {
+        "expected_top_k_doc_ids": [],
+        "query": "q for m1",
+        "query_class": "commitment",
+        "query_id": "m1",
+        "query_origin": "human_dataset",
+        "required_evidence": [
+          {
+            "doc_id": "d1",
+            "evidence_id": "e1",
+            "locator": {
+              "kind": "whole_body"
+            },
+            "necessity": "required"
+          },
+          {
+            "doc_id": "d2",
+            "evidence_id": "e2",
+            "locator": {
+              "kind": "whole_body"
+            },
+            "necessity": "required"
+          }
+        ]
+      },
+      "k": 2,
+      "retrieved": [
+        "d1",
+        "zz",
+        "d2"
+      ],
+      "why": "required present but beyond the K cut"
+    },
+    {
+      "case_id": "mirror.supporting_in_neither_recall",
+      "expected": {
+        "graded": 1.0,
+        "required_hits": 1,
+        "required_n": 1,
+        "strict": 1.0,
+        "supporting_coverage": 1.0
+      },
+      "gold_query": {
+        "expected_top_k_doc_ids": [],
+        "query": "q for m2",
+        "query_class": "exact_fact",
+        "query_id": "m2",
+        "query_origin": "human_dataset",
+        "required_evidence": [
+          {
+            "doc_id": "d1",
+            "evidence_id": "e1",
+            "locator": {
+              "kind": "whole_body"
+            },
+            "necessity": "required"
+          },
+          {
+            "doc_id": "d2",
+            "evidence_id": "e2",
+            "locator": {
+              "kind": "whole_body"
+            },
+            "necessity": "supporting"
+          }
+        ]
+      },
+      "k": 10,
+      "retrieved": [
+        "d1",
+        "d2"
+      ],
+      "why": "supporting hit must not move strict/graded"
+    },
+    {
+      "case_id": "mirror.supporting_missed",
+      "expected": {
+        "graded": 1.0,
+        "required_hits": 1,
+        "required_n": 1,
+        "strict": 1.0,
+        "supporting_coverage": 0.0
+      },
+      "gold_query": {
+        "expected_top_k_doc_ids": [],
+        "query": "q for m2",
+        "query_class": "exact_fact",
+        "query_id": "m2",
+        "query_origin": "human_dataset",
+        "required_evidence": [
+          {
+            "doc_id": "d1",
+            "evidence_id": "e1",
+            "locator": {
+              "kind": "whole_body"
+            },
+            "necessity": "required"
+          },
+          {
+            "doc_id": "d2",
+            "evidence_id": "e2",
+            "locator": {
+              "kind": "whole_body"
+            },
+            "necessity": "supporting"
+          }
+        ]
+      },
+      "k": 10,
+      "retrieved": [
+        "d1"
+      ],
+      "why": "supporting present in gold, not retrieved -> Some(0.0), NOT None"
+    },
+    {
+      "case_id": "mirror.legacy_doc_id_fallback",
+      "expected": {
+        "graded": 1.0,
+        "required_hits": 2,
+        "required_n": 2,
+        "strict": 1.0,
+        "supporting_coverage": null
+      },
+      "gold_query": {
+        "expected_top_k_doc_ids": [
+          "d7",
+          "d8"
+        ],
+        "query": "q for m3",
+        "query_class": "exploratory",
+        "query_id": "m3",
+        "query_origin": "human_dataset",
+        "required_evidence": []
+      },
+      "k": 10,
+      "retrieved": [
+        "d7",
+        "d8"
+      ],
+      "why": "no required_evidence -> denominator falls back to expected_top_k_doc_ids"
+    },
+    {
+      "case_id": "blind.two_required_units_one_doc",
+      "expected": {
+        "graded": 1.0,
+        "required_hits": 1,
+        "required_n": 1,
+        "strict": 1.0,
+        "supporting_coverage": null
+      },
+      "gold_query": {
+        "expected_top_k_doc_ids": [],
+        "query": "q for b1",
+        "query_class": "exact_fact",
+        "query_id": "b1",
+        "query_origin": "human_dataset",
+        "required_evidence": [
+          {
+            "doc_id": "d1",
+            "evidence_id": "e1",
+            "locator": {
+              "kind": "whole_body"
+            },
+            "necessity": "required"
+          },
+          {
+            "doc_id": "d1",
+            "evidence_id": "e2",
+            "locator": {
+              "kind": "whole_body"
+            },
+            "necessity": "required"
+          }
+        ]
+      },
+      "k": 10,
+      "retrieved": [
+        "d1"
+      ],
+      "why": "denominator collapses on doc_id, so required_n is 1 not 2"
+    },
+    {
+      "case_id": "blind.duplicate_retrieved_consumes_rank",
+      "expected": {
+        "graded": 0.5,
+        "required_hits": 1,
+        "required_n": 2,
+        "strict": 0.0,
+        "supporting_coverage": null
+      },
+      "gold_query": {
+        "expected_top_k_doc_ids": [],
+        "query": "q for m1",
+        "query_class": "commitment",
+        "query_id": "m1",
+        "query_origin": "human_dataset",
+        "required_evidence": [
+          {
+            "doc_id": "d1",
+            "evidence_id": "e1",
+            "locator": {
+              "kind": "whole_body"
+            },
+            "necessity": "required"
+          },
+          {
+            "doc_id": "d2",
+            "evidence_id": "e2",
+            "locator": {
+              "kind": "whole_body"
+            },
+            "necessity": "required"
+          }
+        ]
+      },
+      "k": 2,
+      "retrieved": [
+        "d1",
+        "d1",
+        "d2"
+      ],
+      "why": "a duplicate doc_id consumes a rank slot within the K cut"
+    },
+    {
+      "case_id": "blind.doc_both_required_and_supporting",
+      "expected": {
+        "graded": 1.0,
+        "required_hits": 1,
+        "required_n": 1,
+        "strict": 1.0,
+        "supporting_coverage": 1.0
+      },
+      "gold_query": {
+        "expected_top_k_doc_ids": [],
+        "query": "q for b3",
+        "query_class": "action",
+        "query_id": "b3",
+        "query_origin": "human_dataset",
+        "required_evidence": [
+          {
+            "doc_id": "d1",
+            "evidence_id": "e1",
+            "locator": {
+              "kind": "whole_body"
+            },
+            "necessity": "required"
+          },
+          {
+            "doc_id": "d1",
+            "evidence_id": "e2",
+            "locator": {
+              "kind": "whole_body"
+            },
+            "necessity": "supporting"
+          }
+        ]
+      },
+      "k": 10,
+      "retrieved": [
+        "d1"
+      ],
+      "why": "sets computed independently, so one doc counts in both"
+    },
+    {
+      "case_id": "blind.supporting_only_no_legacy_fallback",
+      "expected": {
+        "graded": 1.0,
+        "required_hits": 0,
+        "required_n": 0,
+        "strict": 1.0,
+        "supporting_coverage": 0.0
+      },
+      "gold_query": {
+        "expected_top_k_doc_ids": [],
+        "query": "q for b4",
+        "query_class": "exact_fact",
+        "query_id": "b4",
+        "query_origin": "human_dataset",
+        "required_evidence": [
+          {
+            "doc_id": "d1",
+            "evidence_id": "e1",
+            "locator": {
+              "kind": "whole_body"
+            },
+            "necessity": "supporting"
+          }
+        ]
+      },
+      "k": 10,
+      "retrieved": [
+        "zz"
+      ],
+      "why": "required set empty and no fallback -> vacuous 1.0 (the trap)"
+    },
+    {
+      "case_id": "blind.graded_thirds_rounding",
+      "expected": {
+        "graded": 0.3333333333333333,
+        "required_hits": 1,
+        "required_n": 3,
+        "strict": 0.0,
+        "supporting_coverage": null
+      },
+      "gold_query": {
+        "expected_top_k_doc_ids": [],
+        "query": "q for b5",
+        "query_class": "commitment",
+        "query_id": "b5",
+        "query_origin": "human_dataset",
+        "required_evidence": [
+          {
+            "doc_id": "d1",
+            "evidence_id": "e1",
+            "locator": {
+              "kind": "whole_body"
+            },
+            "necessity": "required"
+          },
+          {
+            "doc_id": "d2",
+            "evidence_id": "e2",
+            "locator": {
+              "kind": "whole_body"
+            },
+            "necessity": "required"
+          },
+          {
+            "doc_id": "d3",
+            "evidence_id": "e3",
+            "locator": {
+              "kind": "whole_body"
+            },
+            "necessity": "required"
+          }
+        ]
+      },
+      "k": 10,
+      "retrieved": [
+        "d1",
+        "zz",
+        "zz2"
+      ],
+      "why": "1/3 -- a non-terminating binary fraction"
+    },
+    {
+      "case_id": "blind.negative_empty_denominator",
+      "expected": {
+        "graded": 1.0,
+        "required_hits": 0,
+        "required_n": 0,
+        "strict": 1.0,
+        "supporting_coverage": null
+      },
+      "gold_query": {
+        "expected_top_k_doc_ids": [],
+        "query": "q for b6",
+        "query_class": "negative",
+        "query_id": "b6",
+        "query_origin": "human_dataset",
+        "required_evidence": []
+      },
+      "k": 10,
+      "retrieved": [],
+      "why": "negative query: empty denominator scores vacuous 1.0 in the raw fn"
+    }
+  ]
+}
