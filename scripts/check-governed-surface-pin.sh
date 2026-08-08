@@ -17,13 +17,13 @@
 #   EXACT CONTENT of src/conformance/governed-surface-allowlist.json at the
 #   commit recorded in scripts/governed-surface-pin.json: 34 allowlist members,
 #   5 core, and recovery_denylist unchanged at the five
-#   REQ-054 names. A pre-sign keyed to specific content is worth exactly as much
+#   REQ-054 names. A signature keyed to specific content is worth exactly as much
 #   as the mechanism that notices when that content moves. This is that
 #   mechanism: the signed content is recorded in scripts/governed-surface-pin.json
 #   and this gate HARD-fails the moment the file diverges from it, routing the
 #   reader back to the HITL for a fresh sign-off.
 #
-# TRIPPING THIS GATE IS CORRECT BEHAVIOUR, NOT A BUG: the pre-sign covers the
+# TRIPPING THIS GATE IS CORRECT BEHAVIOUR, NOT A BUG: the signature covers the
 # pinned content, and anything else re-opens it. Re-pinning to make the gate
 # green without a fresh HITL sign-off is the failure mode the gate exists to
 # prevent.
@@ -38,13 +38,12 @@
 # `_comment` edit IS a byte diff, so writing the proposal blocks the very land it
 # was meant to permit. A trip is a genuine HALT, not a soft signal.
 #
-# THE RULED STRATEGY IS ONE RE-PIN AT THE BATCHED DECISION (TC-59, option (b)):
-# the `_comment` prose correction (TC-52) and the signing of any accumulated
-# delta happen together as a SINGLE ceremony at the Slice 30 -> Slice 40
-# boundary, where AC-079 mints anyway. No `pending_delta` mechanism is built —
-# with TC-55 ruled as instrumentation, Slice 20c adds zero governed commands,
-# R-20-SUR is a write-time minting rule with no new verb, and R-20-H7 is a gate
-# rather than SDK surface, so the pin is NOT expected to trip again in 0.8.20.
+# HISTORICAL 0.8.20 STRATEGY (TC-59, option (b)): the `_comment` prose
+# correction (TC-52) and its accumulated delta were signed in one ceremony at
+# the Slice 30 -> Slice 40 boundary. That did not create a `pending_delta`
+# mechanism or authorize future surface changes: each later byte change, such
+# as the signed 0.8.22 Slice 22 C5 delta, needs its own explicit HITL decision
+# before this pin can be re-issued.
 #
 # IF IT DOES TRIP: HALT and escalate to the Steward. Do not work around it, do
 # not re-pin, do not edit the pinned file to make it pass.

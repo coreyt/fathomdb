@@ -3,11 +3,12 @@
 # surface pin gate (scripts/check-governed-surface-pin.sh) AND for its two
 # wirings: `preflight.sh --landing` (PREVENT) and the always-on CI job (DETECT).
 #
-# WHAT IS BEING PROTECTED: the HITL PRE-SIGNED the accumulated governed-surface
-# delta of 0.8.20 Slices 5d+10b+15b+15d (AC-079) — pinned to the exact content of
+# WHAT IS BEING PROTECTED: the HITL signed the accumulated governed-surface
+# delta of 0.8.20 Slices 5d+10b+15b+15d (AC-079), later signed deltas, and the
+# Slice 22 C5 pair — pinned to the exact content of
 # src/conformance/governed-surface-allowlist.json at the provenance commit
 # recorded in the pin (34 allowlist members, 5 core, recovery_denylist unchanged
-# at the five REQ-054 names). A pre-sign keyed to specific content is worth
+# at the five REQ-054 names). A signature keyed to specific content is worth
 # exactly as much as the mechanism that notices when that content moves.
 #
 # RED-first: the file MATCHES the pin today, so asserting only against the real
