@@ -1,6 +1,8 @@
 # Guides
 
-Guides are task-oriented public documents covering the 0.8.20 surface.
+Guides cover the published 0.8.21 surface and the local, unpublished 0.8.22
+candidate. Candidate-only APIs are not available from a registry until the held
+release gates complete.
 
 - [Working with structured search hits](structured-search-hits.md) — read the
   typed `id` (`IdSpace`), `kind`, `body`, `score`, `branch`, `source_id` and

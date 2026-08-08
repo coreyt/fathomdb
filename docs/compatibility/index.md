@@ -131,7 +131,5 @@ binding; prefer it for production pilots.** See
   exposed; the choice is the built-in default embedder or none.
 - **`SearchFilter.status`** is wired end-to-end but has no population
   source, so a `status=`-filtered query prunes every row.
-- **`SearchFilter.attributes`** (attribute-equality filtering) is
-  engine-internal in 0.8.20 with no Python / TypeScript exposure.
 - **No restore verb.** `purge` is irreversible by design; there is no
   `restore_logical_id` on any surface.

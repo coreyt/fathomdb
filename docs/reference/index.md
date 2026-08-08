@@ -1,9 +1,10 @@
 # Reference
 
-Reference for the public 0.8.20 surface. Field spellings and
-type-level details are authoritative in the locked internal interface
-specs (`dev/interfaces/{python,typescript,cli}.md`); this section is
-the client-facing view.
+Reference for the published 0.8.21 surface and the local, unpublished 0.8.22
+candidate. Candidate-only APIs are not available from a registry until the held
+release gates complete. Field spellings and type-level details are authoritative
+in the locked internal interface specs (`dev/interfaces/{python,typescript,cli}.md`);
+this section is the client-facing view.
 
 - [Python API](python-api.md) — `Engine`, `admin.configure`, data
   shapes, instrumentation methods.
@@ -20,7 +21,7 @@ Rust API reference is auto-published to `docs.rs/fathomdb` once the
 crate publishes; until then run `cargo doc --open` or read
 [`src/rust/crates/fathomdb/`](https://github.com/coreyt/fathomdb/tree/main/src/rust/crates/fathomdb).
 
-## Known gaps in 0.8.20
+## Known gaps in the published surface
 
 The reference reflects the shipped surface. These are documented gaps:
 
@@ -30,6 +31,3 @@ The reference reflects the shipped surface. These are documented gaps:
   population source, so a `status=`-filtered query prunes every row.
 - Custom Python / TypeScript embedder implementations are not exposed;
   the binding choice is the built-in default embedder or none.
-- `SearchFilter.attributes` (attribute-equality filtering over declared
-  `filterable` projections) is engine-internal in 0.8.20 — it has no
-  Python or TypeScript wire exposure yet.

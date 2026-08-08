@@ -52,7 +52,7 @@ refresh in the closing commit when you touch a doc).
 | `dev/interfaces/python.md` | Python public interface (owner of Python-visible spelling + attribute casing); Slice 21 records engine-set dense readiness and Slice 22 records `read.projection_status`. | Slice 21/22 locally complete pending landing; parity owned by `design/bindings.md` | 2026-08-08 |
 | `dev/interfaces/typescript.md` | TypeScript public interface (owner of TS-visible spelling + export shape); Slice 21 records engine-set dense readiness and Slice 22 records `read.projectionStatus`. | Slice 21/22 locally complete pending landing; parity owned by `design/bindings.md` | 2026-08-08 |
 | `dev/interfaces/cli.md` | CLI public interface (concrete flag spelling, root paths, exit-code classes, `--json` wrapping for the two-root... | 34 (dump-mutations); owned-by ADR-0.6.0-cli-scope | 2026-06-06 |
-| `dev/architecture.md` | System architecture (engine, projections, reader pool, surface) | 5/10/15/30 update read-path + receipt surface (30 adds the governed `read.*` reader-pool dispatch); 31 re-scopes G0 active identity to `logical_id` alone | 2026-06-05 |
+| `dev/architecture.md` | System architecture (engine, projections, reader pool, surface); Slice 22 distinguishes pure projection introspection from ReaderWorkerPool retrieval. | 5/10/15/30 update read-path + receipt surface; Slice 22 locally complete pending landing | 2026-08-08 |
 | `dev/test-plan.md` | Test strategy + tiers (incl. functional-harness tier X1 + the Slice 10 G9/G10/G12-recency tier) | 5 adds functional tier; 10 adds RRF/filter/recency tier | 2026-06-03 |
 | `dev/traceability.md` | REQ ↔ AC ↔ test trace matrix | 25 re-points REQ-053↔new AC; 30 adds read ACs | 2026-05-28 |
 | `dev/security-review.md` | Security review (SR-*) | — (SR-005/SR-011 candidate reserved-gap) | 2026-05-02 |
@@ -256,21 +256,21 @@ refresh in the closing commit when you touch a doc).
 | `docs/install/python.md` | Python install | — | 2026-05-30 |
 | `docs/install/typescript.md` | TypeScript install | — | 2026-05-30 |
 | `docs/install/rust.md` | Rust install | — | 2026-05-17 |
-| `docs/reference/index.md` | API-reference overview | — | 2026-05-17 |
+| `docs/reference/index.md` | API-reference overview; distinguishes published 0.8.21 from held 0.8.22 candidate | 0.8.22 documentation correctness | 2026-08-08 |
 | `docs/reference/python-api.md` | Python API reference incl. governed `read.*`, projection configuration/derived readiness, and `read.projection_status` | Slices 21/22 locally complete pending landing | 2026-08-08 |
 | `docs/reference/typescript-api.md` | TypeScript API reference incl. governed `read.*`, projection configuration/derived readiness, and `read.projectionStatus` | Slices 21/22 locally complete pending landing | 2026-08-08 |
 | `docs/reference/cli.md` | CLI reference (recovery verbs CLI-only); 34 documents the `doctor dump-mutations` op-store read-back diagnostic +... | 34 (dump-mutations); 0.8.20 Slice 5d (R-20-E8) | 2026-07-19 |
 | `docs/reference/errors.md` | Error reference (taxonomy) | per-binding error-class adds | 2026-05-17 |
 | `docs/reference/config.md` | Config reference | — | 2026-05-17 |
 | `docs/concepts/index.md` | Concepts overview; distinguishes unpublished 0.8.22 candidate from published 0.8.21 | 0.8.22 documentation correctness | 2026-08-08 |
-| `docs/embedder.md` | Default embedder | — | 2026-06-01 |
-| `docs/compatibility/index.md` | Compatibility matrix | 40 (compat events) | 2026-05-17 |
-| `docs/operations/index.md` | Operations guide | — | 2026-07-19 |
+| `docs/embedder.md` | Default embedder; accurate published-versus-candidate release framing | 0.8.22 documentation correctness | 2026-08-08 |
+| `docs/compatibility/index.md` | Compatibility matrix; removes stale attribute-filter availability claim | 0.8.22 documentation correctness | 2026-08-08 |
+| `docs/operations/index.md` | Operations guide; distinguishes published 0.8.21 from held 0.8.22 candidate | 0.8.22 documentation correctness | 2026-08-08 |
 | `docs/operations/erasure.md` | Erasure boundary | 0.8.20 Slice 5d (R-20-E4/E8, design §4 item 12) | 2026-07-19 |
-| `docs/guides/index.md` | Guides hub (structured-hit / retrieve examples land here) | 5/30 add examples | 2026-06-04 |
+| `docs/guides/index.md` | Guides hub; distinguishes published 0.8.21 from held 0.8.22 candidate | 0.8.22 documentation correctness | 2026-08-08 |
 | `docs/guides/structured-search-hits.md` | Structured `SearchHit` usage guide (id/kind/body/score/branch; Py + TS) | 5 (G1); 10 (score → RRF) | 2026-06-03 |
 | `docs/guides/retrieve-by-id.md` | Retrieve-by-id guide — `read.get`/`read.get_many` point lookup by `logical_id` (active-only) +... | 30 (G2/G3) | 2026-06-04 |
-| `docs/guides/hybrid-search-filtering.md` | Hybrid search guide — G9 RRF ranking (documented behavior-compat event) + G10 `SearchFilter` metadata filtering, Py... | 10 (G9/G10) | 2026-06-03 |
+| `docs/guides/hybrid-search-filtering.md` | Hybrid-search guide — RRF plus Python/TS metadata and declared-projection attribute filters | 0.8.22 documentation correctness | 2026-08-08 |
 | `docs/positions/index.md` | Positions hub | — | 2026-05-01 |
 | `docs/positions/sdk-parity.md` | Position: SDK parity (guarantee carried forward by 25) | 25 | 2026-05-01 |
 | `docs/positions/recovery-surface.md` | Position: recovery surface (denylist, CLI-only) | preserved by 25/30 | 2026-05-01 |

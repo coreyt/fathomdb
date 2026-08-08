@@ -3,6 +3,10 @@
 Module: `fathomdb`. Authoritative spec:
 [`dev/interfaces/python.md`](https://github.com/coreyt/fathomdb/blob/main/dev/interfaces/python.md).
 
+> **Release state.** 0.8.21 is the current published release. This reference
+> also documents the local 0.8.22 candidate; its candidate-only APIs are not
+> available from a registry until the held release gates complete.
+
 ## Top-level
 
 ```python
@@ -601,6 +605,7 @@ class SearchFilter:
     kind: str | None = None
     created_after: int | None = None   # created_at >= bound (unix seconds)
     status: str | None = None
+    attributes: tuple[tuple[str, str], ...] = ()
 ```
 
 G10 — a **closed** metadata filter (not an open DSL) for `engine.search`. Each
@@ -610,6 +615,9 @@ unfiltered path (byte-identical to the pre-filter query). `status` filters the
 vec0 `status` column, which ships an **empty-string sentinel only** (no real
 population source yet — vec0 TEXT metadata is not NULL-able), so a
 `status="open"`-style filter prunes every row until a population slice lands.
+`attributes` is ordered AND equality over declared `filterable` projections;
+its values are canonical text, so projected string `"1"` and number `1` both
+match `"1"`.
 
 ### `SoftFallback`
 
