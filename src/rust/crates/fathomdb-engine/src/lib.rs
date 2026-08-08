@@ -15925,10 +15925,11 @@ fn probe_embed(embedder: &dyn Embedder, text: &str, dimension: usize) -> Option<
 /// Runs AFTER open-time mean-recovery/requantize + `ensure_vector_partition`
 /// (U1-b) so it reads the FINAL live `mean_vec`. Two paths:
 ///
-///  - **First vector-kind registration** (probe table empty): re-embed the 45
-///    committed probes with the LIVE embedder and persist their **UN-centered
-///    f32 reference vectors** + embedder identity (R-VEQ-1). Store f32 ONLY —
-///    the P1 bits are NEVER persisted (U1-d). Returns `dense_disabled=false`.
+///  - **First accepted vector arm** (probe table empty): re-embed the 45
+///    committed probes with the LIVE embedder and verify the in-memory
+///    **UN-centered f32 reference vectors** + embedder identity (R-VEQ-1)
+///    before persisting them. Store f32 ONLY — the P1 bits are NEVER persisted
+///    (U1-d). A rejected prospective arm writes neither the baseline nor cache.
 ///  - **Subsequent open** (probe table populated): re-embed the 45 probes and
 ///    assert BOTH dense-pipeline representations against the stored references:
 ///    **(P1)** the Phase-1 mean-centered `embedding_bin` sign-flip count via the
@@ -16001,7 +16002,17 @@ fn run_vector_equivalence_probe(
         return not_disabled;
     }
 
-    match probe_populate_or_check(connection, embedder, identity, mean_pinned) {
+    // A cold declared arm must earn its durable enrolment only after a successful
+    // probe. Its preflight is read-only until acceptance: a refusal must leave no
+    // reference baseline or verdict-cache mutation behind for a later open.
+    let prospective_preflight = prospective_dense_arm && !vector_kind_registered;
+    match probe_populate_or_check(
+        connection,
+        embedder,
+        identity,
+        mean_pinned,
+        prospective_preflight,
+    ) {
         Ok(()) => not_disabled,
         Err(reason) => VectorEquivalenceOutcome { dense_disabled: true, reason: Some(reason) },
     }
@@ -16015,6 +16026,7 @@ fn probe_populate_or_check(
     embedder: &dyn Embedder,
     identity: &EmbedderIdentity,
     mean_pinned: bool,
+    prospective_preflight: bool,
 ) -> Result<(), String> {
     let probes = vector_equivalence_probes();
     if probes.is_empty() {
@@ -16031,34 +16043,66 @@ fn probe_populate_or_check(
         .map_err(|e| format!("could not read the probe reference table: {e}; cannot verify"))?;
 
     if existing == 0 {
-        // Populate, then CONFIRM the just-written baseline is complete before
-        // enabling dense (fix-2 DEFECT #1 residual): a population that committed
-        // a short/garbled set must never leave dense enabled on the same open.
-        probe_populate_baseline(connection, embedder, identity, &probes)?;
-        probe_check_against_baseline(connection, embedder, identity, mean_pinned, &probes)
+        let pending_baseline = collect_probe_baseline(embedder, identity, &probes)?;
+        if prospective_preflight {
+            // A declaration alone is not an enrolled arm. Verify the in-memory
+            // reference set first; on every refusal path this has performed reads
+            // and embed calls only. Persist both the baseline and its cache marker
+            // only after the verdict has been accepted.
+            let cache_update = probe_check_stored_baseline(
+                connection,
+                embedder,
+                identity,
+                mean_pinned,
+                &probes,
+                &pending_baseline,
+            )?;
+            persist_probe_baseline(connection, &pending_baseline)?;
+            if let Some(fingerprint) = cache_update {
+                record_probe_verification(connection, &fingerprint);
+            }
+            Ok(())
+        } else {
+            // A registered arm preserves the established Slice 5 behavior:
+            // persist its first baseline, then confirm that durable baseline
+            // before serving dense.
+            persist_probe_baseline(connection, &pending_baseline)?;
+            probe_check_against_baseline(connection, embedder, identity, mean_pinned, &probes, true)
+        }
     } else {
-        probe_check_against_baseline(connection, embedder, identity, mean_pinned, &probes)
+        // A prospective refusal must preserve even a stale prior marker: the
+        // proposed arm was never accepted, so it cannot mutate durable state.
+        probe_check_against_baseline(
+            connection,
+            embedder,
+            identity,
+            mean_pinned,
+            &probes,
+            !prospective_preflight,
+        )
     }
 }
 
-/// 0.8.18 Slice 5 — FIRST vector-kind registration: persist the 45 UN-centered
-/// f32 reference vectors (R-VEQ-1; store f32 ONLY, never the P1 bits — U1-d).
-/// Fail-SAFE (fix-1 DEFECT #1): if the embedder cannot produce EVERY reference
-/// (panic/error/wrong-dim) no baseline can be established ⇒ `Err` (refuse dense).
-/// The inserts run in a single transaction so a partial/mismatched set is NEVER
-/// persisted (rolled back on any error).
-fn probe_populate_baseline(
-    connection: &Connection,
+/// Capture the 45 un-centered f32 reference vectors as rows not yet made durable.
+/// This collection is deliberately side-effect free so a prospective dense arm can
+/// be refused without changing the workspace it was merely considering joining.
+fn collect_probe_baseline(
     embedder: &dyn Embedder,
     identity: &EmbedderIdentity,
     probes: &[&str],
-) -> Result<(), String> {
+) -> Result<Vec<StoredProbeRow>, String> {
     let dimension = identity.dimension as usize;
-    // Embed ALL probes first; a single failure aborts population (store nothing).
-    let mut rows: Vec<(i64, &str, Vec<f32>)> = Vec::with_capacity(probes.len());
+    let mut rows = Vec::with_capacity(probes.len());
     for (ordinal, probe) in probes.iter().enumerate() {
         match probe_embed(embedder, probe, dimension) {
-            Some(vec) => rows.push((ordinal as i64, probe, vec)),
+            Some(vector) => rows.push((
+                ordinal as i64,
+                (*probe).to_string(),
+                encode_vector_blob(&vector),
+                identity.name.clone(),
+                identity.revision.clone(),
+                identity.dimension as i64,
+            )),
             None => {
                 return Err(format!(
                     "embedder failed to produce a reference vector for probe {ordinal}; \
@@ -16067,19 +16111,22 @@ fn probe_populate_baseline(
             }
         }
     }
-    // Atomic insert — a partial reference set is never persisted (rollback on
-    // any error, so a later open cleanly retries population).
+    Ok(rows)
+}
+
+/// Persist a complete accepted baseline atomically. A failed transaction leaves no
+/// partial reference set for a future open to trust.
+fn persist_probe_baseline(connection: &Connection, rows: &[StoredProbeRow]) -> Result<(), String> {
     let tx = connection
         .unchecked_transaction()
         .map_err(|e| format!("could not open the probe-baseline transaction: {e}"))?;
-    for (ordinal, probe, vec) in &rows {
-        let blob = encode_vector_blob(vec);
+    for (ordinal, probe, blob, name, revision, dim) in rows {
         tx.execute(
             "INSERT OR REPLACE INTO _fathomdb_embed_probe(
                  probe_ordinal, probe_text, reference_vec,
                  embedder_name, embedder_revision, dim
              ) VALUES(?1, ?2, ?3, ?4, ?5, ?6)",
-            params![ordinal, probe, blob, identity.name, identity.revision, identity.dimension],
+            params![ordinal, probe, blob, name, revision, dim],
         )
         .map_err(|e| format!("could not persist the probe baseline: {e}"))?;
     }
@@ -16241,9 +16288,9 @@ fn record_probe_verification(connection: &Connection, fingerprint: &str) {
 
 /// 0.8.20 Slice 22 (TC-68) — drop any cached verdict.
 ///
-/// Called on EVERY failure path of the check, so a workspace that could not be
-/// verified never carries a marker a later open might match. A failing verdict is
-/// therefore never cached: the probe re-runs each open until it passes again.
+/// Called on every failure path of an already registered arm, so that arm cannot
+/// carry a marker a later registered open might match. A prospective arm has not
+/// joined durable state yet and deliberately preserves its snapshot on refusal.
 fn clear_probe_verification(connection: &Connection) {
     let _ = connection.execute(
         "DELETE FROM _fathomdb_open_state WHERE key = ?1",
@@ -16257,23 +16304,56 @@ fn clear_probe_verification(connection: &Connection) {
 /// un-centered Phase-2 L2 (within `VECTOR_EQUIVALENCE_L2_EPSILON`).
 ///
 /// 0.8.20 Slice 22 (TC-68) — this wrapper adds the failure half of the verdict
-/// cache: ANY `Err` from the inner check drops the cached marker, so a workspace
-/// that could not be verified never leaves a stale "verified" marker behind for a
-/// later open to match. (A failing verdict is never *written*; this also clears a
-/// marker left by an earlier, passing open whose fingerprint has since changed.)
+/// cache for an already registered arm: ANY `Err` drops the cached marker, so a
+/// workspace that could not be verified never leaves a stale "verified" marker
+/// behind for a later registered open to match. A prospective preflight passes
+/// `false` for `clear_cache_on_error`: it has not joined the durable arm yet, so
+/// rejection must remain globally mutation-free.
 fn probe_check_against_baseline(
     connection: &Connection,
     embedder: &dyn Embedder,
     identity: &EmbedderIdentity,
     mean_pinned: bool,
     probes: &[&str],
+    clear_cache_on_error: bool,
 ) -> Result<(), String> {
-    let outcome =
-        probe_check_against_baseline_inner(connection, embedder, identity, mean_pinned, probes);
-    if outcome.is_err() {
-        clear_probe_verification(connection);
+    let outcome = load_stored_probe_baseline(connection).and_then(|stored| {
+        probe_check_stored_baseline(connection, embedder, identity, mean_pinned, probes, &stored)
+    });
+    match outcome {
+        Ok(Some(fingerprint)) => {
+            record_probe_verification(connection, &fingerprint);
+            Ok(())
+        }
+        Ok(None) => Ok(()),
+        Err(reason) => {
+            if clear_cache_on_error {
+                clear_probe_verification(connection);
+            }
+            Err(reason)
+        }
     }
-    outcome
+}
+
+fn load_stored_probe_baseline(connection: &Connection) -> Result<Vec<StoredProbeRow>, String> {
+    let mut stmt = connection
+        .prepare(
+            "SELECT probe_ordinal, probe_text, reference_vec, embedder_name, embedder_revision, dim \
+             FROM _fathomdb_embed_probe ORDER BY probe_ordinal",
+        )
+        .map_err(|e| format!("could not read the stored probe references: {e}; cannot verify"))?;
+    stmt.query_map([], |row| {
+        Ok((
+            row.get::<_, i64>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, Vec<u8>>(2)?,
+            row.get::<_, String>(3)?,
+            row.get::<_, String>(4)?,
+            row.get::<_, i64>(5)?,
+        ))
+    })
+    .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
+    .map_err(|e| format!("could not read the stored probe references: {e}; cannot verify"))
 }
 
 /// 0.8.18 Slice 5 — the check proper. Fail-SAFE (fix-1 DEFECT #1): a probe embed
@@ -16298,13 +16378,14 @@ fn probe_check_against_baseline(
 /// still fails closed immediately), and only the expensive part, the 45 model
 /// invocations, is skipped. The residual this buys is recorded in
 /// `dev/design/0.8.20-tc68-equivalence-probe-fingerprint-cache.md`.
-fn probe_check_against_baseline_inner(
+fn probe_check_stored_baseline(
     connection: &Connection,
     embedder: &dyn Embedder,
     identity: &EmbedderIdentity,
     mean_pinned: bool,
     probes: &[&str],
-) -> Result<(), String> {
+    stored: &[StoredProbeRow],
+) -> Result<Option<String>, String> {
     let dimension = identity.dimension as usize;
 
     // Resolve the live mean. Fail-SAFE: if centering is required + pinned but the
@@ -16328,26 +16409,6 @@ fn probe_check_against_baseline_inner(
     } else {
         None
     };
-
-    let mut stmt = connection
-        .prepare(
-            "SELECT probe_ordinal, probe_text, reference_vec, embedder_name, embedder_revision, dim \
-             FROM _fathomdb_embed_probe ORDER BY probe_ordinal",
-        )
-        .map_err(|e| format!("could not read the stored probe references: {e}; cannot verify"))?;
-    let stored: Vec<StoredProbeRow> = stmt
-        .query_map([], |row| {
-            Ok((
-                row.get::<_, i64>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, Vec<u8>>(2)?,
-                row.get::<_, String>(3)?,
-                row.get::<_, String>(4)?,
-                row.get::<_, i64>(5)?,
-            ))
-        })
-        .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
-        .map_err(|e| format!("could not read the stored probe references: {e}; cannot verify"))?;
 
     // fix-2 (DEFECT #1 residual) — COMPLETENESS validation of the STORED baseline.
     // `COUNT(*) > 0` is NOT proof of a complete, trustworthy baseline: a partially
@@ -16425,14 +16486,14 @@ fn probe_check_against_baseline_inner(
     // unreadable cache RUNS the probe, it never short-circuits to trusting it.
     let fingerprint = probe_verification_fingerprint(identity, mean_vec.as_deref(), &stored);
     if probe_verification_is_cached(connection, &fingerprint) {
-        return Ok(());
+        return Ok(None);
     }
 
     let mut total_flips: u64 = 0;
     let mut max_l2: f32 = 0.0;
     let mut worst_probe: Option<String> = None;
 
-    for (ordinal, probe_text, ref_blob, _, _, _) in &stored {
+    for (ordinal, probe_text, ref_blob, _, _, _) in stored {
         let reference = decode_vector_blob(ref_blob);
         let reembed = probe_embed(embedder, probe_text, dimension).ok_or_else(|| {
             format!(
@@ -16445,7 +16506,7 @@ fn probe_check_against_baseline_inner(
         let l2 = l2_distance(&reembed, &reference);
         if l2 > max_l2 {
             max_l2 = l2;
-            worst_probe = Some(probe_text.clone());
+            worst_probe = Some(probe_text.to_string());
         }
 
         // (P1) mean-centered Phase-1 flip count — same
@@ -16474,12 +16535,10 @@ fn probe_check_against_baseline_inner(
         ));
     }
 
-    // 0.8.20 Slice 22 (TC-68) — the probe RAN and PASSED; record the fingerprint
-    // so the next open with identical inputs need not repeat it. Only a verdict
-    // this engine reached itself is ever written (the failure paths above return
-    // early, and the wrapper clears any prior marker on them).
-    record_probe_verification(connection, &fingerprint);
-    Ok(())
+    // The caller persists this accepted fingerprint only after its enclosing arm
+    // has become durable. That ordering keeps a rejected prospective preflight
+    // entirely read-only while preserving cache behavior for registered arms.
+    Ok(Some(fingerprint))
 }
 
 /// 0.8.18 Slice 5 — un-centered Euclidean (L2) distance, matching the

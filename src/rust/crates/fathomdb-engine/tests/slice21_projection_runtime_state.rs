@@ -13,6 +13,7 @@ use fathomdb_engine::{
 };
 use fathomdb_schema::SQLITE_SUFFIX;
 use std::collections::BTreeSet;
+use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -23,15 +24,30 @@ struct CountingEmbedder {
     identity: EmbedderIdentity,
     calls: Arc<AtomicUsize>,
     divergent: bool,
+    fail_on_call: Option<usize>,
 }
 
 impl CountingEmbedder {
     fn faithful(identity: EmbedderIdentity) -> Self {
-        Self { identity, calls: Arc::new(AtomicUsize::new(0)), divergent: false }
+        Self {
+            identity,
+            calls: Arc::new(AtomicUsize::new(0)),
+            divergent: false,
+            fail_on_call: None,
+        }
     }
 
     fn divergent(identity: EmbedderIdentity) -> Self {
-        Self { identity, calls: Arc::new(AtomicUsize::new(0)), divergent: true }
+        Self { identity, calls: Arc::new(AtomicUsize::new(0)), divergent: true, fail_on_call: None }
+    }
+
+    fn failing_on(identity: EmbedderIdentity, call: usize) -> Self {
+        Self {
+            identity,
+            calls: Arc::new(AtomicUsize::new(0)),
+            divergent: false,
+            fail_on_call: Some(call),
+        }
     }
 }
 
@@ -41,7 +57,12 @@ impl Embedder for CountingEmbedder {
     }
 
     fn embed(&self, _text: &str) -> Result<Vector, EmbedderError> {
-        self.calls.fetch_add(1, Ordering::SeqCst);
+        let call = self.calls.fetch_add(1, Ordering::SeqCst) + 1;
+        if self.fail_on_call == Some(call) {
+            return Err(EmbedderError::Failed {
+                message: "deterministic prospective preflight failure".to_string(),
+            });
+        }
         let mut vector = vec![0.0_f32; self.identity.dimension as usize];
         vector[if self.divergent { 1 } else { 0 }] = 1.0;
         Ok(vector)
@@ -153,14 +174,76 @@ fn vector_kind_exists(path: &Path, kind: &str) -> bool {
         > 0
 }
 
-fn clear_probe_verdict_and_vector_kinds(path: &Path) {
+#[derive(Eq, PartialEq)]
+struct ProspectiveArmSnapshot {
+    vector_kind_registered: bool,
+    terminal: Option<String>,
+    vector_row_exists: bool,
+    probe_rows: Vec<(i64, String, Vec<u8>, String, String, i64)>,
+    cached_verdict: Option<String>,
+}
+
+impl fmt::Debug for ProspectiveArmSnapshot {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ProspectiveArmSnapshot")
+            .field("vector_kind_registered", &self.vector_kind_registered)
+            .field("terminal", &self.terminal)
+            .field("vector_row_exists", &self.vector_row_exists)
+            .field("probe_row_count", &self.probe_rows.len())
+            .field("cached_verdict", &self.cached_verdict)
+            .finish()
+    }
+}
+
+fn prospective_arm_snapshot(path: &Path, write_cursor: i64) -> ProspectiveArmSnapshot {
+    let connection = ro(path);
+    let mut statement = connection
+        .prepare(
+            "SELECT probe_ordinal, probe_text, reference_vec, embedder_name, embedder_revision, dim \
+             FROM _fathomdb_embed_probe ORDER BY probe_ordinal",
+        )
+        .expect("prepare probe snapshot");
+    let probe_rows = statement
+        .query_map([], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?))
+        })
+        .expect("read probe snapshot")
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .expect("collect probe snapshot");
+    let cached_verdict = connection
+        .query_row(
+            "SELECT value FROM _fathomdb_open_state \
+             WHERE key = 'vector_equivalence_verified_fingerprint'",
+            [],
+            |row| row.get(0),
+        )
+        .ok();
+
+    ProspectiveArmSnapshot {
+        vector_kind_registered: vector_kind_exists(path, "doc"),
+        terminal: terminal_state(path, write_cursor),
+        vector_row_exists: vector_row_exists(path, write_cursor),
+        probe_rows,
+        cached_verdict,
+    }
+}
+
+fn make_probe_verdict_stale(path: &Path) {
     let connection = rusqlite::Connection::open(path).expect("open mutation connection");
     connection
         .execute(
-            "DELETE FROM _fathomdb_open_state WHERE key = 'vector_equivalence_verified_fingerprint'",
+            "UPDATE _fathomdb_open_state \
+             SET value = 'deliberately-stale-slice21-preflight' \
+             WHERE key = 'vector_equivalence_verified_fingerprint'",
             [],
         )
-        .expect("clear probe cache");
+        .expect("make accepted probe cache stale without deleting it");
+}
+
+fn make_probe_verdict_stale_and_leave_vector_arm_cold(path: &Path) {
+    make_probe_verdict_stale(path);
+    let connection = rusqlite::Connection::open(path).expect("open mutation connection");
     connection
         .execute("DELETE FROM _fathomdb_vector_kinds WHERE kind = 'doc'", [])
         .expect("leave the declared dense arm cold");
@@ -292,7 +375,7 @@ fn approved_open_boot_grafts_once_and_never_reopens_failed_terminals() {
 }
 
 #[test]
-fn refused_prospective_arm_does_not_graft_or_mutate_durable_work() {
+fn refused_prospective_arm_is_globally_mutation_free_before_graft() {
     let dir = TempDir::new().expect("tempdir");
     let path = db_path(&dir, "refused_boot_graft");
     Engine::open(&path).expect("create profile").engine.close().expect("close create");
@@ -320,7 +403,7 @@ fn refused_prospective_arm_does_not_graft_or_mutate_durable_work() {
         assert!(!opened.report.dense_disabled, "fixture: accepted baseline");
         opened.engine.close().expect("close accepted baseline");
     }
-    clear_probe_verdict_and_vector_kinds(&path);
+    make_probe_verdict_stale_and_leave_vector_arm_cold(&path);
     {
         let opened = Engine::open(&path).expect("cold declaration session");
         opened
@@ -333,6 +416,11 @@ fn refused_prospective_arm_does_not_graft_or_mutate_durable_work() {
     assert_eq!(terminal_state(&path, n1).as_deref(), Some("up_to_date"));
     assert!(!vector_kind_exists(&path, "doc"));
     assert!(!vector_row_exists(&path, n1));
+    let before_refusal = prospective_arm_snapshot(&path, n1);
+    assert!(
+        before_refusal.cached_verdict.is_some(),
+        "the stale marker is part of the mutation snapshot; do not delete it before refusal"
+    );
 
     let divergent = CountingEmbedder::divergent(identity);
     let calls = Arc::clone(&divergent.calls);
@@ -341,8 +429,106 @@ fn refused_prospective_arm_does_not_graft_or_mutate_durable_work() {
     assert!(opened.report.dense_disabled, "prospective arm must be checked before grafting");
     assert_eq!(readiness(&opened.engine, "summary"), Some(DenseReadiness::Unavailable));
     assert_eq!(calls.load(Ordering::SeqCst), 45, "only the preflight probe ran");
-    assert!(!vector_kind_exists(&path, "doc"), "refusal must not enrol a kind");
-    assert_eq!(terminal_state(&path, n1).as_deref(), Some("up_to_date"));
-    assert!(!vector_row_exists(&path, n1), "refusal must not create vectors");
+    assert_eq!(
+        prospective_arm_snapshot(&path, n1),
+        before_refusal,
+        "refusal may neither graft/dispatch dense work nor mutate probe/cache state"
+    );
+    opened.engine.close().expect("close degraded open");
+}
+
+#[test]
+fn refused_cold_prospective_population_never_persists_a_baseline() {
+    let dir = TempDir::new().expect("tempdir");
+    let path = db_path(&dir, "refused_cold_population");
+    Engine::open(&path).expect("create profile").engine.close().expect("close create");
+    let identity = stored_default_identity(&path);
+
+    {
+        let opened = Engine::open(&path).expect("cold declaration session");
+        opened
+            .engine
+            .configure_projections(&[vector_spec("summary")], &[])
+            .expect("persist cold declaration");
+        opened
+            .engine
+            .write(&[node("N1", r#"{\"summary\":\"must not persist a failed preflight\"}"#)])
+            .expect("write N1");
+        opened.engine.close().expect("close cold declaration session");
+    }
+    let n1 = cursor(&path, "N1");
+    let before_refusal = prospective_arm_snapshot(&path, n1);
+    assert_eq!(before_refusal.probe_rows.len(), 0, "fixture: no baseline exists yet");
+    assert_eq!(before_refusal.cached_verdict, None, "fixture: no cache exists yet");
+
+    let failing = CountingEmbedder::failing_on(identity, 46);
+    let calls = Arc::clone(&failing.calls);
+    let opened = Engine::open_with_embedder_for_test(&path, Arc::new(failing))
+        .expect("degraded open is still serviceable");
+    assert!(opened.report.dense_disabled, "failed prospective preflight refuses dense");
+    assert_eq!(readiness(&opened.engine, "summary"), Some(DenseReadiness::Unavailable));
+    assert_eq!(calls.load(Ordering::SeqCst), 46, "population and confirmation both ran");
+    assert_eq!(
+        prospective_arm_snapshot(&path, n1),
+        before_refusal,
+        "a prospective refusal cannot leave a partially accepted baseline or cache"
+    );
+    opened.engine.close().expect("close degraded open");
+}
+
+#[test]
+fn registered_arm_refusal_still_clears_a_stale_probe_verdict() {
+    let dir = TempDir::new().expect("tempdir");
+    let path = db_path(&dir, "registered_refusal_clears_cache");
+    Engine::open(&path).expect("create profile").engine.close().expect("close create");
+    let identity = stored_default_identity(&path);
+
+    {
+        let opened = Engine::open_with_embedder_for_test(
+            &path,
+            Arc::new(CountingEmbedder::faithful(identity.clone())),
+        )
+        .expect("open registered-arm setup");
+        opened
+            .engine
+            .configure_projections(&[vector_spec("summary")], &[])
+            .expect("persist declaration");
+        opened.engine.configure_vector_kind_for_test("doc").expect("register dense arm");
+        opened.engine.close().expect("close setup");
+    }
+    {
+        let opened = Engine::open_with_embedder_for_test(
+            &path,
+            Arc::new(CountingEmbedder::faithful(identity.clone())),
+        )
+        .expect("persist accepted baseline");
+        assert!(!opened.report.dense_disabled, "fixture: accepted baseline");
+        opened.engine.close().expect("close accepted baseline");
+    }
+    make_probe_verdict_stale(&path);
+    let stale = ro(&path)
+        .query_row(
+            "SELECT value FROM _fathomdb_open_state WHERE key = 'vector_equivalence_verified_fingerprint'",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .expect("stale cache is present");
+    assert_eq!(stale, "deliberately-stale-slice21-preflight");
+
+    let opened =
+        Engine::open_with_embedder_for_test(&path, Arc::new(CountingEmbedder::divergent(identity)))
+            .expect("degraded open is still serviceable");
+    assert!(opened.report.dense_disabled, "registered divergent arm remains fail-closed");
+    assert!(vector_kind_exists(&path, "doc"), "registered arm remains registered");
+    assert!(
+        ro(&path)
+            .query_row(
+                "SELECT value FROM _fathomdb_open_state WHERE key = 'vector_equivalence_verified_fingerprint'",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .is_err(),
+        "registered-arm refusal still removes the stale verdict"
+    );
     opened.engine.close().expect("close degraded open");
 }
