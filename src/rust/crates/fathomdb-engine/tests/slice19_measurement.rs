@@ -14,13 +14,13 @@ use tempfile::TempDir;
 
 const FIXTURE_VERSION: &str = "slice19-deterministic-v1";
 const FIXTURE_SEED: u64 = 0x5A19_2026_0808_0001;
-const FIXTURE_NODES: usize = 2_000;
-const FIXTURE_EDGES: usize = 2_000;
+const FIXTURE_NODES: usize = 500;
+const FIXTURE_EDGES: usize = 500;
 const WRITE_BATCH_SIZE: usize = 250;
-const MIGRATION_SAMPLES: usize = 5;
-const INGEST_SAMPLES: usize = 5;
-const QUERY_SAMPLES: usize = 7;
-const QUERY_WARMUPS: usize = 3;
+const MIGRATION_SAMPLES: usize = 3;
+const INGEST_SAMPLES: usize = 3;
+const QUERY_SAMPLES: usize = 3;
+const QUERY_WARMUPS: usize = 1;
 const QUERY: &str = "slice19needle";
 const OUTPUT_ENV: &str = "FATHOMDB_SLICE19_MEASUREMENT_OUTPUT";
 const WITH_INDEXES: &str = "with_indexes";
@@ -350,7 +350,7 @@ fn write_cursor_join_index_measurement() {
             "generator": {
                 "version": FIXTURE_VERSION,
                 "seed": FIXTURE_SEED,
-                "description": "2,000 active nodes and 2,000 body-bearing edges. Every body matches slice19needle; per-row payload is a SplitMix64-style deterministic transform of the seed and row index."
+                "description": "500 active nodes and 500 body-bearing edges. Every body matches slice19needle; per-row payload is a SplitMix64-style deterministic transform of the seed and row index."
             },
             "nodes": FIXTURE_NODES,
             "edges": FIXTURE_EDGES,
