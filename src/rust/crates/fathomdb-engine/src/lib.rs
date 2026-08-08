@@ -1340,6 +1340,10 @@ impl ProjectionRuntime {
         }
     }
 
+    fn pending_scan_for_test(&self) -> bool {
+        self.shared.state.lock().map(|state| state.pending_scan).unwrap_or(true)
+    }
+
     fn wait_for_idle(&self, timeout_ms: u64) -> bool {
         let deadline = Instant::now() + Duration::from_millis(timeout_ms);
         let mut state = match self.shared.state.lock() {
@@ -7845,6 +7849,15 @@ impl Engine {
         self.projection_runtime.set_frozen(frozen);
     }
 
+    /// Test-only snapshot of whether the dispatcher has a scan wake pending.
+    ///
+    /// This exists to prove pure observers do not notify the scheduler. It is
+    /// deliberately narrower than a scheduler control or diagnostic surface.
+    #[doc(hidden)]
+    pub fn projection_scheduler_pending_scan_for_test(&self) -> bool {
+        self.projection_runtime.pending_scan_for_test()
+    }
+
     #[doc(hidden)]
     pub fn set_projection_retry_delays_for_test(&self, delays_ms: &[u64]) {
         self.projection_runtime.set_retry_delays_for_test(delays_ms);
@@ -8968,9 +8981,12 @@ impl Engine {
     /// purpose-built status facade rather than a decorated caller declaration.
     /// It reads the durable registry plus current session facts only: it does
     /// not configure projections, enroll kinds, enqueue work, call `drain`, or
-    /// notify the projection scheduler. A legacy stored vector sub-object that
-    /// is not `searchable` is `NotDeclared`, because the effective-arm predicate
-    /// is the engine's `StoredProjection::wants_vector` predicate.
+    /// notify the projection scheduler. It uses the ordinarily opened engine
+    /// connection and may take its lock; it is not a `ReaderWorkerPool` request
+    /// and does not open a separately read-only SQLite connection. A legacy
+    /// stored vector sub-object that is not `searchable` is `NotDeclared`,
+    /// because the effective-arm predicate is the engine's
+    /// `StoredProjection::wants_vector` predicate.
     pub fn read_projection_status(&self) -> Result<ProjectionRuntimeStatus, EngineError> {
         self.ensure_open()?;
         let runtime_embedder_available = self.usable_dense_runtime();

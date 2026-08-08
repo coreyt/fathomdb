@@ -276,6 +276,12 @@ writer `connection.lock()`). Each new request variant carries its **own** typed
 `respond` channel, so `search`'s `ReaderResponse` shape is left byte-identical —
 no Search regression.
 
+This reader-worker statement is limited to the retrieval verbs. The pure
+projection introspection members `read.projections` and
+`read.projection_status` query through the ordinarily opened Engine and may
+briefly acquire `connection.lock()`; they do not configure, write, or schedule
+work, and do not promise a separately opened read-only SQLite connection.
+
 ```text
 read.get / read.get_many   → ReaderRequest::GetById
     SELECT logical_id, kind, body, write_cursor FROM canonical_nodes

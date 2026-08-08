@@ -14,10 +14,12 @@
 //   * read.projectionStatus (0.8.22 Slice 22) — pure current dense-runtime
 //     status for declared projections, distinct from `read.projections`.
 //
-// The runtime is the napi-rs binding in `fathomdb-napi`; this module funnels
-// every native error through `rethrowTyped` and converts native rows into the
-// public SDK shapes. Reads ride the ReaderWorkerPool DEFERRED-tx path inside the
-// engine; they NEVER take the writer lock.
+// The retrieval verbs ride the ReaderWorkerPool DEFERRED-tx path. The pure
+// `read.projections` and `read.projectionStatus` introspection queries instead
+// use the ordinarily opened engine and may briefly take its connection lock;
+// they neither write, configure, nor schedule work, and promise no separately
+// opened read-only SQLite mode. This module funnels every native error through
+// `rethrowTyped` and converts native rows into the public SDK shapes.
 
 import {
   native,
@@ -366,7 +368,10 @@ export const read = {
    * 0.8.20 Slice 15d (R-20-PR) — `read.projections` introspection. Returns every
    * declared {@link ProjectionSpec} (sorted by name), so a caller can inspect
    * current registry state — and the destructive delta a change would cause —
-   * BEFORE calling `Engine.configureProjections`. Pure read.
+   * BEFORE calling `Engine.configureProjections`. This pure introspection query
+   * may briefly take the ordinarily opened engine connection lock; it is not a
+   * ReaderWorkerPool request and does not promise a separate read-only SQLite
+   * connection.
    */
   async projections(engine: Engine): Promise<ProjectionSpec[]> {
     const specs = await intercept(() => engine._native.readProjections());
@@ -388,7 +393,9 @@ export const read = {
   /**
    * Return current dense-runtime facts without changing projection configuration
    * or scheduling work. This is distinct from the decorated declaration returned
-   * by {@link projections}.
+   * by {@link projections}. It may briefly take the ordinarily opened engine
+   * connection lock; it is not a ReaderWorkerPool request and does not promise a
+   * separate read-only SQLite connection.
    */
   async projectionStatus(engine: Engine): Promise<ProjectionRuntimeStatus> {
     return toProjectionRuntimeStatus(

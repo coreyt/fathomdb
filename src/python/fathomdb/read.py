@@ -16,10 +16,13 @@ module exposes the governed read verbs beside ``admin``:
   status for every declared projection; distinct from the configuration-facing
   ``read.projections`` result.
 
-The native binding (``fathomdb._fathomdb``) performs the ReaderWorkerPool
-DEFERRED-tx read; this module exposes the typed Python signatures and converts
-native rows to the public dataclasses in ``fathomdb.types``. Reads NEVER take
-the writer lock.
+The retrieval verbs use the native binding's ReaderWorkerPool DEFERRED-tx
+path. ``read.projections`` and ``read.projection_status`` are instead pure
+introspection queries through the ordinarily opened engine and may briefly take
+its connection lock. Neither introspection query writes, configures, or
+schedules work, but neither promises a separately opened read-only SQLite mode.
+This module exposes the typed Python signatures and converts native rows to the
+public dataclasses in ``fathomdb.types``.
 """
 
 from __future__ import annotations
@@ -241,7 +244,10 @@ def projections(engine: "Engine") -> builtins.list[ProjectionSpec]:
 
     Returns every declared :class:`ProjectionSpec` (sorted by name), so a caller
     can inspect current registry state — and the destructive delta a change would
-    cause — BEFORE calling ``Engine.configure_projections``. Pure read.
+    cause — BEFORE calling ``Engine.configure_projections``. This pure
+    introspection query may briefly take the ordinarily opened engine connection
+    lock; it is not a ReaderWorkerPool request and does not promise a separate
+    read-only SQLite connection.
     """
 
     return [
@@ -268,7 +274,9 @@ def projection_status(engine: "Engine") -> ProjectionRuntimeStatus:
     This pure read is distinct from :func:`projections`: it reports the current
     session's usable-runtime state, per-declaration dense readiness, and the
     current declaration-scoped unsupported-kind report without re-applying any
-    caller-owned configuration.
+    caller-owned configuration. It uses the ordinarily opened engine connection
+    and may briefly take its connection lock; it is not a ReaderWorkerPool
+    request and does not promise a separate read-only SQLite connection.
     """
 
     status = _native_read_projection_status(engine._native)

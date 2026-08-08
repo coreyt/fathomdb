@@ -321,10 +321,13 @@ string; body: string }`.
 import { read } from "fathomdb";
 ```
 
-The `read.*` namespace exposes the governed retrieval verbs. Every read rides
-the engine's **ReaderWorkerPool DEFERRED-tx snapshot path** — never the writer
-lock — preserving single-writer isolation. Verb names are camelCase in TS but
-the governed allowlist names stay dotted snake_case (`read.get_many`).
+The retrieval verbs below use the engine's **ReaderWorkerPool DEFERRED-tx
+snapshot path**, preserving single-writer isolation. `read.projections` and
+`read.projectionStatus` are different: they are pure introspection queries
+through the ordinarily opened engine and may briefly take its connection lock.
+They do not configure, write, or schedule work, but do not promise a separately
+opened read-only SQLite mode. Verb names are camelCase in TS but the governed
+allowlist names stay dotted snake_case (`read.get_many`).
 
 ### `read.get(engine, logicalId: string): Promise<NodeRecord | null>`
 
@@ -389,6 +392,9 @@ const openHigh = await read.list(engine, "task", [
 Read current projection-runtime status without configuring projections or
 changing the registry, storage, scheduler, or work queue. It is a status facade,
 not a decorated `ProjectionSpec` and not a per-projection completion report.
+It may briefly take the ordinarily opened engine connection lock; it is not a
+ReaderWorkerPool request and does not promise a separate read-only SQLite
+connection.
 
 ```ts
 interface ProjectionRuntimeStatus {
@@ -577,8 +583,9 @@ import { graph } from "fathomdb";
 ```
 
 The `graph.*` namespace exposes bounded BFS traversal and hybrid
-search-plus-expansion. All reads ride the same **ReaderWorkerPool
-DEFERRED-tx snapshot path** as `read.*`.
+search-plus-expansion. Its reads ride the same **ReaderWorkerPool DEFERRED-tx
+snapshot path** as the retrieval verbs in `read.*`; projection introspection
+uses the ordinarily opened engine connection instead.
 
 ### `graph.neighbors(engine, logicalId, depth, direction?): Promise<NodeRecord[]>`
 

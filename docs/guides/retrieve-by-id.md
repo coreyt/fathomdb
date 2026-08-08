@@ -2,8 +2,8 @@
 
 Beyond `search`, the governed `read.*` namespace gives you **deterministic
 point lookups** by `logical_id` and **paginated read-back** of an op-store
-append-only log — without any raw SQL. Every read rides the engine's reader
-pool on a stable snapshot, so reads never block the single writer.
+append-only log — without any raw SQL. These retrieval calls ride the engine's
+reader pool on a stable snapshot, so they never block the single writer.
 
 ## `read.get` / `read.get_many` — point lookup by id
 

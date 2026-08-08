@@ -17,8 +17,11 @@ open → write / search / admin.configure / instrumentation → close → proces
    embedder pool. Open is the only place migration runs.
 2. **Write / search / configure** — application code calls the
    governed verb surface. Writes are serialized through the
-   writer thread; reads are served by the reader pool; admin
-   configurations apply in write order.
+   writer thread; retrieval reads are served by the reader pool; admin
+   configurations apply in write order. Pure projection introspection
+   (`read.projections` / `read.projection_status`) instead uses the ordinarily
+   opened Engine connection and may briefly take its connection lock; it neither
+   mutates nor promises a separately opened read-only SQLite mode.
 3. **Close** — `engine.close()` joins the writer thread, drains the
    scheduler, releases SQLite handles, and releases the on-disk lock.
    Idempotent.

@@ -998,7 +998,8 @@ Agent-memory enablement (G0–G12). See `docs/release-notes/0.8.0.md` (user) and
   (active-only point lookup by `logical_id`, request-order, partial) and
   `read.collection` / `read.mutations` (paginated op-store read-back,
   `ORDER BY id`, mandatory limit clamped to ~1M, exclusive `after_id` cursor).
-  Reads ride the reader-worker DEFERRED-tx path; never take the writer lock.
+  These four retrieval verbs ride the reader-worker DEFERRED-tx path; they never
+  take the writer lock.
 - **Hybrid retrieval.** `search` is the unconditional RRF fusion of the vector
   and FTS5 branches (G9); `search_filtered` adds an optional closed metadata
   filter (G10, unfiltered phase-1 SQL byte-identical to 0.7.2); a recency

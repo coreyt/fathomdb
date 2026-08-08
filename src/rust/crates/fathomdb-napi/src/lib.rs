@@ -1605,7 +1605,10 @@ impl Engine {
     }
 
     /// Read current projection-runtime facts without changing configuration or
-    /// scheduling work. This is the native peer of `read.projectionStatus`.
+    /// scheduling work. This pure query may take the ordinarily opened engine
+    /// connection lock; it is not a `ReaderWorkerPool` request and does not open
+    /// a separately read-only SQLite connection. This is the native peer of
+    /// `read.projectionStatus`.
     #[napi]
     pub async fn read_projection_status(&self) -> Result<ProjectionRuntimeStatus> {
         let engine = Arc::clone(&self.inner);

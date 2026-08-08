@@ -1905,8 +1905,11 @@ fn read_projections(py: Python<'_>, engine: &PyEngine) -> PyResult<Vec<PyProject
 }
 
 /// Read the current projection-runtime status without changing configuration or
-/// scheduling work. The public Python wrapper converts this native value into
-/// frozen SDK dataclasses with closed Literal wire vocabularies.
+/// scheduling work. This pure query may take the ordinarily opened engine
+/// connection lock; it is not a `ReaderWorkerPool` request and does not open a
+/// separately read-only SQLite connection. The public Python wrapper converts
+/// this native value into frozen SDK dataclasses with closed Literal wire
+/// vocabularies.
 #[pyfunction]
 #[pyo3(signature = (engine))]
 fn read_projection_status(
