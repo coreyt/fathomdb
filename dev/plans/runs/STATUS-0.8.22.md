@@ -29,7 +29,7 @@
 | 19 | Canonical FTS join indexes and planner proof | Landed in PR #207 at `e95afd292561d203d1001ea992ecbc191e129536`; reviewed source ends at `550c4b03`, and fixture-scoped closure evidence is recorded in `0.8.22-slice-19-join-index-measurement-20260808.json`. |
 | 21 | Truthful projection runtime state and safe boot graft | Landed in PR #207 at `e95afd292561d203d1001ea992ecbc191e129536`; FIX-1 through FIX-5 and the post-integration test-only FIX-1 through FIX-3 correction are closed. |
 | 22 | Governed pure projection-status read | Landed in PR #207 at `e95afd292561d203d1001ea992ecbc191e129536`; C5 seq-247, RED→GREEN→FIX-1, isolated verification, independent re-review, and refreshed CI are complete. |
-| 23 | Direct FTS result-prefix stability | Planned P2 repair (HITL seq-248): direct `search_text_only` only; RED→GREEN and independent review are required before publication resumes. |
+| 23 | Direct FTS result-prefix stability | Reviewed integration candidate: direct `search_text_only` only; RED→GREEN, cross-SDK verification, and independent FIX-1 closure are complete. Landing and repeat documentation-correctness review remain before publication resumes. |
 | 20 | Ordered publication and registry smokes | Local preparation is closed at `2f94085c` after RED→GREEN→FIX-2 and independent reviews. Ordered publication and registry smokes remain explicitly held pending Slice 23. |
 | 25 | `next` to `latest` promotion and release truth | Not started. |
 
@@ -57,19 +57,19 @@ workflow changed. The remaining Slice 20 action is real ordered publication and
 registry smoke, which remains held pending Slice 23 and explicit release
 authorization.
 
-## Slice 23 planned P2 repair
+## Slice 23 reviewed P2 repair
 
-HITL ruling seq-248 requires a direct FTS-only result-prefix repair before
-publication. The draft design and executable plan are
+HITL ruling seq-248 required a direct FTS-only result-prefix repair before
+publication. The completed design and executable plan are
 `dev/design/0.8.22-slice-23-text-limit-prefix-stability.md` and
 `dev/plans/prompts/0.8.22-slice-23-text-limit-prefix-stability.md`. They limit
 the work to `search_text_only`; hybrid/vector candidate-fanout semantics are a
 separate 0.8.23 architecture/documentation follow-up. The independent design
 review and FIX-1 closure are recorded in
 `dev/plans/runs/0.8.22-slice-23-design-review-20260808.md`.
-Its pickup review is approved in
-`dev/plans/runs/0.8.22-slice-23-pickup-review-20260808.md`; implementation is
-now in progress on its isolated worktree.
+Its pickup review, RED→GREEN proof, cross-SDK verification, and independent
+FIX-1 review closure are recorded in `dev/plans/runs/`; the reviewed
+integration candidate is ready to land on `origin/main`.
 
 ## Completion documentation gate
 
