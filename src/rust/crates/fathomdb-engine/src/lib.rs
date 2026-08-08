@@ -16484,7 +16484,7 @@ fn probe_check_stored_baseline(
     // Fail-SAFE: `probe_verification_is_cached` answers `false` for every failure
     // mode — missing table, absent row, garbled value, SQL error — so an
     // unreadable cache RUNS the probe, it never short-circuits to trusting it.
-    let fingerprint = probe_verification_fingerprint(identity, mean_vec.as_deref(), &stored);
+    let fingerprint = probe_verification_fingerprint(identity, mean_vec.as_deref(), stored);
     if probe_verification_is_cached(connection, &fingerprint) {
         return Ok(None);
     }
