@@ -88,6 +88,7 @@ refresh in the closing commit when you touch a doc).
 | `dev/design/0.8.22-slice-19-join-index.md` | Landed in PR #207: design for canonical FTS join indexes | 0.8.22 Slice 19; publication held | 2026-08-08 |
 | `dev/design/0.8.22-slice-21-projection-state.md` | Landed in PR #207: design for truthful projection runtime state | 0.8.22 Slice 21; publication held | 2026-08-08 |
 | `dev/design/0.8.22-slice-22-projection-status.md` | Landed in PR #207: design for governed projection status reads | 0.8.22 Slice 22; publication held | 2026-08-08 |
+| `dev/design/0.8.22-slice-23-text-limit-prefix-stability.md` | Draft design for direct FTS result-prefix stability | 0.8.22 Slice 23; publication held | 2026-08-08 |
 | `dev/design/0.8.2-m1-multihop-harness.md` | 0.8.2 / M1 multi-hop answer-accuracy harness — design + FROZEN pre-registration (AMENDED 2026-06-16; re-frozen... | 0.8.2 Slice 0-rev2 | 2026-06-19 |
 | `dev/design/0.8.3-mem0-parity.md` | 0.8.3 Slice-0 design + FROZEN pre-registration (Mem0-parity resolution) | 0.8.3 Slice 0 | 2026-06-21 |
 | `dev/design/0.8.5-ce-rerank-slice-design.md` · `dev/plans/0.8.5-ce-rerank-alpha-expose-slice.md` | 0.8.5 (EXP-0) — expose tuned CE-rerank α / pool_n / ce_score | 0.8.5 (EXP-0) | 2026-06-25 |
@@ -194,6 +195,8 @@ refresh in the closing commit when you touch a doc).
 | `dev/plans/prompts/0.8.22-slice-19-join-index.md` | Landed in PR #207: Slice 19 canonical join-index plan | 0.8.22 Slice 19; publication held | 2026-08-08 |
 | `dev/plans/prompts/0.8.22-slice-21-projection-state.md` | Landed in PR #207: Slice 21 projection-runtime-state plan | 0.8.22 Slice 21; publication held | 2026-08-08 |
 | `dev/plans/prompts/0.8.22-slice-22-projection-status.md` | Landed in PR #207: Slice 22 projection-status API plan | 0.8.22 Slice 22; publication held | 2026-08-08 |
+| `dev/plans/prompts/0.8.22-slice-23-text-limit-prefix-stability.md` | Draft Slice 23 direct FTS result-prefix repair plan | 0.8.22 Slice 23; publication held | 2026-08-08 |
+| `dev/plans/runs/0.8.22-slice-23-design-review-20260808.md` | Approved Slice 23 design review and FIX-1 closure | 0.8.22 Slice 23; publication held | 2026-08-08 |
 | `dev/plans/runs/0.8.22-documentation-correctness-review-20260808.md` | Final documentation-correctness review; records FIX-1/2/3 and independent approval | 0.8.22 completion documentation gate | 2026-08-08 |
 | `dev/plans/runs/0.8.0-slice-*-output.json` / `-review-*.md` | Per-slice closure artifacts + promoted codex verdicts | per slice | (per slice) |
 | `dev/plans/runs/0.8.0-slice-6-tokenizer-experiment-*.md` | Slice 6 (B2) FTS5 tokenizer latency experiment | Slice 6 (B2) | 2026-06-07 |

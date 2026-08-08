@@ -33,6 +33,12 @@ and adds a governed pure-read projection-status surface. Detailed contracts are
 in the Slice 19, 21, and 22 plans and designs; publication remains held until
 all three have landed and its existing gate is explicitly resumed.
 
+Before the held publication step, Slice 23 also repairs direct FTS-only
+limit-prefix instability. A larger caller result limit must not silently change
+the smaller direct-text top-K under the same snapshot. The repair is deliberately
+limited to that path; broader hybrid/vector candidate-fanout semantics are a
+0.8.23 architecture/documentation follow-up.
+
 ## Requirements and acceptance criteria
 
 - The manifest, loader, npm metadata, and publish job agree on exactly five
@@ -66,6 +72,10 @@ all three have landed and its existing gate is explicitly resumed.
 - A governed projection-status read reports runtime availability and its reason,
   corpus-wide per-projection dense readiness, and declaration-scoped unsupported
   kinds without configuration side effects.
+- Under one immutable snapshot, direct `search_text_only` results at a smaller
+  accepted limit are an ordered prefix of results at a larger accepted limit.
+  The implementation uses bounded, caller-limit-independent direct-text
+  candidate collection; this guarantee does not extend to hybrid search.
 
 ## Slice ladder
 
@@ -81,7 +91,8 @@ all three have landed and its existing gate is explicitly resumed.
 | 19 | Canonical FTS join indexes and planner proof | 18 |
 | 21 | Truthful projection runtime state and safe boot graft | 19 |
 | 22 | Governed pure projection-status read | 21 |
-| 20 | Ordered publish and real registry smokes | 15, 18, 22 |
+| 23 | Direct FTS result-prefix stability | 18, 19, 22 |
+| 20 | Ordered publish and real registry smokes | 15, 18, 22, 23 |
 | 25 | `next` → `latest` promotion and release truth | 20 |
 
 ### Slices 19, 21, and 22 — retrieval and projection truth
@@ -111,6 +122,23 @@ refreshed protected-branch CI passed before landing.
 The corresponding plans require RED→GREEN evidence, cross-SDK conformance
 where the public contract changes, an independent review, and the normal local
 verification gates. They do not authorize a tag, registry write, or publication.
+
+### Slice 23 — FTS-LIMIT-PREFIX-STABILITY
+
+HITL ruling `seq-248` classifies direct FTS limit-dependent top-K contents as a
+P2 defect. Slice 23 fixes only `search_text_only` and its `ReadView` form:
+under the same snapshot, every accepted smaller result list must be the ordered
+prefix of the corresponding larger result list. It uses a fixed bounded node
+candidate collection of 100, then existing fusion and final caller-limit
+truncation. It must prove the mechanism with an adversarial real-database
+node/edge duplicate fixture, Python/TypeScript wrapper tests, a paired public
+path measurement record, corrected interface/public API docs, and RED→GREEN
+commits before independent code review.
+
+Hybrid/vector candidate-fanout behavior is expressly excluded. Slice 23 adds no
+API spelling, schema step, graph change, reranker change, or edge-FTS cap.
+Publication stays held until its review, all verification, and the final
+documentation-correctness gate are complete.
 
 ### Slice 12 — DOC-BASELINE
 
@@ -158,7 +186,7 @@ their own policies.
 ## Landed release state
 
 <!-- BEGIN GENERATED release-state:0.8.22:plan-landed-roll-up -->
-**LANDED on `origin/main`, in full:** Slices 0 (`55792858b2adce00d3d87193d02b23a5d8d52dd7`) · 5 (`55792858b2adce00d3d87193d02b23a5d8d52dd7`) · 10 (`4c7bb26b`) · 12 (`72a83049`) · 15 (`13341688fca3d02d11c10bb10eb26232156f8032`) · 17 (`5a7f2484`) · 18 (`8fdb27dbf00a0663772ffc8e27a243ac1e7dcd74`) · 19 (`e95afd292561d203d1001ea992ecbc191e129536`) · 21 (`e95afd292561d203d1001ea992ecbc191e129536`) · 22 (`e95afd292561d203d1001ea992ecbc191e129536`). SCHEMA is 26; remaining ladder = 20 → 25.<!-- END GENERATED release-state:0.8.22:plan-landed-roll-up -->
+**LANDED on `origin/main`, in full:** Slices 0 (`55792858b2adce00d3d87193d02b23a5d8d52dd7`) · 5 (`55792858b2adce00d3d87193d02b23a5d8d52dd7`) · 10 (`4c7bb26b`) · 12 (`72a83049`) · 15 (`13341688fca3d02d11c10bb10eb26232156f8032`) · 17 (`5a7f2484`) · 18 (`8fdb27dbf00a0663772ffc8e27a243ac1e7dcd74`) · 19 (`e95afd292561d203d1001ea992ecbc191e129536`) · 21 (`e95afd292561d203d1001ea992ecbc191e129536`) · 22 (`e95afd292561d203d1001ea992ecbc191e129536`). SCHEMA is 26; remaining ladder = 23 → 20 → 25.<!-- END GENERATED release-state:0.8.22:plan-landed-roll-up -->
 
 ## Reserved-gap policy
 
@@ -196,6 +224,6 @@ prepares and verifies the release path; it does not authorize a registry write.
 ## Immediate next slice
 
 <!-- BEGIN GENERATED release-state:0.8.22:plan-immediate-next -->
-**IMMEDIATE NEXT: Slice 20** (`PUBLISH`) — ordered platform publication and registry smokes
+**IMMEDIATE NEXT: Slice 23** (`FTS-PREFIX`) — direct FTS limit-prefix stability
 
-**Remaining ladder:** 20 → 25.<!-- END GENERATED release-state:0.8.22:plan-immediate-next -->
+**Remaining ladder:** 23 → 20 → 25.<!-- END GENERATED release-state:0.8.22:plan-immediate-next -->
