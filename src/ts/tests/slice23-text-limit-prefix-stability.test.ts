@@ -32,6 +32,8 @@ function writes(): object[] {
 }
 
 function assertOrderedPrefix(small: SearchResult, large: SearchResult): void {
+  assert.equal(small.results.length, 10);
+  assert.equal(large.results.length, 50);
   const actual = small.results.map((hit) => [hit.id, hit.score]);
   const expected = large.results.slice(0, small.results.length).map((hit) => [hit.id, hit.score]);
   assert.deepStrictEqual(actual, expected);

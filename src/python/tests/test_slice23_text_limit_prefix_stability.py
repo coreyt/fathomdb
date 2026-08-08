@@ -35,6 +35,8 @@ def _writes() -> list[dict]:
 
 
 def _assert_ordered_prefix(small: SearchResult, large: SearchResult) -> None:
+    assert len(small.results) == 10
+    assert len(large.results) == 50
     actual = [(hit.id, hit.score) for hit in small.results]
     expected = [(hit.id, hit.score) for hit in large.results[: len(small.results)]]
     assert actual == expected

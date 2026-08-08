@@ -59,6 +59,8 @@ fn assert_ordered_prefix(
     small: &fathomdb_engine::SearchResult,
     large: &fathomdb_engine::SearchResult,
 ) {
+    assert_eq!(small.results.len(), 10, "small direct-text result must honor limit=10");
+    assert_eq!(large.results.len(), 50, "large direct-text result must honor limit=50");
     let actual: Vec<_> = small.results.iter().map(|hit| (&hit.id, hit.score)).collect();
     let expected: Vec<_> =
         large.results.iter().take(small.results.len()).map(|hit| (&hit.id, hit.score)).collect();
