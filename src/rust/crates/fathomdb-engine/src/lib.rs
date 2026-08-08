@@ -6579,9 +6579,9 @@ impl Engine {
     /// [`search_inner_with_stats`][Engine::search_inner_with_stats], so it NEVER
     /// raises [`EngineError::VectorEquivalenceMismatch`] and stays serviceable when
     /// the engine opened in the degraded `dense_disabled` state (the D2 "keep FTS
-    /// servable" contract; codex R2 U1-2). Results come from the node-body FTS
-    /// branch only — no vector recall, no CE rerank, no graph arm. Available
-    /// regardless of degraded state; when dense is healthy it is simply a
+    /// servable" contract; codex R2 U1-2). Results come from the node- and
+    /// edge-body FTS branches only — no vector recall, no CE rerank, no graph arm.
+    /// Available regardless of degraded state; when dense is healthy it is simply a
     /// text-only view of the same corpus. Matching node- and edge-body
     /// candidates are body-deduplicated and deterministically ranked before
     /// the requested result limit is applied.
