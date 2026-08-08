@@ -304,6 +304,43 @@ if [ "${NATIVE_RUNTIME_VALIDATION_FIXTURE:-0}" != "1" ]; then
   fi
 
   awk '
+    $0 == "      - name: Validate local wheel and N-API package" { unix_step = 1 }
+    unix_step && $0 == "        run: |" {
+      print
+      print "          cat <<'\''EOF'\''"
+      print "          bash scripts/release/smoke/smoke-local-native-artifacts.sh \"$PWD/src/python/dist\" \"$PWD/src/ts\" \"$PWD/src/ts/npm/${{ matrix.label }}\" \"${{ matrix.label }}\""
+      print "          EOF"
+      print "          bash scripts/release/smoke/smoke-local-native-artifacts.sh \"$PWD/src/python/dist\" \"$PWD/src/ts\" \"$PWD/src/ts/npm/not-the-matrix-label\" \"wrong-napi-label\""
+      replacing = 1
+      next
+    }
+    replacing && /^      - name: / { replacing = 0; unix_step = 0; replaced = 1 }
+    replacing { next }
+    { print }
+    END { exit !replaced }
+  ' "$CI_YML" > "$fixture"
+  if NATIVE_RUNTIME_VALIDATION_FIXTURE=1 CI_YML="$fixture" bash "$0" >/dev/null 2>&1; then
+    fail 'native validation guard accepted a canonical Bash invocation inside a heredoc'
+  fi
+
+  awk '
+    $0 == "        run: ./scripts/release/smoke/smoke-local-native-artifacts.ps1 -WheelDirectory \"$PWD/src/python/dist\" -TsDirectory \"$PWD/src/ts\" -PlatformPackageDirectory \"$PWD/src/ts/npm/${{ matrix.label }}\" -NapiLabel \"${{ matrix.label }}\"" {
+      print "        run: |"
+      print "          @'\''"
+      print "          ./scripts/release/smoke/smoke-local-native-artifacts.ps1 -WheelDirectory \"$PWD/src/python/dist\" -TsDirectory \"$PWD/src/ts\" -PlatformPackageDirectory \"$PWD/src/ts/npm/${{ matrix.label }}\" -NapiLabel \"${{ matrix.label }}\""
+      print "          '\''@"
+      print "          ./scripts/release/smoke/smoke-local-native-artifacts.ps1 -WheelDirectory \"$PWD/src/python/dist\" -TsDirectory \"$PWD/src/ts\" -PlatformPackageDirectory \"$PWD/src/ts/npm/not-the-matrix-label\" -NapiLabel \"wrong-napi-label\""
+      replaced = 1
+      next
+    }
+    { print }
+    END { exit !replaced }
+  ' "$CI_YML" > "$fixture"
+  if NATIVE_RUNTIME_VALIDATION_FIXTURE=1 CI_YML="$fixture" bash "$0" >/dev/null 2>&1; then
+    fail 'native validation guard accepted a canonical PowerShell invocation inside a here-string'
+  fi
+
+  awk '
     $0 == "        run: ./scripts/release/smoke/smoke-local-native-artifacts.ps1 -WheelDirectory \"$PWD/src/python/dist\" -TsDirectory \"$PWD/src/ts\" -PlatformPackageDirectory \"$PWD/src/ts/npm/${{ matrix.label }}\" -NapiLabel \"${{ matrix.label }}\"" {
       print "        run: |"
       print "          Write-Output '\''./scripts/release/smoke/smoke-local-native-artifacts.ps1 -WheelDirectory \"$PWD/src/python/dist\" -TsDirectory \"$PWD/src/ts\" -PlatformPackageDirectory \"$PWD/src/ts/npm/${{ matrix.label }}\" -NapiLabel \"${{ matrix.label }}\"'\''"
@@ -333,6 +370,44 @@ if [ "${NATIVE_RUNTIME_VALIDATION_FIXTURE:-0}" != "1" ]; then
   ' "$CI_YML" > "$fixture"
   if ! NATIVE_RUNTIME_VALIDATION_FIXTURE=1 CI_YML="$fixture" bash "$0" >/dev/null 2>&1; then
     fail 'native validation guard rejected a PowerShell backtick continuation'
+  fi
+
+  awk '
+    $0 == "      - name: Validate local wheel and N-API package" { unix_step = 1 }
+    unix_step && $0 == "        run: |" {
+      print
+      print "          bash scripts/release/smoke/smoke-local-native-artifacts.sh \\ "
+      print "            \"$PWD/src/python/dist\" \\"
+      print "            \"$PWD/src/ts\" \\"
+      print "            \"$PWD/src/ts/npm/${{ matrix.label }}\" \\"
+      print "            \"${{ matrix.label }}\""
+      replacing = 1
+      next
+    }
+    replacing && /^      - name: / { replacing = 0; unix_step = 0; replaced = 1 }
+    replacing { next }
+    { print }
+    END { exit !replaced }
+  ' "$CI_YML" > "$fixture"
+  if NATIVE_RUNTIME_VALIDATION_FIXTURE=1 CI_YML="$fixture" bash "$0" >/dev/null 2>&1; then
+    fail 'native validation guard accepted a Bash continuation with trailing whitespace'
+  fi
+
+  awk '
+    $0 == "        run: ./scripts/release/smoke/smoke-local-native-artifacts.ps1 -WheelDirectory \"$PWD/src/python/dist\" -TsDirectory \"$PWD/src/ts\" -PlatformPackageDirectory \"$PWD/src/ts/npm/${{ matrix.label }}\" -NapiLabel \"${{ matrix.label }}\"" {
+      print "        run: |"
+      print "          ./scripts/release/smoke/smoke-local-native-artifacts.ps1 -WheelDirectory \"$PWD/src/python/dist\" ` "
+      print "            -TsDirectory \"$PWD/src/ts\" `"
+      print "            -PlatformPackageDirectory \"$PWD/src/ts/npm/${{ matrix.label }}\" `"
+      print "            -NapiLabel \"${{ matrix.label }}\""
+      replaced = 1
+      next
+    }
+    { print }
+    END { exit !replaced }
+  ' "$CI_YML" > "$fixture"
+  if NATIVE_RUNTIME_VALIDATION_FIXTURE=1 CI_YML="$fixture" bash "$0" >/dev/null 2>&1; then
+    fail 'native validation guard accepted a PowerShell continuation with trailing whitespace'
   fi
 
   sed 's/default-embedder/default-embedder-removed/' "$CI_YML" > "$fixture"
