@@ -192,7 +192,11 @@ fn measure_scenario(indexes_present: bool) -> ScenarioSamples {
         ingest_us.push(elapsed_us(started));
 
         let signature = search_signature(&engine);
-        assert_eq!(signature.len(), 2_100, "fixture query returns 100 node and all edge FTS hits");
+        assert_eq!(
+            signature.len(),
+            100,
+            "the public result-limit contract caps fixture results at 100"
+        );
         if let Some(expected) = &expected_signature {
             assert_eq!(&signature, expected, "repeat fixture semantics remain stable");
         } else {
