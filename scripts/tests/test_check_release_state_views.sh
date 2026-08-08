@@ -1744,6 +1744,27 @@ else
   fail "arm R9 (landed/remaining overlap): rc=$RC out=$OUT"
 fi
 
+# An integration candidate can carry an unlanded schema migration. The rendered
+# view must not attach the candidate schema number to the landed `origin/main`
+# statement: both facts must remain visible.
+setup_fixture
+python3 - "$FIX/dev/plans/release-state-9.9.9.json" <<'PY'
+import json, sys
+p = sys.argv[1]
+s = json.load(open(p))
+s["schema_version"] = 43
+s["origin_main_schema_version"] = 42
+json.dump(s, open(p, "w"), indent=2)
+PY
+run_gate --write
+if [ "$RC" -eq 0 ] \
+   && grep -qF 'local candidate SCHEMA is 43' "$FIX/dev/plans/master.md" \
+   && grep -qF '`origin/main` remains at 42' "$FIX/dev/plans/master.md"; then
+  pass "candidate schema is rendered separately from the landed origin/main schema"
+else
+  fail "candidate schema context: rc=$RC out=$OUT"
+fi
+
 if [ "$FAILED" -gt 0 ]; then
   printf '\n%d test(s) failed\n' "$FAILED" >&2
   exit 1

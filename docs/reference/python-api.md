@@ -7,6 +7,7 @@ Module: `fathomdb`. Authoritative spec:
 
 ```python
 from fathomdb import (
+    DenseReadiness,
     Engine,
     EngineConfig,
     IdSpace,
@@ -377,6 +378,26 @@ open_high = read.list(engine, "task", predicates=[
     {"type": "gt",  "path": "$.priority", "value": 5},
 ])
 ```
+
+### Projection registry and derived readiness
+
+`engine.configure_projections(specs, drop=None) -> ProjectionDelta` declares
+the durable projection registry. It is idempotent: omitting a live declaration
+does not delete it, while an explicit destructive change requires its name in
+`drop`. `read.projections(engine) -> list[ProjectionSpec]` returns those
+durable declarations in name order.
+
+For an effective vector declaration, the returned
+`ProjectionSpec.vector_dense_readiness: DenseReadiness | None` is engine-set
+read metadata, never part of configuration. Supplying a valid readiness value
+with `vector=True` to `configure_projections` is accepted but inert, so a result
+from `read.projections` can be configured again as a no-op; an invalid spelling
+or a readiness with `vector=False` is rejected. With no usable dense runtime
+(including an equivalence refusal), the engine reports `"unavailable"`.
+With a usable runtime it reports `"embedding"` while eligible shared work is
+outstanding; after `engine.drain(...)` completes and no further work is issued,
+it reports `"ready"`. `DenseReadiness` is exactly `"unavailable" |
+"embedding" | "ready"`.
 
 ### `read.projection_status(engine) -> ProjectionRuntimeStatus`
 

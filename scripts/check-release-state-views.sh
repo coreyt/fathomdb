@@ -286,6 +286,17 @@ def _remaining_ladder(st):
     return remaining or "none"
 
 
+def _schema_context(st):
+    """Render candidate and landed schema facts without conflating their scopes."""
+    candidate = st["schema_version"]
+    origin_main = st.get("origin_main_schema_version")
+    if origin_main is not None and origin_main != candidate:
+        return ("local candidate SCHEMA is %d; `origin/main` remains at %d until "
+                "the candidate's unlanded schema migration lands"
+                % (candidate, origin_main))
+    return "SCHEMA is %d" % candidate
+
+
 def render_master_ladder_progress(st):
     """master §4, the 0.8.20 row: landed slices + SHAs, SCHEMA, remaining ladder.
 
@@ -300,10 +311,10 @@ def render_master_ladder_progress(st):
     # documents in two shapes (`40.0` here, `40` there).
     ladder = _remaining_ladder(st)
     if not landed:
-        return ("No slices are LANDED on `origin/main`; SCHEMA is %d; "
-                "remaining ladder = %s." % (st["schema_version"], ladder))
-    return ("Slices %s are all LANDED on `origin/main`; SCHEMA is %d; "
-            "remaining ladder = %s." % (landed, st["schema_version"], ladder))
+        return ("No slices are LANDED on `origin/main`; %s; "
+                "remaining ladder = %s." % (_schema_context(st), ladder))
+    return ("Slices %s are all LANDED on `origin/main`; %s; "
+            "remaining ladder = %s." % (landed, _schema_context(st), ladder))
 
 
 PRE_SIGN_STATES = ("PRE_SIGNED", "NOT_PRE_SIGNED")
@@ -593,11 +604,11 @@ def render_plan_landed_roll_up(st):
     by = _by_slice(st)
     landed = " · ".join("%s (`%s`)" % (_slice_str(n), by[n]["sha"]) for n in st["landed"])
     if not landed:
-        return ("\n**LANDED on `origin/main`, in full:** no slices. SCHEMA is %d; "
+        return ("\n**LANDED on `origin/main`, in full:** no slices. %s; "
                 "remaining ladder = %s."
-                % (st["schema_version"], _remaining_ladder(st)))
-    return ("\n**LANDED on `origin/main`, in full:** Slices %s. SCHEMA is %d; remaining ladder = %s."
-            % (landed, st["schema_version"],
+                % (_schema_context(st), _remaining_ladder(st)))
+    return ("\n**LANDED on `origin/main`, in full:** Slices %s. %s; remaining ladder = %s."
+            % (landed, _schema_context(st),
                _remaining_ladder(st)))
 
 

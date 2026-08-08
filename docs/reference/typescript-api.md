@@ -30,6 +30,7 @@ import {
   type SoftFallback,
   type SoftFallbackBranch,
   type CounterSnapshot,
+  type DenseReadiness,
   type ProjectionSpec,
   type ProjectionDelta,
   type ProjectionRole,
@@ -386,6 +387,26 @@ const openHigh = await read.list(engine, "task", [
   { type: "gt",  path: "$.priority", value: 5 },
 ]);
 ```
+
+### Projection registry and derived readiness
+
+`engine.configureProjections(specs, drop?)` declares the durable projection
+registry. It is idempotent: omitting a live declaration does not delete it,
+while an explicit destructive change requires its name in `drop`.
+`read.projections(engine): Promise<ProjectionSpec[]>` returns those durable
+declarations in name order.
+
+For an effective vector declaration, the returned
+`ProjectionSpec.vectorDenseReadiness: DenseReadiness | undefined` is engine-set
+read metadata, never part of configuration. Supplying a valid readiness value
+with `vector: true` to `configureProjections` is accepted but inert, so a result
+from `read.projections` can be configured again as a no-op; an invalid spelling
+or a readiness with `vector: false` is rejected. With no usable dense runtime
+(including an equivalence refusal), the engine reports `"unavailable"`.
+With a usable runtime it reports `"embedding"` while eligible shared work is
+outstanding; after `await engine.drain(...)` completes and no further work is
+issued, it reports `"ready"`. `DenseReadiness` is exactly `"unavailable" |
+"embedding" | "ready"`.
 
 ### `read.projectionStatus(engine): Promise<ProjectionRuntimeStatus>`
 

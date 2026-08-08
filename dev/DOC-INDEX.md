@@ -48,9 +48,9 @@ refresh in the closing commit when you touch a doc).
 | `dev/notes/0.8.23-architecture-tradeoffs.md` | 0.8.23 architecture documentation follow-up | 0.8.23 planning | 2026-08-07 |
 | `dev/requirements.md` | Numbered requirements (REQ-*); REQ-053 = governed SDK surface (allowlist + parity + recovery-denylist + typed boundary) | 25 amended REQ-053 (Q3) | 2026-06-04 |
 | `dev/acceptance.md` | Acceptance criteria (AC-*); AC-057a five-verb cap superseded by AC-074 (governed surface); AC-074 Rust-facade... | 25 (AC-057a→AC-074); 27 fills AC-074 Rust clause; 27 fix-1 method-level; 40/GA-2 mints AC-075/076 | 2026-06-08 |
-| `dev/interfaces/rust.md` | Rust public interface (owner of the Rust-visible symbol spelling + the governed Rust-facade surface contract... | 27 (governed-surface contract); 27 fix-1 (operator feature gate); 0.8.20 15b fix-1 (node-validity write fields); 0.8.20 15b fix-2 (search validity + `ReadView` on search); 0.8.20 20b (`DenseReadiness` + `ProjectionVector::dense_readiness`); ground-truth engine type names | 2026-07-25 |
-| `dev/interfaces/python.md` | Python public interface (owner of Python-visible symbol spelling + attribute casing); 0.8.20 15b fix-1 adds the node... | 0.8.20 15b fix-1 (node-validity write keys); 0.8.20 15b fix-2 (`view=` on search); 0.8.20 20b (`vector_dense_readiness`); parity owned by `design/bindings.md` | 2026-07-25 |
-| `dev/interfaces/typescript.md` | TypeScript public interface (owner of TS-visible symbol spelling + export shape); 0.8.20 15b fix-1 adds the node... | 0.8.20 15b fix-1 (node-validity write keys); 0.8.20 15b fix-2 (`view` on search); 0.8.20 20b (`vectorDenseReadiness` + `DenseReadiness`); parity owned by `design/bindings.md` | 2026-07-25 |
+| `dev/interfaces/rust.md` | Rust public interface (owner of Rust-visible spelling + governed facade contract); Slice 21 records dense readiness and Slice 22 records the pure projection-status facade. | 27 (governed-surface contract); Slice 21/22 locally complete pending landing | 2026-08-08 |
+| `dev/interfaces/python.md` | Python public interface (owner of Python-visible spelling + attribute casing); Slice 21 records engine-set dense readiness and Slice 22 records `read.projection_status`. | Slice 21/22 locally complete pending landing; parity owned by `design/bindings.md` | 2026-08-08 |
+| `dev/interfaces/typescript.md` | TypeScript public interface (owner of TS-visible spelling + export shape); Slice 21 records engine-set dense readiness and Slice 22 records `read.projectionStatus`. | Slice 21/22 locally complete pending landing; parity owned by `design/bindings.md` | 2026-08-08 |
 | `dev/interfaces/cli.md` | CLI public interface (concrete flag spelling, root paths, exit-code classes, `--json` wrapping for the two-root... | 34 (dump-mutations); owned-by ADR-0.6.0-cli-scope | 2026-06-06 |
 | `dev/architecture.md` | System architecture (engine, projections, reader pool, surface) | 5/10/15/30 update read-path + receipt surface (30 adds the governed `read.*` reader-pool dispatch); 31 re-scopes G0 active identity to `logical_id` alone | 2026-06-05 |
 | `dev/test-plan.md` | Test strategy + tiers (incl. functional-harness tier X1 + the Slice 10 G9/G10/G12-recency tier) | 5 adds functional tier; 10 adds RRF/filter/recency tier | 2026-06-03 |
@@ -85,9 +85,9 @@ refresh in the closing commit when you touch a doc).
 | `dev/adr/ADR-0.8.18-full-publish-pipeline.md` | #11-full full publish pipeline | 0.8.18 Slice 0 gates; Slice 20 implements | 2026-07-09 |
 | `dev/design/0.8.16-slice-0-f9-onnx-design.md` | 0.8.16 Slice-0 design package — F9 importance/confidence ranking + cross-vendor ONNX embedder | 0.8.16 Slice 0 | 2026-07-08 |
 | `dev/design/0.8.18-slice-5-vector-equivalence-probe.md` | 0.8.18 Slice 5 — #5 vector-equivalence probe (SHIPPED surface) | 0.8.18 Slice 5 | 2026-07-09 |
-| `dev/design/0.8.22-slice-19-join-index.md` | Draft design for canonical FTS join indexes | 0.8.22 Slice 19 | 2026-08-07 |
-| `dev/design/0.8.22-slice-21-projection-state.md` | Draft design for truthful projection runtime state | 0.8.22 Slice 21 | 2026-08-07 |
-| `dev/design/0.8.22-slice-22-projection-status.md` | Draft design for governed projection status reads | 0.8.22 Slice 22 | 2026-08-07 |
+| `dev/design/0.8.22-slice-19-join-index.md` | Complete locally, pending landing: design for canonical FTS join indexes | 0.8.22 Slice 19 | 2026-08-08 |
+| `dev/design/0.8.22-slice-21-projection-state.md` | Complete locally, pending landing: design for truthful projection runtime state | 0.8.22 Slice 21 | 2026-08-08 |
+| `dev/design/0.8.22-slice-22-projection-status.md` | Complete locally, pending landing: design for governed projection status reads | 0.8.22 Slice 22 | 2026-08-08 |
 | `dev/design/0.8.2-m1-multihop-harness.md` | 0.8.2 / M1 multi-hop answer-accuracy harness — design + FROZEN pre-registration (AMENDED 2026-06-16; re-frozen... | 0.8.2 Slice 0-rev2 | 2026-06-19 |
 | `dev/design/0.8.3-mem0-parity.md` | 0.8.3 Slice-0 design + FROZEN pre-registration (Mem0-parity resolution) | 0.8.3 Slice 0 | 2026-06-21 |
 | `dev/design/0.8.5-ce-rerank-slice-design.md` · `dev/plans/0.8.5-ce-rerank-alpha-expose-slice.md` | 0.8.5 (EXP-0) — expose tuned CE-rerank α / pool_n / ce_score | 0.8.5 (EXP-0) | 2026-06-25 |
@@ -191,9 +191,9 @@ refresh in the closing commit when you touch a doc).
 | `dev/plans/prompts/PLAN-TEMPLATE.md` | Per-release plan authoring template | authors every plan-<release>.md | 2026-06-26 |
 | `dev/plans/prompts/0.8.0-SLICE-TEMPLATE.md` | Per-slice prompt template | authors every slice prompt | 2026-06-03 |
 | `dev/plans/prompts/0.8.0-slice-*.md` | Self-contained per-slice subagent prompts | per slice | (per slice) |
-| `dev/plans/prompts/0.8.22-slice-19-join-index.md` | Draft Slice 19 canonical join-index plan | 0.8.22 Slice 19 | 2026-08-07 |
-| `dev/plans/prompts/0.8.22-slice-21-projection-state.md` | Draft Slice 21 projection-runtime-state plan | 0.8.22 Slice 21 | 2026-08-07 |
-| `dev/plans/prompts/0.8.22-slice-22-projection-status.md` | Draft Slice 22 projection-status API plan | 0.8.22 Slice 22 | 2026-08-07 |
+| `dev/plans/prompts/0.8.22-slice-19-join-index.md` | Complete locally, pending landing: Slice 19 canonical join-index plan | 0.8.22 Slice 19 | 2026-08-08 |
+| `dev/plans/prompts/0.8.22-slice-21-projection-state.md` | Complete locally, pending landing: Slice 21 projection-runtime-state plan | 0.8.22 Slice 21 | 2026-08-08 |
+| `dev/plans/prompts/0.8.22-slice-22-projection-status.md` | Complete locally, pending landing: Slice 22 projection-status API plan | 0.8.22 Slice 22 | 2026-08-08 |
 | `dev/plans/runs/0.8.0-slice-*-output.json` / `-review-*.md` | Per-slice closure artifacts + promoted codex verdicts | per slice | (per slice) |
 | `dev/plans/runs/0.8.0-slice-6-tokenizer-experiment-*.md` | Slice 6 (B2) FTS5 tokenizer latency experiment | Slice 6 (B2) | 2026-06-07 |
 | `dev/plans/0.8.1-plan.md` | 0.8.1 mod-5 ladder | 0.8.1 Slice 0 authors; every slice advances the pointer | 2026-06-12 |
@@ -257,12 +257,12 @@ refresh in the closing commit when you touch a doc).
 | `docs/install/typescript.md` | TypeScript install | — | 2026-05-30 |
 | `docs/install/rust.md` | Rust install | — | 2026-05-17 |
 | `docs/reference/index.md` | API-reference overview | — | 2026-05-17 |
-| `docs/reference/python-api.md` | Python API reference (incl. the `read.*` verbs + `NodeRecord`/`OpStoreRow` shapes); 0.8.20 Slice 5d adds... | 5 (`SearchHit`), 10 (`SearchFilter`/RRF), 30 (`read.*`), 31 (`logical_id`-alone supersession), 0.8.1-10 (`rerank_depth` opt-in), 0.8.20 Slice 5d (`erase_source`) | 2026-07-19 |
-| `docs/reference/typescript-api.md` | TypeScript API reference (incl. the `read.*` verbs + `NodeRecord`/`OpStoreRow` shapes); 0.8.20 Slice 5d adds... | 5 (`SearchHit`), 10 (`SearchFilter`/RRF), 30 (`read.*`), 31 (`logicalId`-alone supersession), 0.8.1-10 (`rerankDepth` opt-in), 0.8.20 Slice 5d (`eraseSource`) | 2026-07-19 |
+| `docs/reference/python-api.md` | Python API reference incl. governed `read.*`, projection configuration/derived readiness, and `read.projection_status` | Slices 21/22 locally complete pending landing | 2026-08-08 |
+| `docs/reference/typescript-api.md` | TypeScript API reference incl. governed `read.*`, projection configuration/derived readiness, and `read.projectionStatus` | Slices 21/22 locally complete pending landing | 2026-08-08 |
 | `docs/reference/cli.md` | CLI reference (recovery verbs CLI-only); 34 documents the `doctor dump-mutations` op-store read-back diagnostic +... | 34 (dump-mutations); 0.8.20 Slice 5d (R-20-E8) | 2026-07-19 |
 | `docs/reference/errors.md` | Error reference (taxonomy) | per-binding error-class adds | 2026-05-17 |
 | `docs/reference/config.md` | Config reference | — | 2026-05-17 |
-| `docs/concepts/index.md` | Concepts overview | — | 2026-05-17 |
+| `docs/concepts/index.md` | Concepts overview; distinguishes unpublished 0.8.22 candidate from published 0.8.21 | 0.8.22 documentation correctness | 2026-08-08 |
 | `docs/embedder.md` | Default embedder | — | 2026-06-01 |
 | `docs/compatibility/index.md` | Compatibility matrix | 40 (compat events) | 2026-05-17 |
 | `docs/operations/index.md` | Operations guide | — | 2026-07-19 |
@@ -276,9 +276,9 @@ refresh in the closing commit when you touch a doc).
 | `docs/positions/recovery-surface.md` | Position: recovery surface (denylist, CLI-only) | preserved by 25/30 | 2026-05-01 |
 | `docs/positions/tokenizer-policy.md` | Position: tokenizer policy | 5 (FTS5 default upgrade) | 2026-05-01 |
 | `docs/positions/embedder-identity.md` | Position: embedder identity | — | 2026-05-01 |
-| `docs/release-notes/0.6.0.md` | 0.6.0 release notes | — | 2026-05-17 |
-| `docs/release-notes/0.6.1.md` | 0.6.1 release notes (**added to nav at Slice 0** — was orphaned) | X2 | 2026-05-24 |
-| `docs/release-notes/0.8.0.md` | 0.8.0 release notes — finalized at 40/GA-2 (3 behavior-compat events, governed read.*, structured hits, G0 identity... | 0 stub; 40/GA-2 finalizes | 2026-06-08 |
+| `docs/release-notes/0.6.0.md` | 0.6.0 historical release notes; points to published 0.8.21 as current | 0.8.22 documentation correctness | 2026-08-08 |
+| `docs/release-notes/0.6.1.md` | 0.6.1 historical release notes; points to published 0.8.21 as current | 0.8.22 documentation correctness | 2026-08-08 |
+| `docs/release-notes/0.8.0.md` | 0.8.0 historical release notes; points to published 0.8.21 as current | 0.8.22 documentation correctness | 2026-08-08 |
 | `dev/releases/0.8.0.md` | 0.8.0 internal release record | 40/GA-2 | 2026-06-08 |
 
 ## Corpus / eval expansion (out-of-band, owner-managed — integrated at Slice-5 push 2026-06-02)
