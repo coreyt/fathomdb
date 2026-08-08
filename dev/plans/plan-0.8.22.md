@@ -170,6 +170,12 @@ the manifest, native artifact, package metadata, loader, actual-runner smoke,
 and public documentation. Changes to public API or error taxonomy require their
 own governing decision.
 
+Every slice ends with independent code review. A P1 or P2 finding requires a
+named `FIX-n` correction and focused re-review, repeated until no P1 or P2
+remains; a P0 is addressed immediately. This closure rule also applies to
+code-bearing preparation and release-safety work, while operational publication
+steps retain their existing real-registry smoke gates.
+
 ## Publish authority
 
 Tagging and publication require normal explicit HITL authorization. This plan
