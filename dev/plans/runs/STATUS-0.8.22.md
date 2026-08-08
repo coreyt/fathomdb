@@ -67,6 +67,9 @@ the work to `search_text_only`; hybrid/vector candidate-fanout semantics are a
 separate 0.8.23 architecture/documentation follow-up. The independent design
 review and FIX-1 closure are recorded in
 `dev/plans/runs/0.8.22-slice-23-design-review-20260808.md`.
+Its pickup review is approved in
+`dev/plans/runs/0.8.22-slice-23-pickup-review-20260808.md`; implementation is
+now in progress on its isolated worktree.
 
 ## Completion documentation gate
 
