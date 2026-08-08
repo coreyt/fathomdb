@@ -78,8 +78,8 @@ def test_read_projections_surfaces_vector_dense_readiness(tmp_path) -> None:
     engine = _open(str(tmp_path / "surface.sqlite"))
     try:
         engine.configure_projections([_vector_spec("summary")])
-        # No embedder is configured, so nothing is outstanding: ready.
-        assert _readiness(engine, "summary") == "ready"
+        # A declaration does not make a dense runtime usable.
+        assert _readiness(engine, "summary") == "unavailable"
     finally:
         engine.close()
 
@@ -123,14 +123,14 @@ def test_readiness_never_reports_ready_with_pending_embeds(tmp_path) -> None:
         # Declare the projection FIRST: `configure_projections` drains, and
         # draining with work outstanding would (correctly) time out.
         engine.configure_projections([_vector_spec("summary")])
-        assert _readiness(engine, "summary") == "ready", "an empty corpus is ready"
+        assert _readiness(engine, "summary") == "unavailable", "an empty corpus has no runtime"
 
         configure_vector_kind("doc")
         engine.write([_node("N1", '{"summary":"a dense meaning"}')])
 
         assert (
-            _readiness(engine, "summary") == "embedding"
-        ), "readiness must NOT report ready while an embed is outstanding"
+            _readiness(engine, "summary") == "unavailable"
+        ), "an absent runtime remains unavailable even while durable work is pending"
     finally:
         engine.close()
 
@@ -155,7 +155,7 @@ def test_caller_supplied_dense_readiness_is_inert(tmp_path) -> None:
         )
         engine.configure_projections([lying])
         assert (
-            _readiness(engine, "summary") == "ready"
+            _readiness(engine, "summary") == "unavailable"
         ), "the caller's `embedding` must NOT be honoured"
         again = engine.configure_projections([_vector_spec("summary")])
         assert again.unchanged is True, "readiness is not part of the declaration"
@@ -184,7 +184,7 @@ def test_read_projections_output_round_trips_back_into_configure_with_readiness(
         )
         read_back = read.projections(engine)
         assert len(read_back) == 1
-        assert read_back[0].vector_dense_readiness == "ready", "read output carries readiness"
+        assert read_back[0].vector_dense_readiness == "unavailable", "read output carries readiness"
         again = engine.configure_projections(list(read_back))
         assert again.unchanged is True, "read.projections output must re-apply as a no-op"
     finally:

@@ -459,8 +459,8 @@ fn a_declaration_without_a_live_embedder_defers_then_grafts_on_reapply() {
 
         assert_eq!(
             readiness(engine, "summary"),
-            Some(DenseReadiness::Ready),
-            "with no live embedder there is no dense arm, so nothing is outstanding"
+            Some(DenseReadiness::Unavailable),
+            "with no live embedder the dense arm is unavailable even when no work is outstanding"
         );
         engine.drain(5_000).expect("drain must not burn its timeout on a dead dense arm");
 
@@ -1238,9 +1238,8 @@ fn a_no_embedder_session_leaves_an_enrolled_kinds_write_recoverable() {
         );
         assert_eq!(
             readiness(engine, "summary"),
-            Some(DenseReadiness::Embedding),
-            "§4.1 invariant 1: the ONLY tolerable torn state is `embedding` with the vector \
-             absent — readiness must never read `ready` for an ENROLLED row that has no vector"
+            Some(DenseReadiness::Unavailable),
+            "an absent runtime remains unavailable even when durable work is pending"
         );
 
         let conn = ro(&path);
