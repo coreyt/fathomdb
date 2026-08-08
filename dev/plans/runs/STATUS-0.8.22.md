@@ -63,3 +63,10 @@ JSON, rendered plan and STATUS board, affected `dev/` records, and affected
 public `docs/` match the final implementation and release witnesses. Repair
 material drift and run the applicable documentation checks; code or CI success
 does not bypass this gate.
+
+**Local result (2026-08-08): PASSED.** The independent review record at
+`dev/plans/runs/0.8.22-documentation-correctness-review-20260808.md` closed
+documentation FIX-1 through FIX-3 at `ad14c879` with no remaining P1/P2.
+Release-state rendering, Markdown/public-doc lint, and full agent verification
+passed. This is a local integration result only: protected-branch landing and
+the explicitly held real publication/smokes remain outstanding.

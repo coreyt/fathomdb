@@ -194,6 +194,7 @@ refresh in the closing commit when you touch a doc).
 | `dev/plans/prompts/0.8.22-slice-19-join-index.md` | Complete locally, pending landing: Slice 19 canonical join-index plan | 0.8.22 Slice 19 | 2026-08-08 |
 | `dev/plans/prompts/0.8.22-slice-21-projection-state.md` | Complete locally, pending landing: Slice 21 projection-runtime-state plan | 0.8.22 Slice 21 | 2026-08-08 |
 | `dev/plans/prompts/0.8.22-slice-22-projection-status.md` | Complete locally, pending landing: Slice 22 projection-status API plan | 0.8.22 Slice 22 | 2026-08-08 |
+| `dev/plans/runs/0.8.22-documentation-correctness-review-20260808.md` | Final documentation-correctness review; records FIX-1/2/3 and independent approval | 0.8.22 completion documentation gate | 2026-08-08 |
 | `dev/plans/runs/0.8.0-slice-*-output.json` / `-review-*.md` | Per-slice closure artifacts + promoted codex verdicts | per slice | (per slice) |
 | `dev/plans/runs/0.8.0-slice-6-tokenizer-experiment-*.md` | Slice 6 (B2) FTS5 tokenizer latency experiment | Slice 6 (B2) | 2026-06-07 |
 | `dev/plans/0.8.1-plan.md` | 0.8.1 mod-5 ladder | 0.8.1 Slice 0 authors; every slice advances the pointer | 2026-06-12 |
