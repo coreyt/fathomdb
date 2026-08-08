@@ -103,6 +103,12 @@ through FIX-5, and the isolated ordinary clone passed the all-tier local gate.
 The dependent local work inherits that exact reviewed base; protected-branch
 landing remains required before publication.
 
+**Slice 22 is CLOSED on the reviewed local integration branch at `6aeee48e`,
+but is not yet LANDED on `origin/main`.** Its signed C5 preparation, RED and
+GREEN implementation, and FIX-1 re-review closed all P1/P2. An isolated
+ordinary clone passed the all-tier agent gate and full workspace clippy/check.
+Protected-branch landing remains required before publication.
+
 The corresponding plans require RED→GREEN evidence, cross-SDK conformance
 where the public contract changes, an independent review, and the normal local
 verification gates. They do not authorize a tag, registry write, or publication.
@@ -153,7 +159,7 @@ their own policies.
 ## Landed release state
 
 <!-- BEGIN GENERATED release-state:0.8.22:plan-landed-roll-up -->
-**LANDED on `origin/main`, in full:** Slices 0 (`55792858b2adce00d3d87193d02b23a5d8d52dd7`) · 5 (`55792858b2adce00d3d87193d02b23a5d8d52dd7`) · 10 (`4c7bb26b`) · 12 (`72a83049`) · 15 (`13341688fca3d02d11c10bb10eb26232156f8032`) · 17 (`5a7f2484`) · 18 (`8fdb27dbf00a0663772ffc8e27a243ac1e7dcd74`). SCHEMA is 25; remaining ladder = 22 → 20 → 25.<!-- END GENERATED release-state:0.8.22:plan-landed-roll-up -->
+**LANDED on `origin/main`, in full:** Slices 0 (`55792858b2adce00d3d87193d02b23a5d8d52dd7`) · 5 (`55792858b2adce00d3d87193d02b23a5d8d52dd7`) · 10 (`4c7bb26b`) · 12 (`72a83049`) · 15 (`13341688fca3d02d11c10bb10eb26232156f8032`) · 17 (`5a7f2484`) · 18 (`8fdb27dbf00a0663772ffc8e27a243ac1e7dcd74`). SCHEMA is 25; remaining ladder = 20 → 25.<!-- END GENERATED release-state:0.8.22:plan-landed-roll-up -->
 
 ## Reserved-gap policy
 
@@ -191,6 +197,6 @@ prepares and verifies the release path; it does not authorize a registry write.
 ## Immediate next slice
 
 <!-- BEGIN GENERATED release-state:0.8.22:plan-immediate-next -->
-**IMMEDIATE NEXT: Slice 22** (`PROJ-STATUS`) — governed pure projection-status read
+**IMMEDIATE NEXT: Slice 20** (`PUBLISH`) — ordered platform publication and registry smokes
 
-**Remaining ladder:** 22 → 20 → 25.<!-- END GENERATED release-state:0.8.22:plan-immediate-next -->
+**Remaining ladder:** 20 → 25.<!-- END GENERATED release-state:0.8.22:plan-immediate-next -->
