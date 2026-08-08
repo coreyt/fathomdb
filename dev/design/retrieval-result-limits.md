@@ -60,11 +60,21 @@ default/floor, not a public hard ceiling; Slice 18 replaces that hidden behavior
 with the caller-visible contract. The test-only `set_search_limit_for_test`
 seam remains test-only and is not an SDK configuration path.
 
-For FTS-only and projected-text retrieval, candidate collection must be bounded
-without changing the promised top-ranked, post-filter result set. In particular,
-an SQL `LIMIT` placed before a Rust-side filter is insufficient unless the
-implementation overfetches or otherwise proves that it can still fill the
-requested result count with valid hits.
+For direct FTS-only and projected-text retrieval, candidate collection must be
+bounded without changing the promised top-ranked, post-filter result set. In
+particular, an SQL `LIMIT` placed before a Rust-side filter is insufficient
+unless the implementation overfetches or otherwise proves that it can still
+fill the requested result count with valid hits.
+
+Direct `search_text_only` collects a fixed maximum of 100 node-body candidates,
+independent of the requested returned-result limit, then combines them with the
+existing matching edge-body candidates. The text arm body-deduplicates and
+deterministically ranks those candidates before truncation. For the same
+immutable selection, query, and effective validity time, a direct-text result
+at any smaller accepted limit is the ordered prefix of the result at a larger
+accepted limit. A `ReadView` comparison must use the same explicit
+`valid_as_of`; `None` resolves independently per call. This is not a guarantee
+for hybrid `search*`, whose vector candidate fanout remains a separate contract.
 
 ## Binding contract
 

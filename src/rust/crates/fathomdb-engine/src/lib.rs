@@ -693,6 +693,10 @@ enum ReaderRequest {
         /// Vector candidate fanout. The private test seam may raise this above
         /// `result_limit`, but never changes caller-visible cardinality.
         candidate_limit: usize,
+        /// `Some` only for the explicit direct text-only public API. Its fixed
+        /// bound keeps the node FTS input independent of the caller's final
+        /// result limit before node/edge body deduplication and ranking.
+        direct_text_candidate_limit: Option<usize>,
         /// G10 — optional closed metadata filter (`None` = unfiltered, the
         /// byte-identical-to-0.7.2 path). Applied in the phase-1 candidates
         /// statement (vector branch) and as a Rust post-filter (text branch).
@@ -1096,6 +1100,7 @@ fn reader_worker_loop(
                 query_vector_bin,
                 result_limit,
                 candidate_limit,
+                direct_text_candidate_limit,
                 filter,
                 recency_enabled,
                 importance_enabled,
@@ -1116,6 +1121,7 @@ fn reader_worker_loop(
                     query_vector_bin.as_deref(),
                     result_limit,
                     candidate_limit,
+                    direct_text_candidate_limit,
                     filter.as_deref(),
                     recency_enabled,
                     importance_enabled,
@@ -6576,7 +6582,9 @@ impl Engine {
     /// servable" contract; codex R2 U1-2). Results come from the node-body FTS
     /// branch only — no vector recall, no CE rerank, no graph arm. Available
     /// regardless of degraded state; when dense is healthy it is simply a
-    /// text-only view of the same corpus.
+    /// text-only view of the same corpus. Matching node- and edge-body
+    /// candidates are body-deduplicated and deterministically ranked before
+    /// the requested result limit is applied.
     ///
     /// Governed surface: re-exported from the `fathomdb` facade + Py/TS bindings.
     pub fn search_text_only(&self, query: &str) -> Result<SearchResult, EngineError> {
@@ -6584,6 +6592,9 @@ impl Engine {
     }
 
     /// Text-only search with an explicit ranked-result limit in `1..=100`.
+    ///
+    /// For the same immutable selection and effective validity time, a smaller
+    /// limit's ordered results are the prefix of a larger limit's results.
     pub fn search_text_only_with_limit(
         &self,
         query: &str,
@@ -6606,6 +6617,11 @@ impl Engine {
     }
 
     /// Text-only search under a [`ReadView`] with an explicit ranked-result limit.
+    ///
+    /// For the same immutable selection and explicit effective validity time, a
+    /// smaller limit's ordered results are the prefix of a larger limit's
+    /// results. `ReadView::valid_as_of = None` resolves independently per call,
+    /// so callers comparing calls must provide a fixed value.
     pub fn search_text_only_view_with_limit(
         &self,
         query: &str,
@@ -6622,16 +6638,16 @@ impl Engine {
         let candidate_limit =
             self.projection_runtime.shared.search_limit_override.load(Ordering::SeqCst).max(limit);
         let (response_tx, response_rx) = mpsc::sync_channel::<ReaderResponse>(1);
-        // `query_vector = None` ⇒ `read_search_in_tx` skips the vector branch
-        // entirely (no embed, no phase-1 bit-KNN, no phase-2 L2) and returns the
-        // text/FTS branch — exactly the un-embedded fallback the hybrid path already
-        // takes on an embed miss.
+        // This explicit marker distinguishes direct text-only search from a hybrid
+        // request whose embedder yields no vector. Only the direct path gets the
+        // fixed node candidate bound before node/edge body deduplication and RRF.
         let request = ReaderRequest::Search {
             compiled,
             query_vector: None,
             query_vector_bin: None,
             result_limit: limit,
             candidate_limit,
+            direct_text_candidate_limit: Some(MAX_SEARCH_RESULT_LIMIT),
             filter: None,
             recency_enabled: false,
             importance_enabled: false,
@@ -7138,6 +7154,7 @@ impl Engine {
             query_vector_bin,
             result_limit,
             candidate_limit,
+            direct_text_candidate_limit: None,
             filter: filter.map(Box::new),
             recency_enabled,
             importance_enabled,
@@ -11564,6 +11581,7 @@ fn read_search_in_tx(
     query_vector_bin: Option<&str>,
     final_limit: usize,
     candidate_limit: usize,
+    direct_text_candidate_limit: Option<usize>,
     filter: Option<&SearchFilter>,
     recency_enabled: bool,
     importance_enabled: bool,
@@ -11843,13 +11861,13 @@ fn read_search_in_tx(
         } else {
             None
         };
-        // The FTS-only public path has no Rust-side metadata predicate: validity
-        // is in the SQL statement and `filter` is always `None`. Its ordered SQL
-        // limit is therefore truthful and bounds candidate collection without
-        // risking a filtered row consuming the caller's result budget. Hybrid
-        // search retains its full text ranking for RRF fusion and applies the
-        // public cutoff only after fusion below.
-        let fts_only_limit = query_vector.is_none().then_some(final_limit);
+        // Only the explicit direct text-only API fixes its node candidate window.
+        // A missing vector is not sufficient evidence of that API: hybrid search
+        // can also take its no-vector fallback and must retain its existing input
+        // behavior. The fixed direct bound makes node inputs invariant across
+        // accepted public limits before edge-body fusion and final truncation.
+        let fts_only_limit =
+            direct_text_candidate_limit.or_else(|| query_vector.is_none().then_some(final_limit));
         // G1: SELECT body + kind + write_cursor (interim id) and the
         // `bm25()` text-relevance score. IR-C (2026-06-10,
         // `performance-output-and-compare.md`): the per-branch rank RRF fuses on

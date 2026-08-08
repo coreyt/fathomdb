@@ -714,6 +714,16 @@ initial ranked `search_hits`. Every value must be an integer in `1..=100`; zero,
 values above 100 raise `InvalidArgumentError` rather than silently clamping. `graph.neighbors`
 remains a separately bounded traversal API with its existing 50-result cap.
 
+### Direct FTS-only prefix stability (0.8.22 Slice 23)
+
+`engine.search_text_only` does not embed, invoke vector retrieval, CE reranking, or graph
+expansion. Matching node- and edge-body FTS candidates are deterministically body-deduplicated
+and ranked before `limit` truncates the result. The node candidate input is fixed at 100, so for
+the same immutable selection, query, and effective validity time, results at a smaller accepted
+limit are the ordered prefix of results at a larger accepted limit. Cross-call comparisons with
+`view=ReadView(valid_as_of=...)` must use the same explicit instant; `valid_as_of=None` resolves
+per call. This guarantee does not extend to hybrid `engine.search` APIs.
+
 ## Non-presence
 
 Python does not expose recovery verbs or doctor-only flags. In particular,
