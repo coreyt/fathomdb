@@ -176,6 +176,13 @@ remains; a P0 is addressed immediately. This closure rule also applies to
 code-bearing preparation and release-safety work, while operational publication
 steps retain their existing real-registry smoke gates.
 
+Before any 0.8.22 completion claim, perform an independent documentation
+correctness review against the final implementation and release witnesses. It
+must cover the release-state JSON, rendered plan and STATUS board, affected
+`dev/` design/interface/run records, and affected public `docs/` sources.
+Correct material drift, then run the relevant documentation checks. Passing
+code or CI alone is not a completion claim.
+
 ## Publish authority
 
 Tagging and publication require normal explicit HITL authorization. This plan

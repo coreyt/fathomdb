@@ -46,3 +46,11 @@ plan/design gaps and found one remaining P1: an explicit C5 signature for the
 two new SDK spellings and their exact facade-type contract. On signature, make
 the governed-surface/pin preparation change, re-review it, transition the plan
 from draft to ready, and only then begin RED/TDD implementation.
+
+## Completion documentation gate
+
+Before any 0.8.22 completion claim, independently verify that the release-state
+JSON, rendered plan and STATUS board, affected `dev/` records, and affected
+public `docs/` match the final implementation and release witnesses. Repair
+material drift and run the applicable documentation checks; code or CI success
+does not bypass this gate.
