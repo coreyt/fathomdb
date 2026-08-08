@@ -199,6 +199,29 @@ if [ "${NATIVE_RUNTIME_VALIDATION_FIXTURE:-0}" != "1" ]; then
     fail 'native validation guard accepted a wrong N-API label'
   fi
 
+  sed \
+    -e 's#"\$PWD/src/ts/npm/${{ matrix.label }}"#"\$PWD/src/ts/npm/not-the-matrix-label"#g' \
+    -e 's/-NapiLabel "${{ matrix.label }}"/-NapiLabel "wrong-napi-label"/g' \
+    "$CI_YML" \
+    | awk '
+        $0 == "      - name: Validate local wheel and N-API package" { unix_step = 1 }
+        unix_step && $0 == "        run: |" {
+          print
+          print "          # bash scripts/release/smoke/smoke-local-native-artifacts.sh \"$PWD/src/python/dist\" \"$PWD/src/ts\" \"$PWD/src/ts/npm/${{ matrix.label }}\" \"${{ matrix.label }}\""
+          unix_step = 0
+          next
+        }
+        $0 == "      - name: Validate local wheel and N-API package (Windows)" {
+          print
+          print "        # ./scripts/release/smoke/smoke-local-native-artifacts.ps1 -WheelDirectory \"$PWD/src/python/dist\" -TsDirectory \"$PWD/src/ts\" -PlatformPackageDirectory \"$PWD/src/ts/npm/${{ matrix.label }}\" -NapiLabel \"${{ matrix.label }}\""
+          next
+        }
+        { print }
+      ' > "$fixture"
+  if NATIVE_RUNTIME_VALIDATION_FIXTURE=1 CI_YML="$fixture" bash "$0" >/dev/null 2>&1; then
+    fail 'native validation guard accepted canonical invocations present only in comments'
+  fi
+
   sed 's/default-embedder/default-embedder-removed/' "$CI_YML" > "$fixture"
   if NATIVE_RUNTIME_VALIDATION_FIXTURE=1 CI_YML="$fixture" bash "$0" >/dev/null 2>&1; then
     fail 'wheel-build control accepted a missing default-embedder feature'
