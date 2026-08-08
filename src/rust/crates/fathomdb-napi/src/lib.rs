@@ -42,9 +42,10 @@ use fathomdb_engine::{
     OpStoreRow as RustOpStoreRow, OpenReport as RustOpenReport, OpenStage,
     PerHitExplain as RustPerHitExplain, Predicate as RustPredicate, PreparedWrite,
     ProjectionDelta as RustProjectionDelta, ProjectionFts as RustProjectionFts,
-    ProjectionRole as RustProjectionRole, ProjectionSpec as RustProjectionSpec,
-    ProjectionVector as RustProjectionVector, QueryTrace as RustQueryTrace,
-    ReadView as RustReadView, ScalarValue as RustScalarValue,
+    ProjectionRole as RustProjectionRole, ProjectionRuntimeStatus as RustProjectionRuntimeStatus,
+    ProjectionRuntimeStatusEntry as RustProjectionRuntimeStatusEntry,
+    ProjectionSpec as RustProjectionSpec, ProjectionVector as RustProjectionVector,
+    QueryTrace as RustQueryTrace, ReadView as RustReadView, ScalarValue as RustScalarValue,
     SearchExpandResult as RustSearchExpandResult, SearchFilter as RustSearchFilter,
     SearchHit as RustSearchHit, SearchResult as RustSearchResult, SoftFallbackBranch, SourceId,
     TraversalDirection as RustTraversalDirection, WriteReceipt as RustWriteReceipt,
@@ -554,11 +555,12 @@ pub struct ProjectionSpec {
     pub fts_tokenizer: Option<String>,
     pub vector: bool,
     pub vector_embedder: Option<String>,
-    /// 0.8.20 Slice 20 (R-20-DR) — READ METADATA, engine-set (`vectorDenseReadiness`
-    /// in JS): `"ready"` / `"embedding"` on the way OUT of `read.projections`,
-    /// omitted on every caller-authored spec. Inert on the way IN (the engine
-    /// reports the derived truth), so `read.projections` output still re-applies
-    /// as a no-op.
+    /// READ METADATA, engine-set (`vectorDenseReadiness` in JS):
+    /// `"unavailable"` / `"embedding"` / `"ready"` on the way OUT of
+    /// `read.projections`, omitted on every caller-authored spec.
+    /// `"unavailable"` means no usable dense runtime; the other values derive
+    /// from outstanding work under one. Inert on the way IN (the engine reports
+    /// the derived truth), so read output still re-applies as a no-op.
     pub vector_dense_readiness: Option<String>,
     /// Ordered literal object-member path; absent preserves top-level lookup.
     pub source: Option<Vec<String>>,
@@ -677,7 +679,7 @@ impl ProjectionSpec {
                 return Err(typed_error(
                     CODE_INVALID_ARGUMENT,
                     format!(
-                        "projection {:?}: unknown vectorDenseReadiness {readiness:?}: expected \"ready\" or \"embedding\" (\"pending\" is reserved for the admission axis and is never a readiness value). It is engine-set read metadata; omit it",
+                        "projection {:?}: unknown vectorDenseReadiness {readiness:?}: expected \"unavailable\", \"embedding\", or \"ready\" (\"pending\" is reserved for the admission axis and is never a readiness value). It is engine-set read metadata; omit it",
                         self.name
                     ),
                     JsonValue::Null,
@@ -751,6 +753,51 @@ impl ProjectionDelta {
             deferred: d.deferred.clone(),
             unchanged: d.unchanged,
             vector_unsupported_kinds: d.vector_unsupported_kinds.clone(),
+        }
+    }
+}
+
+/// One declared projection's current dense status in the pure status facade.
+#[napi(object)]
+pub struct ProjectionRuntimeStatusEntry {
+    pub name: String,
+    /// `not_declared` / `unavailable` / `embedding` / `ready`.
+    pub dense_readiness: String,
+}
+
+impl ProjectionRuntimeStatusEntry {
+    fn from_rust(entry: &RustProjectionRuntimeStatusEntry) -> Self {
+        Self {
+            name: entry.name.clone(),
+            dense_readiness: entry.dense_readiness.as_str().to_string(),
+        }
+    }
+}
+
+/// A pure current view of projection runtime facts for one open engine session.
+#[napi(object)]
+pub struct ProjectionRuntimeStatus {
+    pub runtime_embedder_available: bool,
+    /// `none` / `no_runtime` / `vector_equivalence_disabled`.
+    pub runtime_unavailability_reason: String,
+    pub projections: Vec<ProjectionRuntimeStatusEntry>,
+    pub vector_unsupported_kinds: Vec<String>,
+}
+
+impl ProjectionRuntimeStatus {
+    fn from_rust(status: &RustProjectionRuntimeStatus) -> Self {
+        Self {
+            runtime_embedder_available: status.runtime_embedder_available,
+            runtime_unavailability_reason: status
+                .runtime_unavailability_reason
+                .as_str()
+                .to_string(),
+            projections: status
+                .projections
+                .iter()
+                .map(ProjectionRuntimeStatusEntry::from_rust)
+                .collect(),
+            vector_unsupported_kinds: status.vector_unsupported_kinds.clone(),
         }
     }
 }
@@ -1555,6 +1602,18 @@ impl Engine {
         let engine = Arc::clone(&self.inner);
         let specs = call_engine(move || engine.read_projections()).await?;
         Ok(specs.iter().map(ProjectionSpec::from_rust).collect())
+    }
+
+    /// Read current projection-runtime facts without changing configuration or
+    /// scheduling work. This pure query may take the ordinarily opened engine
+    /// connection lock; it is not a `ReaderWorkerPool` request and does not open
+    /// a separately read-only SQLite connection. This is the native peer of
+    /// `read.projectionStatus`.
+    #[napi]
+    pub async fn read_projection_status(&self) -> Result<ProjectionRuntimeStatus> {
+        let engine = Arc::clone(&self.inner);
+        let status = call_engine(move || engine.read_projection_status()).await?;
+        Ok(ProjectionRuntimeStatus::from_rust(&status))
     }
 
     #[napi]

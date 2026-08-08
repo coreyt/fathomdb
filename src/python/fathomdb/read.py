@@ -12,11 +12,17 @@ module exposes the governed read verbs beside ``admin``:
   ``kind``, optionally filtered by a list of ``Predicate`` dicts (AND-combined),
   up to ``limit`` rows. Compiles to parameterized ``json_extract`` over the
   allowlisted path set (injection-safe per ADR D-F4).
+* ``read.projection_status`` (0.8.22 Slice 22) — pure current dense-runtime
+  status for every declared projection; distinct from the configuration-facing
+  ``read.projections`` result.
 
-The native binding (``fathomdb._fathomdb``) performs the ReaderWorkerPool
-DEFERRED-tx read; this module exposes the typed Python signatures and converts
-native rows to the public dataclasses in ``fathomdb.types``. Reads NEVER take
-the writer lock.
+The retrieval verbs use the native binding's ReaderWorkerPool DEFERRED-tx
+path. ``read.projections`` and ``read.projection_status`` are instead pure
+introspection queries through the ordinarily opened engine and may briefly take
+its connection lock. Neither introspection query writes, configures, or
+schedules work, but neither promises a separately opened read-only SQLite mode.
+This module exposes the typed Python signatures and converts native rows to the
+public dataclasses in ``fathomdb.types``.
 """
 
 from __future__ import annotations
@@ -34,9 +40,18 @@ from fathomdb._fathomdb import read_list_filter as _native_list_filter
 from fathomdb._fathomdb import read_mutations as _native_mutations
 from fathomdb._fathomdb import crossed_boundary_since as _native_crossed_boundary_since
 from fathomdb._fathomdb import read_projections as _native_read_projections
+from fathomdb._fathomdb import read_projection_status as _native_read_projection_status
 from fathomdb._fathomdb import ReadView as _NativeReadView
 from fathomdb._fathomdb import BoundaryCrossing as _NativeBoundaryCrossing
-from fathomdb.types import BoundaryCrossing, NodeRecord, OpStoreRow, ProjectionSpec, ReadView
+from fathomdb.types import (
+    BoundaryCrossing,
+    NodeRecord,
+    OpStoreRow,
+    ProjectionRuntimeStatus,
+    ProjectionRuntimeStatusEntry,
+    ProjectionSpec,
+    ReadView,
+)
 
 if TYPE_CHECKING:
     from fathomdb.engine import Engine
@@ -229,7 +244,10 @@ def projections(engine: "Engine") -> builtins.list[ProjectionSpec]:
 
     Returns every declared :class:`ProjectionSpec` (sorted by name), so a caller
     can inspect current registry state — and the destructive delta a change would
-    cause — BEFORE calling ``Engine.configure_projections``. Pure read.
+    cause — BEFORE calling ``Engine.configure_projections``. This pure
+    introspection query may briefly take the ordinarily opened engine connection
+    lock; it is not a ReaderWorkerPool request and does not promise a separate
+    read-only SQLite connection.
     """
 
     return [
@@ -241,12 +259,39 @@ def projections(engine: "Engine") -> builtins.list[ProjectionSpec]:
             vector=s.vector,
             vector_embedder=s.vector_embedder,
             # 0.8.20 Slice 20 (R-20-DR) — engine-set readiness read metadata
-            # (`"ready"` / `"embedding"`; `None` when no vector sub-object).
+            # (`"unavailable"` / `"embedding"` / `"ready"`; `None` when no
+            # vector sub-object).
             vector_dense_readiness=s.vector_dense_readiness,
             source=tuple(s.source) if s.source is not None else None,
         )
         for s in _native_read_projections(engine._native)
     ]
+
+
+def projection_status(engine: "Engine") -> ProjectionRuntimeStatus:
+    """Return current dense-runtime facts for declared projections.
+
+    This pure read is distinct from :func:`projections`: it reports the current
+    session's usable-runtime state, per-declaration dense readiness, and the
+    current declaration-scoped unsupported-kind report without re-applying any
+    caller-owned configuration. It uses the ordinarily opened engine connection
+    and may briefly take its connection lock; it is not a ReaderWorkerPool
+    request and does not promise a separate read-only SQLite connection.
+    """
+
+    status = _native_read_projection_status(engine._native)
+    return ProjectionRuntimeStatus(
+        runtime_embedder_available=status.runtime_embedder_available,
+        runtime_unavailability_reason=status.runtime_unavailability_reason,
+        projections=tuple(
+            ProjectionRuntimeStatusEntry(
+                name=entry.name,
+                dense_readiness=entry.dense_readiness,
+            )
+            for entry in status.projections
+        ),
+        vector_unsupported_kinds=tuple(status.vector_unsupported_kinds),
+    )
 
 
 def _validate_limit(limit: int) -> None:
@@ -264,4 +309,5 @@ __all__ = [
     "list",
     "crossed_boundary_since",
     "projections",
+    "projection_status",
 ]

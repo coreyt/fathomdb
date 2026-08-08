@@ -3,11 +3,12 @@
 # surface pin gate (scripts/check-governed-surface-pin.sh) AND for its two
 # wirings: `preflight.sh --landing` (PREVENT) and the always-on CI job (DETECT).
 #
-# WHAT IS BEING PROTECTED: the HITL PRE-SIGNED the accumulated governed-surface
-# delta of 0.8.20 Slices 5d+10b+15b+15d (AC-079) — pinned to the exact content of
+# WHAT IS BEING PROTECTED: the HITL signed the accumulated governed-surface
+# delta of 0.8.20 Slices 5d+10b+15b+15d (AC-079), later signed deltas, and the
+# Slice 22 C5 pair — pinned to the exact content of
 # src/conformance/governed-surface-allowlist.json at the provenance commit
-# recorded in the pin (32 allowlist members, 5 core, recovery_denylist unchanged
-# at the five REQ-054 names). A pre-sign keyed to specific content is worth
+# recorded in the pin (34 allowlist members, 5 core, recovery_denylist unchanged
+# at the five REQ-054 names). A signature keyed to specific content is worth
 # exactly as much as the mechanism that notices when that content moves.
 #
 # RED-first: the file MATCHES the pin today, so asserting only against the real
@@ -143,7 +144,7 @@ expect_routes_to_hitl() {
 run_checker
 expect_rc 0 "the real repo's governed surface matches the pin (default args)"
 expect_out 'ok +governed-surface-pin' "the passing run says ok"
-expect_out '32 allowlist / 5 core / 5 recovery_denylist' \
+expect_out '34 allowlist / 5 core / 5 recovery_denylist' \
   "the passing run states the pinned counts it verified"
 
 PIN_SHA="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["sha256"])' "$REAL_PIN")"
@@ -152,6 +153,87 @@ if [ "$PIN_SHA" = "$REAL_SHA" ]; then
   pass "src/conformance/governed-surface-allowlist.json is byte-identical to the pin"
 else
   fail "the real allowlist json no longer matches the pin's sha256 ($REAL_SHA vs $PIN_SHA)"
+fi
+
+# Slice 22 C5 is an exact signed 34-member shape, not merely a count increase.
+# This rejects a stale 32-member pin and a re-pin that swaps an unrelated name
+# while retaining the same count. The full list is deliberately explicit here:
+# it is the reviewable test oracle for HITL decision steward-ledger seq-247.
+set +e
+SLICE22_C5_SHAPE="$(python3 - "$REAL_FILE" "$REAL_PIN" <<'PY'
+import json
+import sys
+
+allowlist_path, pin_path = sys.argv[1:]
+with open(allowlist_path, encoding="utf-8") as fh:
+    allowlist = json.load(fh)
+with open(pin_path, encoding="utf-8") as fh:
+    pin = json.load(fh)
+
+expected_allowlist = [
+    "Engine.open",
+    "admin.configure",
+    "write",
+    "transition",
+    "purge",
+    "erase_source",
+    "eraseSource",
+    "search",
+    "search_text_only",
+    "searchTextOnly",
+    "search_projected_text",
+    "searchProjectedText",
+    "close",
+    "read.get",
+    "read.get_many",
+    "read.collection",
+    "read.mutations",
+    "read.list",
+    "ingest_with_extractor",
+    "ingestWithExtractor",
+    "consolidate_with_provider",
+    "consolidateWithProvider",
+    "graph.neighbors",
+    "graph.search_expand",
+    "graph.searchExpand",
+    "rerank",
+    "embed",
+    "read.crossed_boundary_since",
+    "read.crossedBoundarySince",
+    "configure_projections",
+    "configureProjections",
+    "read.projections",
+    "read.projection_status",
+    "read.projectionStatus",
+]
+expected_counts = {"allowlist": 34, "core": 5, "recovery_denylist": 5}
+expected_denylist = ["recover", "restore", "repair", "fix", "rebuild"]
+
+problems = []
+if allowlist.get("allowlist") != expected_allowlist:
+    problems.append("allowlist is not the exact signed 34-member Slice 22 C5 shape")
+if pin.get("allowlist") != expected_allowlist:
+    problems.append("pin allowlist is not the exact signed 34-member Slice 22 C5 shape")
+if pin.get("counts") != expected_counts:
+    problems.append(f"pin counts are {pin.get('counts')!r}, not {expected_counts!r}")
+if allowlist.get("recovery_denylist") != expected_denylist:
+    problems.append("allowlist recovery denylist changed")
+if pin.get("recovery_denylist") != expected_denylist:
+    problems.append("pin recovery denylist changed")
+if "seq-247" not in pin.get("ac", "") or "seq-247" not in "\n".join(pin.get("_comment", [])):
+    problems.append("pin lacks transparent HITL steward-ledger seq-247 provenance")
+
+if problems:
+    raise SystemExit("; ".join(problems))
+print("exact Slice 22 C5 34-member shape and seq-247 provenance")
+PY
+)"
+SLICE22_C5_SHAPE_RC=$?
+set -e
+if [ "$SLICE22_C5_SHAPE_RC" -eq 0 ]; then
+  pass "$SLICE22_C5_SHAPE"
+else
+  fail "the pin must retain the exact signed Slice 22 C5 34-member shape and seq-247 provenance: $SLICE22_C5_SHAPE"
 fi
 
 # The pin must really describe the allowlist at its own provenance commit. Reading
@@ -195,24 +277,24 @@ F="$(copy_file unmodified)"
 check_fixture "$F"
 expect_rc 0 "an unmodified COPY of the allowlist passes"
 
-# ======================= Arm 1 (RED): added member (31) =======================
+# ======================= Arm 1 (RED): added member (35) =======================
 F="$(copy_file added-member)"
 mutate "$F" 'd["allowlist"].append("shiny.new_verb")'
 check_fixture "$F"
-expect_rc 1 "an ADDED allowlist member (33) HARD-fails"
+expect_rc 1 "an ADDED allowlist member (35) HARD-fails"
 expect_out "'allowlist' diverges from the pin" "added-member names the diverging key"
 expect_out 'ADDED shiny.new_verb' "added-member NAMES the member that appeared"
-expect_out 'Pinned 32 member\(s\), on disk 33' "added-member states pinned-vs-on-disk counts"
+expect_out 'Pinned 34 member\(s\), on disk 35' "added-member states pinned-vs-on-disk counts"
 expect_out 'content differs from the pin' "added-member reports the content-hash divergence too"
 expect_routes_to_hitl "added-member"
 
-# ====================== Arm 2 (RED): removed member (29) ======================
+# ====================== Arm 2 (RED): removed member (33) ======================
 F="$(copy_file removed-member)"
 mutate "$F" 'd["allowlist"].remove("purge")'
 check_fixture "$F"
-expect_rc 1 "a REMOVED allowlist member (31) HARD-fails"
+expect_rc 1 "a REMOVED allowlist member (33) HARD-fails"
 expect_out 'REMOVED purge' "removed-member NAMES the member that vanished"
-expect_out 'Pinned 32 member\(s\), on disk 31' "removed-member states pinned-vs-on-disk counts"
+expect_out 'Pinned 34 member\(s\), on disk 33' "removed-member states pinned-vs-on-disk counts"
 expect_routes_to_hitl "removed-member"
 
 # =================== Arm 3 (RED): recovery_denylist widened ===================
@@ -297,7 +379,7 @@ PY
 check_fixture "$F" "$LAZY_PIN"
 expect_rc 1 "a LAZY RE-PIN (hashes updated, signed member list untouched) still HARD-fails"
 expect_out 'ADDED smuggled.verb' "lazy-repin names the smuggled member"
-expect_out 'counts block says 32' "lazy-repin is also caught by the counts assertion"
+expect_out 'counts block says 34' "lazy-repin is also caught by the counts assertion"
 if printf '%s' "$OUT" | grep -q 'content differs from the pin'; then
   fail "lazy-repin's hashes DO match by construction; a hash complaint means the arm is not testing what it claims: $OUT"
 else
@@ -379,10 +461,10 @@ expect_out 'not an integer' "bool-count says the count is not an integer"
 # The full defeat of the backstop, and the reason 8b is P2 and not cosmetic: a
 # re-pin that adds a member to the surface, updates the signed member list AND
 # the hashes to match, and DELETES counts.allowlist. Every surviving check then
-# agreed with the pin, and the one check that still knew the signed size was 32
+# agreed with the pin, and the one check that still knew the signed size was 34
 # had been quietly switched off. Pre-fix this exited 0 and printed
 #   "ok ... (None allowlist / 5 core / 5 recovery_denylist)"
-# for a 31-member surface carrying smuggled.verb.
+# for a 35-member surface carrying smuggled.verb.
 F="$(copy_file killer-drop-count)"
 mutate "$F" 'd["allowlist"].append("smuggled.verb")'
 KILLER_PIN="$TMPROOT/killer-drop-count/pin.json"

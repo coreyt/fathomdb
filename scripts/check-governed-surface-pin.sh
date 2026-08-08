@@ -12,16 +12,18 @@
 # WHAT THIS ENFORCES
 #   The HITL signed the accumulated governed-surface delta of 0.8.20 Slices
 #   5d + 10b + 15b + 15d (AC-079), then 0.8.21 Slice 60's projected-text search
-#   delta — pinned to the EXACT CONTENT of src/conformance/governed-surface-
-#   allowlist.json at the commit recorded in scripts/governed-surface-pin.json:
-#   32 allowlist members, 5 core, and recovery_denylist unchanged at the five
-#   REQ-054 names. A pre-sign keyed to specific content is worth exactly as much
+#   delta, 0.8.22 Slice 21's DenseReadiness type commentary, and 0.8.22 Slice
+#   22's C5 projection-status reads (steward-ledger seq-247) — pinned to the
+#   EXACT CONTENT of src/conformance/governed-surface-allowlist.json at the
+#   commit recorded in scripts/governed-surface-pin.json: 34 allowlist members,
+#   5 core, and recovery_denylist unchanged at the five
+#   REQ-054 names. A signature keyed to specific content is worth exactly as much
 #   as the mechanism that notices when that content moves. This is that
 #   mechanism: the signed content is recorded in scripts/governed-surface-pin.json
 #   and this gate HARD-fails the moment the file diverges from it, routing the
 #   reader back to the HITL for a fresh sign-off.
 #
-# TRIPPING THIS GATE IS CORRECT BEHAVIOUR, NOT A BUG: the pre-sign covers the
+# TRIPPING THIS GATE IS CORRECT BEHAVIOUR, NOT A BUG: the signature covers the
 # pinned content, and anything else re-opens it. Re-pinning to make the gate
 # green without a fresh HITL sign-off is the failure mode the gate exists to
 # prevent.
@@ -36,13 +38,12 @@
 # `_comment` edit IS a byte diff, so writing the proposal blocks the very land it
 # was meant to permit. A trip is a genuine HALT, not a soft signal.
 #
-# THE RULED STRATEGY IS ONE RE-PIN AT THE BATCHED DECISION (TC-59, option (b)):
-# the `_comment` prose correction (TC-52) and the signing of any accumulated
-# delta happen together as a SINGLE ceremony at the Slice 30 -> Slice 40
-# boundary, where AC-079 mints anyway. No `pending_delta` mechanism is built —
-# with TC-55 ruled as instrumentation, Slice 20c adds zero governed commands,
-# R-20-SUR is a write-time minting rule with no new verb, and R-20-H7 is a gate
-# rather than SDK surface, so the pin is NOT expected to trip again in 0.8.20.
+# HISTORICAL 0.8.20 STRATEGY (TC-59, option (b)): the `_comment` prose
+# correction (TC-52) and its accumulated delta were signed in one ceremony at
+# the Slice 30 -> Slice 40 boundary. That did not create a `pending_delta`
+# mechanism or authorize future surface changes: each later byte change, such
+# as the signed 0.8.22 Slice 22 C5 delta, needs its own explicit HITL decision
+# before this pin can be re-issued.
 #
 # IF IT DOES TRIP: HALT and escalate to the Steward. Do not work around it, do
 # not re-pin, do not edit the pinned file to make it pass.
@@ -56,7 +57,7 @@
 #       element-by-element against the copies stored in the pin, so the failure
 #       can name WHICH member appeared or vanished — and so that updating only
 #       the hash in the pin (a lazy re-pin, to silence the gate) still fails.
-#   (c) COUNTS: 32 / 5 / 5, asserted separately from (b) against the pin's own
+#   (c) COUNTS: 34 / 5 / 5, asserted separately from (b) against the pin's own
 #       `counts` block, so a pin whose lists and counts disagree is caught as an
 #       internally inconsistent (botched) re-pin rather than being trusted.
 #       EVERY one of the three counts must be PRESENT and an integer: a count the
@@ -119,10 +120,9 @@ usage() {
 Usage: scripts/$SELF [--file <path>] [--pin <path>]
 
 Fails when src/conformance/governed-surface-allowlist.json diverges from the
-AC-079 pre-signed pin recorded in scripts/governed-surface-pin.json. The pin
-itself records the signed content's provenance. See the header of this script
-for the full predicate and for why re-pinning without a fresh HITL sign-off is
-forbidden.
+HITL-signed pin recorded in scripts/governed-surface-pin.json. The pin itself
+records the signed content's provenance. See the header of this script for the
+full predicate and for why re-pinning without a fresh HITL sign-off is forbidden.
 
   --file <path>  the governed-surface allowlist to check
                  (default: src/conformance/governed-surface-allowlist.json)
@@ -389,8 +389,8 @@ if failures and not hash_ok and members_identical is True:
 if failures:
     print(
         "\n"
-        "  The governed surface has changed relative to the AC-079 pre-signed pin; this re-opens\n"
-        "  the HITL sign-off. The pre-sign covers exactly the pinned content and nothing else, so\n"
+        "  The governed surface has changed relative to the HITL-signed pin; this re-opens\n"
+        "  the HITL sign-off. The signature covers exactly the pinned content and nothing else, so\n"
         "  a changed surface is by definition unsigned.\n"
         "\n"
         "  DO NOT update the pin to make this pass unless the HITL has signed the new surface.\n"
@@ -401,9 +401,8 @@ if failures:
         "  Silently re-pinning to make this gate green is the failure mode this gate exists to\n"
         "  prevent.\n"
         "\n"
-        "  (0.8.20 Slices 20/25/30 are EXPECTED to trip this. Tripping is CORRECT BEHAVIOUR, not a\n"
-        "  bug: this gate is what lets them proceed without a per-slice sign-off, by guaranteeing\n"
-        "  that any surface change routes back to the HITL.)"
+        "  (A governed-surface change is expected to trip this gate. Tripping is CORRECT\n"
+        "  BEHAVIOUR, not a bug: it ensures every changed surface routes back to the HITL.)"
     )
     sys.exit(1)
 

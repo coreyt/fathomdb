@@ -1,7 +1,9 @@
 # Concepts
 
-Mental model for the 0.8.20 public surface. Detailed treatment lives
-in internal design docs under
+Mental model for the unpublished 0.8.22 development candidate. The current
+published release is 0.8.21; candidate-only APIs described here are not
+available from a registry until the held release gates complete. Detailed
+treatment lives in internal design docs under
 [`dev/design/`](https://github.com/coreyt/fathomdb/tree/main/dev/design);
 this page is the consumer-facing overview.
 
@@ -17,8 +19,11 @@ open → write / search / admin.configure / instrumentation → close → proces
    embedder pool. Open is the only place migration runs.
 2. **Write / search / configure** — application code calls the
    governed verb surface. Writes are serialized through the
-   writer thread; reads are served by the reader pool; admin
-   configurations apply in write order.
+   writer thread; retrieval reads are served by the reader pool; admin
+   configurations apply in write order. Pure projection introspection
+   (`read.projections` / `read.projection_status`) instead uses the ordinarily
+   opened Engine connection and may briefly take its connection lock; it neither
+   mutates nor promises a separately opened read-only SQLite mode.
 3. **Close** — `engine.close()` joins the writer thread, drains the
    scheduler, releases SQLite handles, and releases the on-disk lock.
    Idempotent.

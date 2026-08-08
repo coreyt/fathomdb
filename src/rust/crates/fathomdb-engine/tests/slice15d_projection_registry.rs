@@ -397,7 +397,7 @@ fn vector_subobject_is_stored_not_built() {
         vec![ProjectionSpec {
             vector: Some(ProjectionVector {
                 embedder: None,
-                dense_readiness: Some(DenseReadiness::Ready),
+                dense_readiness: Some(DenseReadiness::Unavailable),
             }),
             ..s.clone()
         }],

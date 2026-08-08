@@ -84,8 +84,8 @@ test("read.projections surfaces vectorDenseReadiness on a searchable→vector pr
   const engine = await Engine.open(path);
   try {
     await engine.configureProjections([vectorSpec("summary")]);
-    // No embedder is configured, so nothing is outstanding: `ready`.
-    assert.equal(await readiness(engine, "summary"), "ready");
+    // A declaration does not make a dense runtime usable.
+    assert.equal(await readiness(engine, "summary"), "unavailable");
   } finally {
     await engine.close();
   }
@@ -128,7 +128,7 @@ test("readiness never reports ready with pending embeds (offline, deterministic)
     // Declare the projection FIRST: `configureProjections` drains, and draining
     // with work outstanding would (correctly) time out.
     await engine.configureProjections([vectorSpec("summary")]);
-    assert.equal(await readiness(engine, "summary"), "ready", "an empty corpus is ready");
+    assert.equal(await readiness(engine, "summary"), "unavailable", "an empty corpus has no runtime");
 
     const inner = (engine as unknown as { _native: unknown })._native as {
       configureVectorKindForTest: (kind: string) => Promise<void>;
@@ -138,8 +138,8 @@ test("readiness never reports ready with pending embeds (offline, deterministic)
 
     assert.equal(
       await readiness(engine, "summary"),
-      "embedding",
-      "readiness must NOT report ready while an embed is outstanding",
+      "unavailable",
+      "an absent runtime remains unavailable even while durable work is pending",
     );
   } finally {
     await engine.close();
@@ -162,7 +162,7 @@ test("a caller-supplied vectorDenseReadiness is INERT — the engine reports the
     ]);
     assert.equal(
       await readiness(engine, "summary"),
-      "ready",
+      "unavailable",
       "the caller's `embedding` must NOT be honoured",
     );
     // And it cannot masquerade as a projection change: re-applying diffs to a
@@ -188,7 +188,7 @@ test("read.projections output round-trips BACK into configureProjections with re
     ]);
     const readBack = await read.projections(engine);
     assert.equal(readBack.length, 1);
-    assert.equal(readBack[0].vectorDenseReadiness, "ready", "read output carries readiness");
+    assert.equal(readBack[0].vectorDenseReadiness, "unavailable", "read output carries readiness");
     const again = await engine.configureProjections(readBack);
     assert.equal(again.unchanged, true, "read.projections output must re-apply as a no-op");
   } finally {

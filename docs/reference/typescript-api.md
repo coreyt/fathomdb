@@ -3,10 +3,14 @@
 Package: `fathomdb`. Authoritative spec:
 [`dev/interfaces/typescript.md`](https://github.com/coreyt/fathomdb/blob/main/dev/interfaces/typescript.md).
 
-> **TS SDK parity caveat.** The TS surface covers the same governed
-> command set and the same error taxonomy as Python, but Python remains
-> the more heavily exercised binding. Prefer Python for production
-> pilots. See [SDK parity](../positions/sdk-parity.md).
+> **Release state.** 0.8.21 is the current published release. This reference
+> also documents the local 0.8.22 candidate; its candidate-only APIs are not
+> available from a registry until the held release gates complete.
+
+**TS SDK parity caveat.** The TS surface covers the same governed command set
+and the same error taxonomy as Python, but Python remains the more heavily
+exercised binding. Prefer Python for production pilots. See
+[SDK parity](../positions/sdk-parity.md).
 
 All runtime operations are Promise-returning. The TS↔Python parity
 matrix is in [`dev/notes/12-TX-parity-matrix.md`](https://github.com/coreyt/fathomdb/blob/main/dev/notes/12-TX-parity-matrix.md).
@@ -30,9 +34,14 @@ import {
   type SoftFallback,
   type SoftFallbackBranch,
   type CounterSnapshot,
+  type DenseReadiness,
   type ProjectionSpec,
   type ProjectionDelta,
   type ProjectionRole,
+  type ProjectionRuntimeStatus,
+  type ProjectionRuntimeStatusEntry,
+  type ProjectionRuntimeUnavailabilityReason,
+  type ProjectionStatusDenseReadiness,
   type SubscriberCallback,
   type AttachSubscriberOptions,
   type AdminConfigureOptions,
@@ -311,16 +320,19 @@ const receipt = await admin.configure(engine, { name: "my-schema", body: schemaJ
 Promise<WriteReceipt>` where `AdminConfigureOptions = { name:
 string; body: string }`.
 
-## `read.*` — governed read verbs (Slice 30 / G2 + G3)
+## `read.*` — governed read verbs (including 0.8.22 Slice 22)
 
 ```ts
 import { read } from "fathomdb";
 ```
 
-The `read.*` namespace exposes the governed retrieval verbs. Every read rides
-the engine's **ReaderWorkerPool DEFERRED-tx snapshot path** — never the writer
-lock — preserving single-writer isolation. Verb names are camelCase in TS but
-the governed allowlist names stay dotted snake_case (`read.get_many`).
+The retrieval verbs below use the engine's **ReaderWorkerPool DEFERRED-tx
+snapshot path**, preserving single-writer isolation. `read.projections` and
+`read.projectionStatus` are different: they are pure introspection queries
+through the ordinarily opened engine and may briefly take its connection lock.
+They do not configure, write, or schedule work, but do not promise a separately
+opened read-only SQLite mode. Verb names are camelCase in TS but the governed
+allowlist names stay dotted snake_case (`read.get_many`).
 
 ### `read.get(engine, logicalId: string): Promise<NodeRecord | null>`
 
@@ -379,6 +391,59 @@ const openHigh = await read.list(engine, "task", [
   { type: "gt",  path: "$.priority", value: 5 },
 ]);
 ```
+
+### Projection registry and derived readiness
+
+`engine.configureProjections(specs, drop?)` declares the durable projection
+registry. It is idempotent: omitting a live declaration does not delete it,
+while an explicit destructive change requires its name in `drop`.
+`read.projections(engine): Promise<ProjectionSpec[]>` returns those durable
+declarations in name order.
+
+For an effective vector declaration, the returned
+`ProjectionSpec.vectorDenseReadiness: DenseReadiness | null` is engine-set
+read metadata, never part of configuration. Supplying a valid readiness value
+with `vector: true` to `configureProjections` is accepted but inert, so a result
+from `read.projections` can be configured again as a no-op; an invalid spelling
+or a readiness with `vector: false` is rejected. With no usable dense runtime
+(including an equivalence refusal), the engine reports `"unavailable"`.
+With a usable runtime it reports `"embedding"` while eligible shared work is
+outstanding; after `await engine.drain(...)` completes and no further work is
+issued, it reports `"ready"`. `DenseReadiness` is exactly `"unavailable" |
+"embedding" | "ready"`.
+
+### `read.projectionStatus(engine): Promise<ProjectionRuntimeStatus>`
+
+Read current projection-runtime status without configuring projections or
+changing the registry, storage, scheduler, or work queue. It is a status facade,
+not a decorated `ProjectionSpec` and not a per-projection completion report.
+It may briefly take the ordinarily opened engine connection lock; it is not a
+ReaderWorkerPool request and does not promise a separate read-only SQLite
+connection.
+
+```ts
+interface ProjectionRuntimeStatus {
+  runtimeEmbedderAvailable: boolean;
+  runtimeUnavailabilityReason:
+    | "none"
+    | "no_runtime"
+    | "vector_equivalence_disabled";
+  projections: ProjectionRuntimeStatusEntry[];
+  vectorUnsupportedKinds: string[];
+}
+interface ProjectionRuntimeStatusEntry {
+  name: string;
+  denseReadiness: "not_declared" | "unavailable" | "embedding" | "ready";
+}
+```
+
+`"none"` is returned exactly when `runtimeEmbedderAvailable` is true. Entries
+are sorted by name. `"not_declared"` means the declaration has no effective
+vector arm (it needs both `searchable` and a vector sub-object), so a legacy
+non-searchable vector sub-object remains `"not_declared"`. The other readiness
+values are corpus-wide shared-pipeline facts and can repeat across effective
+vector declarations. `vectorUnsupportedKinds` is sorted and deduplicated; it is
+`[]` when no effective vector arm exists.
 
 ## Data shapes
 
@@ -504,6 +569,7 @@ interface SearchFilter {
   kind?: string;
   createdAfter?: number; // created_at >= bound (unix seconds)
   status?: string;
+  attributes?: [string, string][];
 }
 ```
 
@@ -514,6 +580,9 @@ unfiltered path (byte-identical to the pre-filter query). `status` filters the
 vec0 `status` column, which ships an **empty-string sentinel only** (no real
 population source yet — vec0 TEXT metadata is not NULL-able), so a
 `status: "open"`-style filter prunes every row until a population slice lands.
+`attributes` is ordered AND equality over declared `filterable` projections;
+its values are canonical text, so projected string `"1"` and number `1` both
+match `"1"`.
 
 ### `SoftFallback`
 
@@ -543,8 +612,9 @@ import { graph } from "fathomdb";
 ```
 
 The `graph.*` namespace exposes bounded BFS traversal and hybrid
-search-plus-expansion. All reads ride the same **ReaderWorkerPool
-DEFERRED-tx snapshot path** as `read.*`.
+search-plus-expansion. Its reads ride the same **ReaderWorkerPool DEFERRED-tx
+snapshot path** as the retrieval verbs in `read.*`; projection introspection
+uses the ordinarily opened engine connection instead.
 
 ### `graph.neighbors(engine, logicalId, depth, direction?): Promise<NodeRecord[]>`
 

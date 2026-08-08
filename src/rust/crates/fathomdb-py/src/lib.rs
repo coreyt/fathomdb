@@ -47,9 +47,10 @@ use fathomdb_engine::{
     OpStoreRow as RustOpStoreRow, OpenReport as RustOpenReport, OpenStage,
     PerHitExplain as RustPerHitExplain, Predicate as RustPredicate, PreparedWrite,
     ProjectionDelta as RustProjectionDelta, ProjectionFts as RustProjectionFts,
-    ProjectionRole as RustProjectionRole, ProjectionSpec as RustProjectionSpec,
-    ProjectionVector as RustProjectionVector, QueryTrace as RustQueryTrace,
-    ReadView as RustReadView, ScalarValue as RustScalarValue,
+    ProjectionRole as RustProjectionRole, ProjectionRuntimeStatus as RustProjectionRuntimeStatus,
+    ProjectionRuntimeStatusEntry as RustProjectionRuntimeStatusEntry,
+    ProjectionSpec as RustProjectionSpec, ProjectionVector as RustProjectionVector,
+    QueryTrace as RustQueryTrace, ReadView as RustReadView, ScalarValue as RustScalarValue,
     SearchExpandResult as RustSearchExpandResult, SearchFilter as RustSearchFilter,
     SearchHit as RustSearchHit, SearchResult as RustSearchResult, SoftFallback as RustSoftFallback,
     SoftFallbackBranch, SourceId, TraversalDirection as RustTraversalDirection,
@@ -850,10 +851,11 @@ struct PyProjectionSpec {
     fts_tokenizer: Option<String>,
     vector: bool,
     vector_embedder: Option<String>,
-    /// 0.8.20 Slice 20 (R-20-DR) — READ METADATA, engine-set: `"ready"` /
-    /// `"embedding"` on the way OUT of `read.projections`, `None` on every
-    /// caller-authored spec. Inert on the way IN (the engine reports the derived
-    /// truth), so `read.projections` output still re-applies as a no-op.
+    /// READ METADATA, engine-set: `"unavailable"` / `"embedding"` / `"ready"`
+    /// on the way OUT of `read.projections`, `None` on every caller-authored
+    /// spec. `"unavailable"` means no usable dense runtime; the other values
+    /// derive from outstanding work under one. Inert on the way IN (the engine
+    /// reports the derived truth), so read output still re-applies as a no-op.
     vector_dense_readiness: Option<String>,
     source: Option<Vec<String>>,
 }
@@ -969,7 +971,8 @@ impl PyProjectionSpec {
         //   * supplied while `vector` is false — there is no vector sub-object
         //     to carry it, so `read.projections` could not echo it back;
         //   * an unrecognised spelling — `read.projections` only ever emits
-        //     `"ready"` / `"embedding"`, so anything else (notably `"pending"`,
+        //     `"unavailable"` / `"embedding"` / `"ready"`, so anything else
+        //     (notably `"pending"`,
         //     which is RESERVED for the orthogonal admission axis, and `""`)
         //     could not round-trip and is a caller mistake worth naming.
         if let Some(readiness) = self.vector_dense_readiness.as_deref() {
@@ -982,7 +985,7 @@ impl PyProjectionSpec {
             }
             if RustDenseReadiness::from_str_opt(readiness).is_none() {
                 return Err(InvalidArgumentError::new_err(format!(
-                    "projection {:?}: unknown vector_dense_readiness {readiness:?}: expected \"ready\" or \"embedding\" (\"pending\" is reserved for the admission axis and is never a readiness value). It is engine-set read metadata; omit it",
+                    "projection {:?}: unknown vector_dense_readiness {readiness:?}: expected \"unavailable\", \"embedding\", or \"ready\" (\"pending\" is reserved for the admission axis and is never a readiness value). It is engine-set read metadata; omit it",
                     self.name
                 )));
             }
@@ -1053,6 +1056,63 @@ impl PyProjectionDelta {
             deferred: d.deferred.clone(),
             unchanged: d.unchanged,
             vector_unsupported_kinds: d.vector_unsupported_kinds.clone(),
+        }
+    }
+}
+
+/// The Python-native form of one entry in the pure projection-status facade.
+#[pyclass(
+    module = "fathomdb._fathomdb",
+    name = "ProjectionRuntimeStatusEntry",
+    frozen,
+    get_all,
+    skip_from_py_object
+)]
+#[derive(Clone)]
+struct PyProjectionRuntimeStatusEntry {
+    name: String,
+    dense_readiness: String,
+}
+
+impl PyProjectionRuntimeStatusEntry {
+    fn from_rust(entry: &RustProjectionRuntimeStatusEntry) -> Self {
+        Self {
+            name: entry.name.clone(),
+            dense_readiness: entry.dense_readiness.as_str().to_string(),
+        }
+    }
+}
+
+/// The Python-native form of the pure projection-runtime status facade.
+#[pyclass(
+    module = "fathomdb._fathomdb",
+    name = "ProjectionRuntimeStatus",
+    frozen,
+    get_all,
+    skip_from_py_object
+)]
+#[derive(Clone)]
+struct PyProjectionRuntimeStatus {
+    runtime_embedder_available: bool,
+    runtime_unavailability_reason: String,
+    projections: Vec<PyProjectionRuntimeStatusEntry>,
+    vector_unsupported_kinds: Vec<String>,
+}
+
+impl PyProjectionRuntimeStatus {
+    fn from_rust(status: &RustProjectionRuntimeStatus) -> Self {
+        Self {
+            runtime_embedder_available: status.runtime_embedder_available,
+            runtime_unavailability_reason: status
+                .runtime_unavailability_reason
+                .as_str()
+                .to_string(),
+            projections: status
+                .projections
+                .iter()
+                .map(PyProjectionRuntimeStatusEntry::from_rust)
+                .collect(),
+            vector_unsupported_kinds: status.vector_unsupported_kinds.clone(),
         }
     }
 }
@@ -1844,6 +1904,23 @@ fn read_projections(py: Python<'_>, engine: &PyEngine) -> PyResult<Vec<PyProject
     Ok(specs.iter().map(PyProjectionSpec::from_rust).collect())
 }
 
+/// Read the current projection-runtime status without changing configuration or
+/// scheduling work. This pure query may take the ordinarily opened engine
+/// connection lock; it is not a `ReaderWorkerPool` request and does not open a
+/// separately read-only SQLite connection. The public Python wrapper converts
+/// this native value into frozen SDK dataclasses with closed Literal wire
+/// vocabularies.
+#[pyfunction]
+#[pyo3(signature = (engine))]
+fn read_projection_status(
+    py: Python<'_>,
+    engine: &PyEngine,
+) -> PyResult<PyProjectionRuntimeStatus> {
+    let inner = Arc::clone(&engine.inner);
+    let status = call_engine(py, move || inner.read_projection_status())?;
+    Ok(PyProjectionRuntimeStatus::from_rust(&status))
+}
+
 #[pyfunction]
 #[pyo3(signature = (engine, logical_id, view = None))]
 fn read_get(
@@ -2632,8 +2709,11 @@ fn _fathomdb(py: Python<'_>, m: Bound<'_, PyModule>) -> PyResult<()> {
     // 0.8.20 Slice 15d — projection registry (R-20-PR).
     m.add_function(wrap_pyfunction!(configure_projections, &m)?)?;
     m.add_function(wrap_pyfunction!(read_projections, &m)?)?;
+    m.add_function(wrap_pyfunction!(read_projection_status, &m)?)?;
     m.add_class::<PyProjectionSpec>()?;
     m.add_class::<PyProjectionDelta>()?;
+    m.add_class::<PyProjectionRuntimeStatusEntry>()?;
+    m.add_class::<PyProjectionRuntimeStatus>()?;
     // Slice 30 — governed read.* native fns (G2/G3).
     m.add_function(wrap_pyfunction!(read_get, &m)?)?;
     m.add_function(wrap_pyfunction!(read_get_many, &m)?)?;

@@ -26,8 +26,9 @@ The full governed set is pinned by
 `src/conformance/governed-surface-allowlist.json`, which `test_surface.py`
 loads: the core five plus `engine.search_text_only`, `engine.embed`,
 `rerank`, the `read.*` namespace (`get`, `get_many`, `collection`,
-`mutations`, `list`, `crossed_boundary_since`, `projections`), the `graph.*`
-namespace (`neighbors`, `search_expand`), the BYO-LLM verbs
+`mutations`, `list`, `crossed_boundary_since`, `projections`,
+`projection_status`), the `graph.*` namespace (`neighbors`, `search_expand`),
+the BYO-LLM verbs
 (`engine.ingest_with_extractor`, `engine.consolidate_with_provider`),
 `engine.configure_projections`, and the lifecycle/erasure verbs below.
 
@@ -262,12 +263,15 @@ invalidated edge. Fields-only delta, **PROPOSED, NOT SIGNED**.
 
 ## Projection registry (0.8.20 Slice 15d, R-20-PR / C-1)
 
-Two net-new governed verbs declare and inspect projections over interpretive
-attributes. The verbs, the `ProjectionSpec` / `ProjectionRole` /
+The registry pair declares and inspects projections over interpretive
+attributes. Its verbs, the `ProjectionSpec` / `ProjectionRole` /
 `ProjectionDelta` types and the typed `ProjectionDestructiveError` are
 **HITL-SIGNED 2026-07-29 (steward `seq-157`)**. ⚠ The Slice-20 (R-20-DR)
-readiness field `vector_dense_readiness` is **NOT** part of that signature and
-remains **PROPOSED, NOT SIGNED**.
+readiness field `vector_dense_readiness` is **NOT** part of that `seq-157`
+signature. Its closed `DenseReadiness` vocabulary is separately
+**HITL-SIGNED 2026-08-07 (steward `seq-246`)** by Slice 21 F5/C1, with a
+  governed-surface signature. Caller input is accept-inert; Slice 21 runtime
+  selection emits `"unavailable"` when no usable dense runtime exists.
 
 - `engine.configure_projections(specs, drop=None)` → `ProjectionDelta`.
   Declarative, idempotent apply: the engine diffs `specs` against the durable
@@ -279,6 +283,24 @@ remains **PROPOSED, NOT SIGNED**.
   `ProjectionDelta(unchanged=True)`.
 - `read.projections(engine)` → `list[ProjectionSpec]`, sorted by name — the
   registry introspection (folded into `read.*`).
+- `read.projection_status(engine)` → `ProjectionRuntimeStatus` —
+  **HITL-SIGNED 2026-08-07 (steward `seq-247`)** C5 status read. It is a pure
+  facade over durable declarations and this open engine session's dense runtime;
+  it does not configure projections or schedule, wake, or drain work. It is not
+  a decorated `ProjectionSpec` or the internal lifecycle `ProjectionStatus`.
+
+`ProjectionRuntimeStatus` is a frozen record with
+`runtime_embedder_available`, `runtime_unavailability_reason`, `projections`,
+and `vector_unsupported_kinds`. The reason Literal is exactly
+`"none" | "no_runtime" | "vector_equivalence_disabled"`; `"none"` occurs
+exactly when the runtime is available. Each sorted
+`ProjectionRuntimeStatusEntry` has `name` and `dense_readiness`, whose Literal
+is exactly `"not_declared" | "unavailable" | "embedding" | "ready"`.
+`not_declared` means no effective vector arm (`searchable` plus a vector
+sub-object); a legacy non-searchable vector sub-object therefore remains
+`not_declared`. The other values are corpus-wide shared-pipeline facts, not
+per-projection progress. `vector_unsupported_kinds` is sorted/deduplicated and
+is `[]` unless an effective vector arm exists.
 
 `ProjectionSpec` (`fathomdb.types.ProjectionSpec`) is
 `{ name, roles: frozenset[str], fts, fts_tokenizer, vector, vector_embedder,
@@ -353,9 +375,10 @@ never be embedded" (permanent) both arrived as the same `deferred` entry.
 - **Residual — computed at DECLARE time.** A non-committable kind written *after*
   the call is not in a delta you already hold. To refresh, re-apply the same spec:
   an idempotent no-op that returns a current report.
-- **Not an error, not a readiness change.** Nothing is rejected and
-  `vector_dense_readiness` still reaches `"ready"` — an un-enrolled kind is not
-  outstanding work.
+- **Not an error, not a readiness change.** Nothing is rejected and, with a
+  usable dense runtime, `vector_dense_readiness` still reaches `"ready"` — an
+  un-enrolled kind is not outstanding work. Without a usable runtime, runtime
+  selection remains `"unavailable"`.
 
 ### `vector_dense_readiness` (0.8.20 Slice 20, R-20-DR)
 
@@ -366,16 +389,17 @@ that declares `vector=True`. `filterable` and `searchable→FTS` are
 same-transaction (non-stale on commit) so they have no readiness axis at all;
 `searchable→vector` is async and rebuild-durable, so it carries one.
 
-- **Exactly two spellings: `"ready"` and `"embedding"`.** `"pending"` is
+- **Exactly three spellings: `"unavailable"`, `"embedding"`, and `"ready"`.**
+  Their signed target meanings are no usable dense runtime (absent or
+  equivalence-refused), usable runtime with eligible outstanding work, and
+  usable quiescent work, respectively. `"pending"` is
   DELIBERATELY not one of them — that token is RESERVED for the orthogonal
-  **admission** axis (quarantine/trust, an app judgment). Index-readiness and
-  admission are different dimensions: a record can be admissible and still read
-  `"embedding"`. Do not reuse the word.
-- **Derived, never stored.** There is no schema step and no `SCHEMA_VERSION`
-  bump; the value is computed per `read.projections` call from outstanding
-  projection work (the same predicate `drain` uses), which is what makes
-  `{vector-insert ∧ readiness := ready}` atomic by construction — `"ready"` can
-  never be observed with the vector row absent.
+  **admission** axis (quarantine/trust, an app judgment). Do not reuse the word.
+- **Runtime selection.** `read.projections` first applies one usable-dense-
+  runtime predicate: no runtime or an equivalence refusal yields
+  `"unavailable"`. With a usable runtime it derives `"embedding"` /
+  `"ready"` from the shared outstanding-work predicate. This adds no schema
+  step or stored readiness field.
 - **Accept-inert on the way in.** Passing `vector_dense_readiness` to
   `engine.configure_projections` neither stores nor changes anything: it is not
   part of the declaration and the engine always reports the derived truth. That
@@ -388,8 +412,9 @@ same-transaction (non-stale on commit) so they have no readiness axis at all;
   never part of a declaration.
 - **Two shapes are still hard-rejected**, because they could never round-trip:
   a readiness supplied with `vector=False`, and any spelling outside
-  `{"ready", "embedding"}` (including `"pending"`, `""`, and `"Ready"`). Both
-  raise the EXISTING `InvalidArgumentError` — **no new error type is minted**.
+  `{"unavailable", "embedding", "ready"}` (including `"pending"`, `""`, and
+  `"Ready"`). Both raise the EXISTING `InvalidArgumentError` — **no new error
+  type is minted**.
   `None` is always accepted.
 - **Additive.** A caller who never reads the field sees identical behaviour, and
   the slice adds ZERO net-new governed commands.
@@ -401,8 +426,9 @@ There is **no `flush_embeddings()` verb**. The shipped
 TypeScript — carries those semantics, so the surface gains ZERO net-new governed
 commands. The pinned invariant, tested in Rust, Python and TypeScript:
 
-> `drain()` returning normally ⟹ `vector_dense_readiness == "ready"`, **and every
-> vector-eligible row has its vector row at rest.**
+> With a usable dense runtime, `drain()` returning normally ⟹
+> `vector_dense_readiness == "ready"`, **and every vector-eligible row has its
+> vector row at rest.**
 
 - **`drain` is a BARRIER, not a trigger.** It waits for the engine's projection
   runtime to go quiescent; it never schedules or wakes anything. Deferred/backfill
@@ -429,9 +455,10 @@ commands. The pinned invariant, tested in Rust, Python and TypeScript:
   `searchable→vector` declaration turns the dense arm on for node kinds in
   `{email, article, paper, meeting, note, todo, doc}`. Rows of ANY other `kind`
   are accepted and stay lexically searchable, but get **no vector** and are not
-  counted as outstanding work, so readiness still reaches `"ready"`. This is
-  **not** an error condition: `engine.write` does not reject them, no exception is
-  raised, and there is no verb to ask about it.
+  counted as outstanding work, so readiness reaches `"ready"` only with a usable
+  dense runtime. An absent or equivalence-refused runtime instead selects
+  `"unavailable"`. This is **not** an error condition: `engine.write` does not
+  reject them, no exception is raised, and there is no verb to ask about it.
 - **Idempotent.** Re-applying an already-satisfied declaration re-embeds nothing
   and returns `ProjectionDelta(unchanged=True)`.
 - **Dropping the last `searchable→vector` declaration turns the dense arm back
@@ -455,18 +482,19 @@ commands. The pinned invariant, tested in Rust, Python and TypeScript:
   projection to `filterable + vector`, or dropping it while an inert
   `filterable + vector` sibling survives, now un-enrols exactly as a literal drop
   does. The name is still reported in `deferred`.
-- **Graceful-absent without a live embedder:** the declaration persists and
-  defers, then grafts on when re-applied in a session that has one.
+- **Graceful-absent without a usable dense runtime:** the declaration persists
+  and defers. A later safe open atomically grafts eligible durable work after
+  identity and equivalence acceptance; idempotent re-apply remains a repair door.
 - **…but graceful-absent stops at the enrolment boundary** (fix-4). Once a kind
   IS enrolled — i.e. some earlier session DID have an embedder — writing that
   kind from a session opened with `use_default_embedder=False` leaves real dense
   work outstanding, and this session cannot satisfy it. The write is **accepted**
   and stays lexically searchable, but `vector_dense_readiness` reads
-  `"embedding"` and `drain` raises `SchedulerError` for the rest of that session,
-  however long you wait. It is **not** lost: no failure is recorded and no
-  terminal is written, so the next session opened WITH an embedder embeds it
-  through the ordinary scheduler — no re-apply, no operator `rebuild`. Expect the
-  timeout there and do not read it as data loss.
+  `"unavailable"` and `drain` raises `SchedulerError` for the rest of that
+  session, however long you wait. It is **not** lost: no failure is recorded and
+  no terminal is written, so the next session opened WITH an approved runtime
+  embeds it through the ordinary scheduler — no re-apply, no operator `rebuild`.
+  Expect the timeout there and do not read it as data loss.
 - **`drain` stays bounded** and raises the existing timeout error rather than
   blocking; size `timeout_s` for the backfill you just asked for.
 

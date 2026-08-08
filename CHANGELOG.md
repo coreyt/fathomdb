@@ -8,9 +8,13 @@ AC-050c) gates merges against this invariant.
 
 ## [Unreleased]
 
-(rolls into the next cut after 0.8.22.)
+### 0.8.22 release candidate — publication held
 
-## 0.8.22 — 2026-08-05
+This local candidate is not tagged or published. The tag, ordered platform
+publication, registry smokes, and `latest` promotion remain explicitly held.
+Move this section to a dated release heading only after those gates complete.
+
+Schema version **25 → 26**.
 
 ### Added
 
@@ -18,12 +22,19 @@ AC-050c) gates merges against this invariant.
   alongside the supported Linux glibc x64/ARM64 targets.
 - Actual-runner native build and registry-smoke coverage for the supported
   five-target matrix. Linux musl and Windows ARM/32-bit remain unsupported.
+- Projection-runtime status reads in Rust, Python, and TypeScript distinguish
+  durable declarations from this engine session's usable dense runtime.
 
 ### Changed
 
 - The npm main package is released under `next` before promotion to `latest`;
   promotion requires every platform registry smoke and co-tagging check.
 - Updated the SQLite stack to `rusqlite` 0.40 and `sqlite-vec` 0.1.9.
+- Ranked retrieval APIs default to 10 results and reject requested limits outside
+  1 through 100, while preserving the vector candidate fanout needed for deeper
+  K-ladder evaluation.
+- Canonical FTS hydration uses additive `write_cursor` join indexes for nodes
+  and edges.
 
 ### Removed
 
@@ -998,7 +1009,8 @@ Agent-memory enablement (G0–G12). See `docs/release-notes/0.8.0.md` (user) and
   (active-only point lookup by `logical_id`, request-order, partial) and
   `read.collection` / `read.mutations` (paginated op-store read-back,
   `ORDER BY id`, mandatory limit clamped to ~1M, exclusive `after_id` cursor).
-  Reads ride the reader-worker DEFERRED-tx path; never take the writer lock.
+  These four retrieval verbs ride the reader-worker DEFERRED-tx path; they never
+  take the writer lock.
 - **Hybrid retrieval.** `search` is the unconditional RRF fusion of the vector
   and FTS5 branches (G9); `search_filtered` adds an optional closed metadata
   filter (G10, unfiltered phase-1 SQL byte-identical to 0.7.2); a recency

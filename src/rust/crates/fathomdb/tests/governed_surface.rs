@@ -56,9 +56,9 @@ use std::any::type_name;
 /// NOT here (they are CLI-only ergonomic symbols, not runtime SDK surface — the
 /// Rust analogue of "recovery is CLI-only, not an SDK verb").
 ///
-/// 17 original + 7 added by Slices 20 (G5/G6) + 35 (G4):
-///   Slice 20/35: ComparisonOp, NodeRecord, Predicate, ScalarValue,
-///                SearchExpandResult, SearchFilter, TraversalDirection
+/// This list grows only with an explicitly signed governed facade contract.
+/// Slice 20/35 added `ComparisonOp`, `NodeRecord`, `Predicate`, `ScalarValue`,
+/// `SearchExpandResult`, `SearchFilter`, and `TraversalDirection`.
 const GOVERNED_SURFACE_ALLOWLIST: &[&str] = &[
     "Engine",
     "OpenedEngine",
@@ -105,6 +105,12 @@ const GOVERNED_SURFACE_ALLOWLIST: &[&str] = &[
     // `Engine::erase_source`, so it moved out of the operator-gated block.
     "SourceId",
     "ExciseReport",
+    // 0.8.22 Slice 22 C5 — pure projection-runtime status facade types.
+    // HITL-SIGNED 2026-08-07, steward seq-247.
+    "ProjectionRuntimeStatus",
+    "ProjectionRuntimeStatusEntry",
+    "ProjectionRuntimeUnavailabilityReason",
+    "ProjectionStatusDenseReadiness",
 ];
 
 /// The permanent five-name recovery denylist. Identical to the single shared
@@ -169,11 +175,16 @@ fn t_074_rust_governed_surface_resolves() {
     // HITL-SIGNED 2026-07-29, steward seq-157.
     let _ = type_name::<fathomdb::ReadView>();
     let _ = type_name::<fathomdb::BoundaryCrossing>();
+    // 0.8.22 Slice 22 C5 — projection-runtime status facade types.
+    let _ = type_name::<fathomdb::ProjectionRuntimeStatus>();
+    let _ = type_name::<fathomdb::ProjectionRuntimeStatusEntry>();
+    let _ = type_name::<fathomdb::ProjectionRuntimeUnavailabilityReason>();
+    let _ = type_name::<fathomdb::ProjectionStatusDenseReadiness>();
 
     assert_eq!(
         GOVERNED_SURFACE_ALLOWLIST.len(),
-        33,
-        "GOVERNED_SURFACE_ALLOWLIST must list exactly the 33 resolved governed types"
+        37,
+        "GOVERNED_SURFACE_ALLOWLIST must list exactly the 37 resolved governed types"
     );
 }
 

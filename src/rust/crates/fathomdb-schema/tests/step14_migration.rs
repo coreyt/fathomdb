@@ -120,8 +120,8 @@ fn s14_schema_version_is_14() {
     migrate_fresh(&conn);
     assert_eq!(user_version(&conn), SCHEMA_VERSION, "fresh migrate must reach head SCHEMA_VERSION");
     assert_eq!(
-        SCHEMA_VERSION, 25,
-        "SCHEMA_VERSION constant must be 25 (step-25 nested-source projection registry column, Slice 45)"
+        SCHEMA_VERSION, 26,
+        "SCHEMA_VERSION constant must be 26 (step-26 canonical FTS-hydration join indexes, Slice 19)"
     );
 }
 

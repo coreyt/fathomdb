@@ -1,5 +1,5 @@
 //! Asserts the `fathomdb` facade re-exports the **governed** typed surface owned
-//! by `dev/interfaces/rust.md` (the 17 always-present types). The 20
+//! by `dev/interfaces/rust.md`. The 20
 //! operator-seam re-exports are gated behind the `operator` feature and are
 //! resolved by `governed_surface.rs::t_074_operator_seam_resolves_with_feature`
 //! (Slice 27 fix-1).
@@ -25,4 +25,8 @@ fn re_exports_compile() {
     let _ = std::any::type_name::<fathomdb::SoftFallbackBranch>();
     let _ = std::any::type_name::<fathomdb::CounterSnapshot>();
     let _ = std::any::type_name::<fathomdb::Subscription>();
+    let _ = std::any::type_name::<fathomdb::ProjectionRuntimeStatus>();
+    let _ = std::any::type_name::<fathomdb::ProjectionRuntimeStatusEntry>();
+    let _ = std::any::type_name::<fathomdb::ProjectionRuntimeUnavailabilityReason>();
+    let _ = std::any::type_name::<fathomdb::ProjectionStatusDenseReadiness>();
 }

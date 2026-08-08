@@ -81,7 +81,7 @@ export interface NativeProjectionSpec {
   ftsTokenizer?: string | null;
   vector: boolean;
   vectorEmbedder?: string | null;
-  /** 0.8.20 Slice 20 (R-20-DR) — engine-set readiness ("ready"/"embedding"). */
+  /** Engine-set readiness: unavailable without a usable dense runtime. */
   vectorDenseReadiness?: string | null;
   /** 0.8.21 Slice 45 — declared literal body-member source path. */
   source?: string[] | null;
@@ -95,6 +95,20 @@ export interface NativeProjectionDelta {
   unchanged: boolean;
   // 0.8.20 Slice 22 (R-20-VC / TC-67) — node KINDS (not attribute names) the
   // vector writer can never commit. Empty, never absent.
+  vectorUnsupportedKinds: string[];
+}
+
+/** Native shape of the pure Slice 22 projection-status facade. */
+export interface NativeProjectionRuntimeStatusEntry {
+  name: string;
+  denseReadiness: string;
+}
+
+/** Native shape before the TypeScript wrapper narrows the closed wire unions. */
+export interface NativeProjectionRuntimeStatus {
+  runtimeEmbedderAvailable: boolean;
+  runtimeUnavailabilityReason: string;
+  projections: NativeProjectionRuntimeStatusEntry[];
   vectorUnsupportedKinds: string[];
 }
 
@@ -375,6 +389,7 @@ export interface NativeEngine {
     drop?: string[] | null,
   ): Promise<NativeProjectionDelta>;
   readProjections(): Promise<NativeProjectionSpec[]>;
+  readProjectionStatus(): Promise<NativeProjectionRuntimeStatus>;
   search(
     query: string,
     filter?: NativeSearchFilter,

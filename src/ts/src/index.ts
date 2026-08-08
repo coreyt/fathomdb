@@ -140,9 +140,11 @@ export interface ProjectionSpec {
   /** Literal canonical-body member path; omitted retains top-level `name`. */
   source?: string[] | null;
   /**
-   * 0.8.20 Slice 20 (R-20-DR) — **READ METADATA, engine-set.** `"ready"` or
-   * `"embedding"` when returned by `read.projections` for a spec with
-   * `vector: true`; `null` on every caller-authored spec.
+   * 0.8.22 Slice 21 F5 — **READ METADATA, engine-set.** The signed closed
+   * vocabulary is `"unavailable"` / `"embedding"` / `"ready"`; `null` is on
+   * every caller-authored spec. Caller input is accept-inert; on reads the
+   * engine selects `"unavailable"` when no usable dense runtime exists, or
+   * `"embedding"` / `"ready"` from the shared outstanding-work predicate.
    *
    * `filterable` / `searchable→FTS` are same-transaction (non-stale on commit)
    * so they carry no readiness; `searchable→vector` is async and
@@ -157,19 +159,21 @@ export interface ProjectionSpec {
    * Supplying it to `configureProjections` is INERT — it is not part of the
    * declaration and the engine always reports the derived truth — so
    * `read.projections` output still re-applies as a no-op. Supplying it with
-   * `vector: false`, or any spelling outside `{"ready", "embedding"}`, throws a
+   * `vector: false`, or any spelling outside
+   * `{"unavailable", "embedding", "ready"}`, throws a
    * typed `FDB_INVALID_ARGUMENT` (it could not round-trip).
    */
   vectorDenseReadiness?: DenseReadiness | null;
 }
 
 /**
- * 0.8.20 Slice 20 (R-20-DR) — the two engine-set readiness values of the
- * `searchable→vector` projection. Mirrors the Rust `DenseReadiness` and the
- * Python string literals. `"pending"` is deliberately absent — that token is
- * reserved for the orthogonal admission axis.
+ * 0.8.22 Slice 21 F5 — the signed, closed readiness vocabulary of the
+ * `searchable→vector` projection. It is engine-selected and accept-inert on
+ * caller input: `"unavailable"` means no usable dense runtime, while
+ * `"embedding"` / `"ready"` describe work under one. Mirrors Rust and Python;
+ * `"pending"` is deliberately absent because it is admission-only.
  */
-export type DenseReadiness = "ready" | "embedding";
+export type DenseReadiness = "unavailable" | "embedding" | "ready";
 
 /**
  * 0.8.20 Slice 15d (R-20-PR) — the diff `configureProjections` applied.
@@ -194,6 +198,39 @@ export interface ProjectionDelta {
    * after writing new kinds. Empty (never absent) when there is nothing to
    * report. Output-only — `configureProjections` accepts specs, not deltas.
    */
+  vectorUnsupportedKinds: string[];
+}
+
+/** Reason an open engine session has no usable dense runtime. */
+export type ProjectionRuntimeUnavailabilityReason =
+  | "none"
+  | "no_runtime"
+  | "vector_equivalence_disabled";
+
+/** Dense status for one declared projection in {@link ProjectionRuntimeStatus}. */
+export type ProjectionStatusDenseReadiness =
+  | "not_declared"
+  | "unavailable"
+  | "embedding"
+  | "ready";
+
+/** One declared projection's current dense status. */
+export interface ProjectionRuntimeStatusEntry {
+  name: string;
+  denseReadiness: ProjectionStatusDenseReadiness;
+}
+
+/**
+ * Pure current projection-runtime facts for an open {@link Engine}.
+ *
+ * This is not a configuration echo. `projections` contains every declaration
+ * in ascending name order. `vectorUnsupportedKinds` is empty unless a
+ * declaration has an effective `searchable→vector` arm.
+ */
+export interface ProjectionRuntimeStatus {
+  runtimeEmbedderAvailable: boolean;
+  runtimeUnavailabilityReason: ProjectionRuntimeUnavailabilityReason;
+  projections: ProjectionRuntimeStatusEntry[];
   vectorUnsupportedKinds: string[];
 }
 

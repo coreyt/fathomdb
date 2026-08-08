@@ -1,6 +1,8 @@
 # Operations
 
-Operations docs are public-facing operator guidance for the 0.8.20 surface.
+Operations docs cover the published 0.8.21 surface and the local, unpublished
+0.8.22 candidate. Candidate-only APIs are not available from a registry until
+the held release gates complete.
 
 - [Erasure](erasure.md) — what `erase_source` / `purge` guarantee, what they
   do not, the erasure-audit record, the non-PII `source_id` rule, and

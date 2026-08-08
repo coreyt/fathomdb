@@ -314,7 +314,7 @@ fn an_uncommittable_kind_is_reported_not_silently_dropped() {
     );
 
     // The report is additive READ metadata; nothing about it needs a schema step.
-    assert_eq!(SCHEMA_VERSION, 25, "Slice 45 adds the nested-source registry migration");
+    assert_eq!(SCHEMA_VERSION, 26, "Slice 19 adds canonical FTS-hydration join indexes");
 
     opened.engine.close().unwrap();
 }

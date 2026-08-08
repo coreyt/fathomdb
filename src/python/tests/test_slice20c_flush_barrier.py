@@ -39,7 +39,7 @@ import time
 import pytest
 
 from fathomdb import Engine, ProjectionRole, ProjectionSpec, read
-from fathomdb.errors import SchedulerError
+from fathomdb.errors import SchedulerError, StorageError
 
 _SOURCE_ID = "py-test:slice20c"
 _DRAIN_TIMEOUT_S = 120.0
@@ -320,11 +320,11 @@ def test_reapplying_a_satisfied_declaration_is_a_no_op(tmp_path) -> None:
 
 
 def test_declaration_without_a_live_embedder_defers_and_does_not_enrol(tmp_path) -> None:
-    """With ``use_default_embedder=False`` there is NO dense arm, so the
-    declaration persists and DEFERS (Q6a graceful-absent, exactly like
+    """With ``use_default_embedder=False`` there is no usable dense runtime.
+    The declaration persists and DEFERS (Q6a graceful-absent, exactly like
     ``rankable``) rather than queueing embeds that could only fail. It must not
-    enrol the kind, must not open an ``"embedding"`` window, and ``drain`` must
-    return promptly rather than burn its timeout.
+    enrol the kind, reports ``"unavailable"``, and ``drain`` returns promptly
+    rather than burn its timeout.
 
     This is the arm that runs with no network at all, so the parity harness still
     exercises the slice under ``FATHOMDB_SKIP_NETWORK_TESTS``.
@@ -335,11 +335,13 @@ def test_declaration_without_a_live_embedder_defers_and_does_not_enrol(tmp_path)
     try:
         engine.write([_node("N1", '{"summary":"a dense meaning"}')])
         engine.configure_projections([_vector_spec()])
-        assert _readiness(engine) == "ready", (
-            "no live embedder ⇒ no dense arm ⇒ nothing outstanding"
+        assert _readiness(engine) == "unavailable", (
+            "no live embedder makes the declared dense projection unavailable, even with no work"
         )
         engine.drain(timeout_s=5.0)
-        assert _readiness(engine) == "ready"
+        assert _readiness(engine) == "unavailable", (
+            "a no-runtime drain cannot establish dense readiness"
+        )
     finally:
         engine.close()
 
@@ -472,21 +474,18 @@ def test_a_kind_the_vector_writer_cannot_commit_gets_no_dense_arm(tmp_path) -> N
     ), "a kind with no dense arm is not a FAILURE — it must not pollute the failure audit"
 
 
-def test_late_enrolment_backfills_rows_a_no_embedder_session_stranded(tmp_path) -> None:
-    """fix-2 (codex §9 [P2]) — a LATE enrolment owes the same backfill.
+def test_boot_graft_backfills_rows_a_no_embedder_session_stranded(tmp_path) -> None:
+    """Slice 21 — a BOOT GRAFT repairs a durable declaration's stranded rows.
 
     A database persists a ``searchable→vector`` declaration while opened WITHOUT
-    an embedder (it defers, enrolling nothing), then reopens WITH one and writes
-    the same kind BEFORE re-applying the projection. The write enrols the kind —
-    and used to enqueue only its OWN row, leaving every row from the no-embedder
-    session holding a permanent terminal with no vector. After the flush,
-    readiness reported ``"ready"`` with pre-existing vector-eligible rows
-    unembedded: a FALSE READY, the exact defect class R-20-DR exists to
-    eliminate.
+    an embedder (it defers, enrolling nothing), then reopens WITH one. The boot
+    graft enrols the kind and repairs those rows DURING open, before an ordinary
+    write. Without that repair, the no-embedder rows retain permanent terminals
+    with no vector and later ``drain`` can report ``"ready"``: a FALSE READY.
     """
 
     _skip_if_no_network()
-    path = str(tmp_path / "flush_late_enrol_backfill.sqlite")
+    path = str(tmp_path / "flush_boot_graft_backfill.sqlite")
 
     # ---- session 1: no embedder. The declaration persists and DEFERS. ----
     engine = Engine.open(path, use_default_embedder=False)
@@ -505,11 +504,13 @@ def test_late_enrolment_backfills_rows_a_no_embedder_session_stranded(tmp_path) 
         engine.close()
 
     # ---- session 2: SAME database, now WITH an embedder. The projection is NOT
-    # re-applied — the WRITE is what turns the dense arm on. ----
+    # re-applied: the boot graft repairs it during open, before an ordinary write.
     engine = Engine.open(path, use_default_embedder=True)
     try:
+        assert _vector_kind_registered(path), (
+            "the boot graft enrols the kind during open before ordinary writes continue"
+        )
         engine.write([_node("N3", '{"summary":"written before re-applying"}')])
-        assert _vector_kind_registered(path), "the write LATE-ENROLLED the kind"
         engine.drain(timeout_s=_DRAIN_TIMEOUT_S)
         assert _readiness(engine) == "ready"
     finally:
@@ -539,11 +540,10 @@ def test_a_no_embedder_session_leaves_an_enrolled_kinds_write_recoverable(tmp_pa
     the whole recovery path.
 
     The CONSUMER-VISIBLE consequence is asserted here on purpose, so it cannot
-    change back silently: while the row is outstanding and this session cannot
-    satisfy it, readiness reads ``"embedding"`` and ``drain`` raises
-    ``SchedulerError``. That is what design-of-record §4.1 invariant 1 demands
-    (the ONLY tolerable torn state is ``embedding`` with the vector absent) and
-    it is LOUD rather than silent.
+    change back silently: with no usable dense runtime, readiness reads
+    ``"unavailable"`` regardless of outstanding work. The pending row remains
+    recoverable and ``drain`` raises ``SchedulerError`` rather than recording a
+    failed terminal.
     """
 
     _skip_if_no_network()
@@ -587,9 +587,9 @@ def test_a_no_embedder_session_leaves_an_enrolled_kinds_write_recoverable(tmp_pa
         # is never dispatched, so this is dead time and nothing changes across it.
         time.sleep(_LADDER_SETTLE_S)
 
-        assert _readiness(engine) == "embedding", (
-            "§4.1 invariant 1: readiness must never read `ready` for an ENROLLED row that has "
-            "no vector"
+        assert _readiness(engine) == "unavailable", (
+            "an absent runtime is unavailable even when an enrolled row remains recoverably "
+            "pending"
         )
 
         c2 = _active_cursor(path, "N2")
@@ -624,8 +624,8 @@ def test_a_no_embedder_session_leaves_an_enrolled_kinds_write_recoverable(tmp_pa
 
 
 # ---------------------------------------------------------------------------
-# fix-5 (codex §9 round 4) — the scheduler's SCAN WINDOW, and the ATOMICITY of a
-# late enrolment
+# fix-5 (codex §9 round 4) — the scheduler's SCAN WINDOW, and BOOT-GRAFT
+# ATOMICITY
 # ---------------------------------------------------------------------------
 
 # `PROJECTION_SCAN_FETCH`, restated: the engine's dispatcher fetches at most
@@ -761,18 +761,17 @@ def test_a_pending_edge_body_survives_a_full_scan_window_of_node_rows(tmp_path) 
         engine.close()
 
 
-def test_a_late_enrolment_whose_repair_fails_registers_nothing(tmp_path) -> None:
-    """fix-5 (codex §9 round 4 [P2]) — the late-enrolment registry INSERT and the
+def test_a_boot_graft_whose_repair_fails_registers_nothing(tmp_path) -> None:
+    """fix-5 (codex §9 round 4 [P2]) — the boot-graft registry INSERT and the
     un-stranding it owes must commit as ONE transaction.
 
-    A late enrolment registers the kind in ``_fathomdb_vector_kinds`` AND repairs
+    Safe boot graft registers the kind in ``_fathomdb_vector_kinds`` AND repairs
     the rows that kind stranded (delete their ``'up_to_date'`` terminals, rewind
-    the watermark). While the INSERT autocommitted ahead of the repair's own
-    transaction, a failure in between left the kind REGISTERED with older rows
-    still holding their terminals and no vectors. That state is SELF-SEALING: the
-    kind is now registered, so every later write skips the enrolment path and
-    therefore skips the repair, while readiness reads ``"ready"`` for rows nothing
-    will ever embed.
+    the watermark). If the INSERT committed ahead of the repair's transaction, a
+    failure in between would leave the kind REGISTERED with older rows still
+    holding their terminals and no vectors. That state is SELF-SEALING: later
+    opens see the kind as registered and skip the graft, while the stranded rows
+    remain invisible to recovery.
 
     The failure is injected as a real SQLite ``BEFORE DELETE`` trigger on
     ``_fathomdb_projection_terminal`` — the repair genuinely fails, against a real
@@ -807,21 +806,21 @@ def test_a_late_enrolment_whose_repair_fails_registers_nothing(tmp_path) -> None
     finally:
         conn.close()
 
-    # ---- session B: WITH an embedder. The write triggers the LATE enrolment,
-    # whose repair now fails. ----
-    engine = Engine.open(path, use_default_embedder=True)
-    try:
-        with pytest.raises(Exception):
-            engine.write([_node("N3", '{"summary":"the late write"}')])
-        assert not _vector_kind_registered(path), (
-            "TORN LATE ENROLMENT: the registry INSERT committed while the un-stranding it owes "
-            "did not. `_fathomdb_vector_kinds` now holds `doc` with N1/N2 still carrying "
-            "`'up_to_date'` terminals and no vectors — and because the kind is now registered, "
-            "every future write SKIPS the enrolment path and therefore skips the repair. The "
-            "registry insert and the terminal/cursor repair must commit as ONE transaction"
-        )
-    finally:
-        engine.close()
+    # ---- session B: WITH an embedder. Slice 21's boot graft repairs during
+    # ``open``, before an Engine exists to close; the injected terminal delete
+    # must make that open fail without leaving a registered kind behind. ----
+    with pytest.raises(
+        StorageError,
+        match="could not graft declared vector projection on boot",
+    ):
+        Engine.open(path, use_default_embedder=True)
+    assert not _vector_kind_registered(path), (
+        "TORN BOOT GRAFT: the registry INSERT committed while the un-stranding it owes did not. "
+        "`_fathomdb_vector_kinds` would then hold `doc` with N1/N2 still carrying "
+        "`'up_to_date'` terminals and no vectors, preventing every later boot graft from "
+        "repairing them. The registry insert and terminal/cursor repair must commit as one "
+        "transaction"
+    )
 
     conn = sqlite3.connect(path)
     try:
@@ -829,10 +828,14 @@ def test_a_late_enrolment_whose_repair_fails_registers_nothing(tmp_path) -> None
     finally:
         conn.close()
 
-    # ---- session C: one ordinary write must now enrol AND un-strand, because
-    # nothing was left half-done behind it. No re-apply, no operator rebuild. ----
+    # ---- session C: ordinary open/write/drain now recovers through the boot
+    # graft, because the failed open left no partial registration behind it. No
+    # re-apply or operator rebuild. ----
     engine = Engine.open(path, use_default_embedder=True)
     try:
+        assert _vector_kind_registered(path), (
+            "the unblocked boot graft registers the kind before ordinary writes continue"
+        )
         engine.write([_node("N4", '{"summary":"the healing write"}')])
         engine.drain(timeout_s=_DRAIN_TIMEOUT_S)
         assert _readiness(engine) == "ready"
@@ -840,8 +843,8 @@ def test_a_late_enrolment_whose_repair_fails_registers_nothing(tmp_path) -> None
         engine.close()
 
     assert _leaf_rows_without_vectors(path) == 0, (
-        "SELF-SEALED FALSE READY: `drain()` returned and readiness reads \"ready\", but the rows "
-        "the torn enrolment stranded still have no vector at rest. The torn state is invisible "
+        "SELF-SEALED FALSE READY: `drain()` returned and readiness reads \"ready\", but rows "
+        "stranded by the torn boot graft still have no vector at rest. The torn state is invisible "
         "to every later write precisely BECAUSE the kind is already registered — which is why "
         "the two statements have to be atomic"
     )

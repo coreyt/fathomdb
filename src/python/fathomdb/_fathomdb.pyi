@@ -7,7 +7,12 @@ Hand-maintained — keep in sync with the binding's `#[pyclass]` /
 
 from typing import Any, Iterable
 
-from fathomdb.types import EmbedderEvent
+from fathomdb.types import (
+    DenseReadiness,
+    EmbedderEvent,
+    ProjectionRuntimeUnavailabilityReason,
+    ProjectionStatusDenseReadiness,
+)
 
 class WriteReceipt:
     cursor: int
@@ -333,8 +338,9 @@ class ProjectionSpec:
     fts_tokenizer: str | None
     vector: bool
     vector_embedder: str | None
-    # 0.8.20 Slice 20 (R-20-DR) — engine-set READ METADATA ("ready"/"embedding").
-    vector_dense_readiness: str | None
+    # Engine-set READ METADATA: unavailable without a usable dense runtime;
+    # otherwise embedding or ready according to outstanding projection work.
+    vector_dense_readiness: DenseReadiness | None
     source: list[str] | None
     def __init__(
         self,
@@ -344,7 +350,7 @@ class ProjectionSpec:
         fts_tokenizer: str | None = ...,
         vector: bool = ...,
         vector_embedder: str | None = ...,
-        vector_dense_readiness: str | None = ...,
+        vector_dense_readiness: DenseReadiness | None = ...,
         source: list[str] | None = ...,
     ) -> None: ...
 
@@ -357,10 +363,21 @@ class ProjectionDelta:
     # vector writer can never commit. Empty, never absent.
     vector_unsupported_kinds: list[str]
 
+class ProjectionRuntimeStatusEntry:
+    name: str
+    dense_readiness: ProjectionStatusDenseReadiness
+
+class ProjectionRuntimeStatus:
+    runtime_embedder_available: bool
+    runtime_unavailability_reason: ProjectionRuntimeUnavailabilityReason
+    projections: list[ProjectionRuntimeStatusEntry]
+    vector_unsupported_kinds: list[str]
+
 def configure_projections(
     engine: Engine, specs: list[ProjectionSpec], drop: list[str] | None = ...
 ) -> ProjectionDelta: ...
 def read_projections(engine: Engine) -> list[ProjectionSpec]: ...
+def read_projection_status(engine: Engine) -> ProjectionRuntimeStatus: ...
 def read_get(
     engine: Engine, logical_id: str, view: ReadView | None = None
 ) -> NodeRecord | None: ...

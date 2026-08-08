@@ -3,10 +3,15 @@
 Module: `fathomdb`. Authoritative spec:
 [`dev/interfaces/python.md`](https://github.com/coreyt/fathomdb/blob/main/dev/interfaces/python.md).
 
+> **Release state.** 0.8.21 is the current published release. This reference
+> also documents the local 0.8.22 candidate; its candidate-only APIs are not
+> available from a registry until the held release gates complete.
+
 ## Top-level
 
 ```python
 from fathomdb import (
+    DenseReadiness,
     Engine,
     EngineConfig,
     IdSpace,
@@ -14,7 +19,11 @@ from fathomdb import (
     OpStoreRow,
     ProjectionDelta,
     ProjectionRole,
+    ProjectionRuntimeStatus,
+    ProjectionRuntimeStatusEntry,
+    ProjectionRuntimeUnavailabilityReason,
     ProjectionSpec,
+    ProjectionStatusDenseReadiness,
     SearchFilter,
     SearchHit,
     SearchResult,
@@ -304,15 +313,18 @@ receipt = admin.configure(engine, name="my-schema", body=schema_json)
 Submit an admin schema configuration. The writer thread applies
 it; the returned cursor places the apply in the global write order.
 
-## `read.*` — governed read verbs (Slice 30 / G2 + G3)
+## `read.*` — governed read verbs (including 0.8.22 Slice 22)
 
 ```python
 from fathomdb import read
 ```
 
-The `read.*` namespace exposes the governed retrieval verbs. Every read rides
-the engine's **ReaderWorkerPool DEFERRED-tx snapshot path** — never the writer
-lock — preserving single-writer isolation.
+The retrieval verbs below use the engine's **ReaderWorkerPool DEFERRED-tx
+snapshot path**, preserving single-writer isolation. `read.projections` and
+`read.projection_status` are different: they are pure introspection queries
+through the ordinarily opened engine and may briefly take its connection lock.
+They do not configure, write, or schedule work, but do not promise a separately
+opened read-only SQLite mode.
 
 ### `read.get(engine, logical_id: str) -> NodeRecord | None`
 
@@ -371,6 +383,60 @@ open_high = read.list(engine, "task", predicates=[
 ])
 ```
 
+### Projection registry and derived readiness
+
+`engine.configure_projections(specs, drop=None) -> ProjectionDelta` declares
+the durable projection registry. It is idempotent: omitting a live declaration
+does not delete it, while an explicit destructive change requires its name in
+`drop`. `read.projections(engine) -> list[ProjectionSpec]` returns those
+durable declarations in name order.
+
+For an effective vector declaration, the returned
+`ProjectionSpec.vector_dense_readiness: DenseReadiness | None` is engine-set
+read metadata, never part of configuration. Supplying a valid readiness value
+with `vector=True` to `configure_projections` is accepted but inert, so a result
+from `read.projections` can be configured again as a no-op; an invalid spelling
+or a readiness with `vector=False` is rejected. With no usable dense runtime
+(including an equivalence refusal), the engine reports `"unavailable"`.
+With a usable runtime it reports `"embedding"` while eligible shared work is
+outstanding; after `engine.drain(...)` completes and no further work is issued,
+it reports `"ready"`. `DenseReadiness` is exactly `"unavailable" |
+"embedding" | "ready"`.
+
+### `read.projection_status(engine) -> ProjectionRuntimeStatus`
+
+Read the current projection-runtime status without configuring projections or
+changing the registry, storage, scheduler, or work queue. It is a status facade,
+not a decorated `ProjectionSpec` and not a per-projection completion report.
+It may briefly take the ordinarily opened engine connection lock; it is not a
+ReaderWorkerPool request and does not promise a separate read-only SQLite
+connection.
+
+The frozen result has these fields:
+
+```python
+ProjectionRuntimeStatus(
+    runtime_embedder_available: bool,
+    runtime_unavailability_reason: (
+        "none" | "no_runtime" | "vector_equivalence_disabled"
+    ),
+    projections: tuple[ProjectionRuntimeStatusEntry, ...],
+    vector_unsupported_kinds: tuple[str, ...],
+)
+ProjectionRuntimeStatusEntry(
+    name: str,
+    dense_readiness: "not_declared" | "unavailable" | "embedding" | "ready",
+)
+```
+
+`"none"` is returned exactly when `runtime_embedder_available` is true.
+Entries are sorted by name. `"not_declared"` means the declaration has no
+effective vector arm (it needs both `searchable` and a vector sub-object), so a
+legacy non-searchable vector sub-object remains `"not_declared"`. The other
+readiness values are corpus-wide shared-pipeline facts and can repeat across
+effective vector declarations. `vector_unsupported_kinds` is sorted and
+deduplicated; it is `()` when no effective vector arm exists.
+
 ## `graph.*` — graph traversal (Slice 20 / G5 + G6)
 
 ```python
@@ -378,8 +444,9 @@ from fathomdb import graph
 ```
 
 The `graph.*` namespace exposes bounded BFS traversal and hybrid
-search-plus-expansion. All reads ride the same **ReaderWorkerPool
-DEFERRED-tx snapshot path** as `read.*`.
+search-plus-expansion. Its reads ride the same **ReaderWorkerPool DEFERRED-tx
+snapshot path** as the retrieval verbs in `read.*`; projection introspection
+uses the ordinarily opened engine connection instead.
 
 ### `graph.neighbors(engine, logical_id, depth, direction="both") -> list[NodeRecord]`
 
@@ -538,6 +605,7 @@ class SearchFilter:
     kind: str | None = None
     created_after: int | None = None   # created_at >= bound (unix seconds)
     status: str | None = None
+    attributes: tuple[tuple[str, str], ...] = ()
 ```
 
 G10 — a **closed** metadata filter (not an open DSL) for `engine.search`. Each
@@ -547,6 +615,9 @@ unfiltered path (byte-identical to the pre-filter query). `status` filters the
 vec0 `status` column, which ships an **empty-string sentinel only** (no real
 population source yet — vec0 TEXT metadata is not NULL-able), so a
 `status="open"`-style filter prunes every row until a population slice lands.
+`attributes` is ordered AND equality over declared `filterable` projections;
+its values are canonical text, so projected string `"1"` and number `1` both
+match `"1"`.
 
 ### `SoftFallback`
 

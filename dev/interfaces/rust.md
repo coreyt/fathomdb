@@ -64,9 +64,12 @@ which binds AC-074 — not a new AC id):
   projection-registry types `ProjectionSpec`, `ProjectionRole` and
   `ProjectionDelta` are **HITL-SIGNED 2026-07-29 (steward `seq-157`)** — the
   signed delta names exactly those three. Their sub-object types
-  `ProjectionFts` and `ProjectionVector`, and the 0.8.20 Slice 20 (R-20-DR)
-  readiness enum `DenseReadiness`, are **PROPOSED, NOT SIGNED**: none of the
-  three appears in `src/conformance/governed-surface-allowlist.json`.
+  `ProjectionFts` and `ProjectionVector` are not members of that `seq-157`
+  governed-command signature. `DenseReadiness`'s closed vocabulary is instead
+  **HITL-SIGNED 2026-08-07 (steward `seq-246`)** by the F5/C1 record and its
+  governed-surface signature. Caller input is accept-inert; Slice 21 runtime
+  selection makes `read_projections` select `Unavailable` for a no-usable-
+  runtime session.
   See § "Projection registry" below. The recovery /
   integrity / dump operator-seam report types in § "Recovery / operator seam
   re-exports" are deliberately **excluded** from this allowlist — they are
@@ -198,6 +201,7 @@ DEFAULT facade, not behind the `operator` feature.
 
 - `Engine::configure_projections(...) -> Result<ProjectionDelta, EngineError>`
 - `Engine::read_projections() -> Result<Vec<ProjectionSpec>, EngineError>`
+- `Engine::read_projection_status() -> Result<ProjectionRuntimeStatus, EngineError>`
 
 See § "Projection registry" below.
 
@@ -462,14 +466,17 @@ commands (`configure_projections`, `read.projections`), the types
 (it mints at Slice 40); the signature is pinned to that file's content, so any
 diff re-opens the gate (T1e pin).
 
-⚠ **`ProjectionFts`, `ProjectionVector` and `DenseReadiness` are NOT part of
-that signature** — none appears in the allowlist. They remain **PROPOSED, NOT
-SIGNED**.
+⚠ **`ProjectionFts` and `ProjectionVector` are NOT part of that `seq-157`
+signature** — neither appears in the allowlist. `DenseReadiness` is separately
+**HITL-SIGNED 2026-08-07 (steward `seq-246`)** by Slice 21 F5/C1; this signs its
+closed vocabulary and no new command. Slice 21's runtime implementation now
+selects `Unavailable` when no usable dense runtime exists.
 
-Two net-new governed methods on `Engine` declare and inspect projections over
-interpretive attributes. The facade re-exports the five supporting
-`Projection*` types — plus `DenseReadiness` since 0.8.20 Slice 20 (R-20-DR) —
-all part of the public Rust surface:
+The registry pair declares and inspects projections over interpretive
+attributes. The Slice-22 C5 read separately reports current dense runtime
+status. The facade re-exports the five supporting `Projection*` types — plus
+`DenseReadiness` since 0.8.20 Slice 20 (R-20-DR) — all part of the public Rust
+surface:
 
 - `Engine::configure_projections(specs: &[ProjectionSpec], drop: &[String]) ->
   Result<ProjectionDelta, EngineError>` — declarative, idempotent apply: the
@@ -486,6 +493,30 @@ all part of the public Rust surface:
   name. Pure read; never mutates. Since 0.8.20 Slice 20 (R-20-DR) it is also the
   surface that populates the engine-set `ProjectionVector::dense_readiness`
   READ METADATA (derived on the way out; see below).
+- `Engine::read_projection_status() -> Result<ProjectionRuntimeStatus,
+  EngineError>` — **HITL-SIGNED 2026-08-07 (steward `seq-247`)** C5 status
+  read. It is a separate, pure facade over the durable declaration registry and
+  this open session's dense-runtime facts; it neither configures projections nor
+  schedules, wakes, or drains projection work. Its result is not a decorated
+  `ProjectionSpec` or the internal lifecycle `ProjectionStatus`.
+
+`ProjectionRuntimeStatus` has `runtime_embedder_available`, its closed
+`ProjectionRuntimeUnavailabilityReason` (`"none" | "no_runtime" |
+"vector_equivalence_disabled"`), sorted `ProjectionRuntimeStatusEntry` values,
+and sorted/deduplicated `vector_unsupported_kinds`. Each entry has its name and
+closed `ProjectionStatusDenseReadiness` (`"not_declared" | "unavailable" |
+"embedding" | "ready"`). `not_declared` means the stored declaration has no
+effective vector arm — exactly `StoredProjection::wants_vector`, so a legacy
+non-searchable vector sub-object remains `not_declared`. The other readiness
+states are corpus-wide shared-pipeline facts and therefore can repeat across
+effective vector declarations; they do not assert per-projection progress.
+`vector_unsupported_kinds` is `[]` unless an effective vector arm exists.
+
+The C5 facade types are also public Rust surface:
+`ProjectionRuntimeStatus`, `ProjectionRuntimeStatusEntry`,
+`ProjectionRuntimeUnavailabilityReason`, and
+`ProjectionStatusDenseReadiness`. They are deliberately distinct from the
+internal lifecycle `ProjectionStatus` enum.
 
 Types:
 
@@ -501,10 +532,12 @@ Types:
   `searchable→FTS` / `searchable→vector` sub-target selectors (`None` embedder ⇒
   engine default). `dense_readiness` was added additively by 0.8.20 Slice 20
   (R-20-DR); see below.
-- `DenseReadiness` — a two-variant enum, `Ready` and `Embedding`, with
-  `as_str` / `from_str_opt` giving the `"ready" | "embedding"` wire spellings.
-  0.8.20 Slice 20 (R-20-DR), **PROPOSED, NOT SIGNED**; the only net-new type in
-  that slice, which adds ZERO net-new governed commands.
+- `DenseReadiness` — a three-variant enum, `Unavailable`, `Embedding`, and
+  `Ready`, with `as_str` / `from_str_opt` giving the
+  `"unavailable" | "embedding" | "ready"` wire spellings. Slice 21's F5/C1
+  ruling (`steward-ledger` seq-246) signs the vocabulary without adding a
+  governed command. Caller input accepts the spelling inertly; reads select
+  `Unavailable` when the session has no usable dense runtime.
 - `ProjectionDelta { built, dropped, deferred, unchanged, vector_unsupported_kinds }`.
   Cheap roles (`filterable`, `searchable→FTS`) build same-transaction; `rankable`
   and the `searchable→vector` sub-target are persisted-but-deferred (reported in
@@ -532,9 +565,10 @@ Types:
   - **Residual — it is computed at DECLARE time.** A non-committable kind written
     *after* the call is not in a delta the caller already holds. To refresh it,
     re-apply the same spec: an idempotent no-op that returns a current report.
-  - It is **not an error and not a readiness change**: readiness still reaches
-    `Ready` (see the enrolment bullet below), nothing is rejected, and no
-    `projection_failures` row is written.
+  - It is **not an error and not a readiness change**: with a usable dense
+    runtime, readiness still reaches `Ready` (see the enrolment bullet below),
+    nothing is rejected, and no `projection_failures` row is written. Without
+    a usable runtime, runtime selection remains `Unavailable`.
 
 **Spec-validation reject — an `fts`/`vector` sub-object REQUIRES the `searchable`
 role (0.8.20 Slice 23, `R-20-SV`).** ⚠ **BREAKING.**
@@ -589,20 +623,19 @@ for a spec that declares the `searchable→vector` sub-object; `filterable` and
 `searchable→FTS` are same-transaction (non-stale on commit) and have no readiness
 axis. It is `None` on every caller-authored spec.
 
-- **`DenseReadiness` has exactly two variants**, `Ready` and `Embedding`, wire
-  spellings `"ready"` / `"embedding"`. **`pending` is RESERVED for the orthogonal
-  ADMISSION axis** (quarantine/trust — an app judgment) and is deliberately never
-  an index-readiness value: a record can be `active ∧ is_latest ∧ admissible` and
-  still read `Embedding`. `from_str_opt("pending")` is `None`.
-- **DERIVED, never stored.** No schema step, no `MIGRATIONS` change,
-  `SCHEMA_VERSION` stays 24. The value is computed on the way out of
-  `read_projections` from the same outstanding-work predicate `drain` /
-  `wait_for_idle` use, so "readiness is `Ready`" and "`drain` reports idle" cannot
-  disagree. That is what makes `{ vector-insert ∧ readiness := ready }` atomic BY
-  CONSTRUCTION: `Ready` can never be observed with the vector row absent (only the
-  tolerated torn state — `Embedding` with the vector absent — is reachable). The
-  predicate is corpus-wide rather than per-attribute while Slice 15d still defers
-  per-attribute embedding.
+- **`DenseReadiness` has exactly three variants**, `Unavailable`, `Embedding`,
+  and `Ready`, wire spellings `"unavailable"` / `"embedding"` / `"ready"`.
+  The signed target meaning is: `Unavailable` for no usable dense runtime
+  (absent or equivalence-refused), `Embedding` for a usable runtime with
+  eligible outstanding work, and `Ready` for usable, quiescent work.
+  **`pending` is RESERVED for the orthogonal ADMISSION axis** (quarantine/trust
+  — an app judgment) and is deliberately never an index-readiness value.
+  `from_str_opt("pending")` is `None`.
+- **Runtime selection.** `read_projections` first applies one
+  usable-dense-runtime predicate: no runtime or an equivalence refusal yields
+  `Unavailable`. With a usable runtime it derives `Embedding` / `Ready` from
+  the shared outstanding-work predicate. This adds no schema step or stored
+  readiness field.
 - **ACCEPT-INERT on the way in.** `Engine::configure_projections` neither stores
   nor honours a caller-supplied `dense_readiness` (`StoredProjection::from_spec`
   reads only `embedder`), so `read_projections` output re-applies as a no-op —
@@ -616,12 +649,14 @@ axis. It is `None` on every caller-authored spec.
   declaration, and the round-trip it protects is still live.
 - **The BINDINGS hard-reject** the two shapes that could never round-trip: a
   readiness supplied with `vector = false`, and any spelling outside
-  `{ready, embedding}` (notably `pending`, and the empty string). Both reuse the
+  `{unavailable, embedding, ready}` (notably `pending`, and the empty string).
+  Both reuse the
   EXISTING `EngineError::InvalidArgument` / `InvalidArgumentError` /
   `FDB_INVALID_ARGUMENT` — **no new error type is minted.** A declared readiness
   never changes what the engine reports.
 - **Additive.** Callers who never look at readiness see identical behaviour.
-  **PROPOSED, NOT SIGNED.**
+  The vocabulary is **HITL-SIGNED 2026-08-07 (steward `seq-246`)**; runtime
+  selection is derived rather than durable.
 
 **`drain` is the flush-to-readiness barrier (0.8.20 Slice 20c, R-20-DR /
 `api-surface.md` C4).** There is **no `flush_embeddings()` verb** — the shipped
@@ -629,7 +664,8 @@ axis. It is `None` on every caller-authored spec.
 net-new governed commands (TC-55 = INSTRUMENTATION). The pinned invariant, tested
 in Rust, Python and TypeScript:
 
-> `drain(timeout)` returning `Ok(())` ⟹ `dense_readiness == Ready`,
+> With a usable dense runtime, `drain(timeout)` returning `Ok(())` ⟹
+> `dense_readiness == Ready`,
 > **and every vector-eligible row has its vector row at rest.**
 
 - **`drain` is a BARRIER, not a trigger.** It waits for the projection runtime to
@@ -651,8 +687,10 @@ in Rust, Python and TypeScript:
   `{email, article, paper, meeting, note, todo, doc}` (plus the engine-internal
   `edge_fact` for edge bodies). Rows of ANY other `kind` are accepted and stay
   lexically searchable, but get **no vector** and are not counted as outstanding
-  work, so readiness still reaches `Ready`. This is **not** an error condition:
-  the write is not rejected and no typed error is raised.
+  work, so readiness reaches `Ready` only with a usable dense runtime. An
+  absent or equivalence-refused runtime instead selects `Unavailable`. This is
+  **not** an error condition: the write is not rejected and no typed error is
+  raised.
   **Since 0.8.20 Slice 22 (`TC-67`) it is no longer silent, either:** the excluded
   kinds are named in `ProjectionDelta::vector_unsupported_kinds`. Only the
   reporting changed — the exclusion, the readiness semantics and the absence of an
@@ -682,23 +720,22 @@ in Rust, Python and TypeScript:
   drop does. `ProjectionDelta.deferred` still reports the stored-but-unbuilt
   `vector` sub-object however it was declared — the change is to what the engine
   DOES, not to what it reports.
-- **Graceful-absent without a live embedder.** Opened with `EmbedderChoice::None`
-  there is no dense arm, so the declaration persists and DEFERS rather than
-  queueing embeds that could only fail; it **grafts on** when the same spec is
-  re-applied in a session that has an embedder — the same Q6a contract as
-  `rankable`.
+- **Graceful-absent without a usable dense runtime.** The declaration persists
+  and DEFERS rather than queueing unsafe work. A later safe open atomically
+  grafts eligible durable work after identity and equivalence acceptance;
+  idempotent re-apply remains a repair door.
 - **…but graceful-absent stops at the enrolment boundary** (fix-4). Once a kind
   IS enrolled — i.e. some earlier session DID have an embedder — a write of that
-  kind is dense work the workspace has committed to, and a session with no
-  embedder cannot make it go away. Such a write is **accepted** and stays
+  kind is dense work the workspace has committed to, and a session with no usable
+  dense runtime cannot make it go away. Such a write is **accepted** and stays
   lexically searchable, but it stays **outstanding**: `dense_readiness` reads
-  `Embedding` and `drain` returns `EngineError::Scheduler` for the rest of that
+  `Unavailable` and `drain` returns `EngineError::Scheduler` for the rest of that
   session, however long you wait. It is **not** lost — no failure is recorded and
-  no terminal is written, so the next session opened WITH an embedder embeds it
-  through the ordinary scheduler, with no re-apply and no operator `rebuild`.
-  Callers who write to an enrolled corpus without an embedder should therefore
-  expect `drain` to time out and should not treat that as data loss. (Reporting
-  `Ready` there instead would be a torn `ready`-without-vector — the silent miss
+  no terminal is written, so the next session opened WITH an approved runtime
+  embeds it through the ordinary scheduler, with no re-apply and no operator
+  `rebuild`. Callers who write to an enrolled corpus without a usable runtime
+  should therefore expect `drain` to time out and should not treat that as data
+  loss. (Reporting `Ready` there instead would be a torn `ready`-without-vector — the silent miss
   this slice exists to eliminate.)
 - **`drain` remains bounded**, returning the typed timeout error rather than
   blocking; a caller sizes `timeout_ms` for the backfill it just asked for.

@@ -39,6 +39,7 @@ omitted (or all-empty) filter is the unfiltered path.
 | `kind`         | the record `kind`                                     |
 | `created_after`| `created_at >= bound` (unix seconds)                  |
 | `status`       | the `status` metadata column (see the caveat below)   |
+| `attributes`   | ordered AND equality over `filterable` projections     |
 
 The filter prunes the vector branch inside the single phase-1 KNN statement and
 constrains the text branch by the same metadata.
@@ -47,6 +48,13 @@ constrains the text branch by the same metadata.
 > sentinel only** — as of 0.8.20 there is still no real population source (vec0
 > TEXT metadata columns cannot be NULL). A `status="open"`-style filter
 > therefore prunes every row until a later release populates it.
+
+`attributes` is available in Python and TypeScript for declared `filterable`
+projections. It takes ordered `(projection_name, canonical_text)` equality
+predicates, ANDs every predicate, and treats projected string `"1"` and number
+`1` as the same canonical text. For example, Python uses
+`SearchFilter(attributes=(("priority", "1"),))`; TypeScript uses
+`{ attributes: [["priority", "1"]] }`.
 
 ### Python
 

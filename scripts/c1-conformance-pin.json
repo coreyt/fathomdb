@@ -46,7 +46,7 @@
     "  PROSE      — no falsifiable mechanical assertion exists: rationale, scope",
     "               lines, slot/landing notes, status banners.",
     "",
-    "⚠ THE AMENDMENT THIS PIN EXISTS BECAUSE OF. The contract was AMENDED at",
+    "⚠ THE AMENDMENTS THIS PIN EXISTS BECAUSE OF. The contract was AMENDED at",
     "efa8d584 — clause Q6(b) now reads \"for registry-admitted GOVERNED entities",
     "only\" and carries the TC-11 pin-A cancellation banner. Before that amendment",
     "the clause mandated minting an anonymous surrogate logical_id, which the",
@@ -55,6 +55,13 @@
     "permanently red and would have held the breaking-pair publish forever. This",
     "pin is keyed to the AMENDED text, and that is exactly why the contract's",
     "bytes are pinned at all.",
+    "",
+    "RE-DERIVED 2026-08-07 (0.8.22 Slice 21 F5, HITL steward-ledger seq-246):",
+    "the complete 45-clause registry was read and re-classified against the",
+    "amended contract at eb97cec2. Category counts remain 26 CHECKABLE / 12",
+    "CROSS-REPO / 7 PROSE. The existing Q4 readiness clause stays CHECKABLE,",
+    "but its closed vocabulary is now exactly unavailable / embedding / ready;",
+    "the checker structurally validates all three enum members and wire pairs.",
     "",
     "HOW TO CHANGE THIS FILE: a contract amendment requires RE-DERIVING the clause",
     "registry from the new text — reading the whole document again and",
@@ -65,10 +72,10 @@
     "failure wearing a different hat.",
     "",
     "REPRODUCE THE PIN FROM GIT:",
-    "  git rev-parse 23a436dc:dev/design/record-lifecycle-protocol/OPP-12-C1-converged-contract.md",
-    "    -> 93694a5602ae205de05a801f256676b921dc39cc   (= git_blob_sha1 below)",
-    "  git show 23a436dc:dev/design/record-lifecycle-protocol/OPP-12-C1-converged-contract.md | sha256sum",
-    "    -> 8740f0873344088130970360134e4766d1d091645662842e82d711e584ae50bb",
+    "  git rev-parse eb97cec2:dev/design/record-lifecycle-protocol/OPP-12-C1-converged-contract.md",
+    "    -> 1ed1c74e02e8ecb2920aa5512e193239e99a9895   (= git_blob_sha1 below)",
+    "  git show eb97cec2:dev/design/record-lifecycle-protocol/OPP-12-C1-converged-contract.md | sha256sum",
+    "    -> 20c639f0548486ed042145edcb5280e267c667e1bde55be1c4d04f2b5a756aa8",
     "  sha256_whitespace_normalized is sha256 of re.sub(r'\\s+',' ',text).strip(),",
     "  used ONLY to tell the reader whether a divergence was formatting-only. It is",
     "  never a substitute for the content hash."
@@ -76,12 +83,12 @@
   "requirement": "R-20-H7",
   "covers": "0.8.20 Slice 30 — the RUBRIC-H7 can-i-deploy contract-conformance gate (a publish precondition)",
   "pinned_file": "dev/design/record-lifecycle-protocol/OPP-12-C1-converged-contract.md",
-  "pinned_at_commit": "23a436dcc7321eab86c622c8b403682caf2dfe2c",
-  "pinned_at_commit_short": "23a436dc",
+  "pinned_at_commit": "eb97cec202b5066cd6bbff52ec42f05d0b1fc5a2",
+  "pinned_at_commit_short": "eb97cec2",
   "amended_at_commit": "efa8d584",
-  "git_blob_sha1": "93694a5602ae205de05a801f256676b921dc39cc",
-  "sha256": "8740f0873344088130970360134e4766d1d091645662842e82d711e584ae50bb",
-  "sha256_whitespace_normalized": "b294bc1d7df643779fb4466cbf678ef753a2285d74550abfec937f80566e6930",
+  "git_blob_sha1": "1ed1c74e02e8ecb2920aa5512e193239e99a9895",
+  "sha256": "20c639f0548486ed042145edcb5280e267c667e1bde55be1c4d04f2b5a756aa8",
+  "sha256_whitespace_normalized": "cf5dca3274047f5d24dcc6953e2c8e10ba95e7186f395ea79379ca2e81cb7eeb",
   "counts": {
     "checkable": 26,
     "cross_repo": 12,
@@ -229,12 +236,12 @@
       ]
     },
     {
-      "id": "C1-Q4-DENSE-READINESS-TWO-MEMBERS",
+      "id": "C1-Q4-DENSE-READINESS-THREE-STATES",
       "category": "CHECKABLE",
-      "obligation": "Q4: the expensive searchable->vector tier carries a dense_readiness axis — EXACTLY {ready, embedding}; `pending` is reserved for the orthogonal admission axis and is not a readiness spelling.",
+      "obligation": "Q4 AS AMENDED by 0.8.22 Slice 21 F5 (HITL steward-ledger seq-246): the expensive searchable->vector tier carries an engine-set, accept-inert dense_readiness axis — EXACTLY {unavailable, embedding, ready}; `pending` is reserved for the orthogonal admission axis and is not a readiness spelling.",
       "evidence": [
-        "src/rust/crates/fathomdb-engine/src/lib.rs:3910 (pub enum DenseReadiness { Ready, Embedding })",
-        "src/rust/crates/fathomdb-engine/src/lib.rs:3929-3934 (as_str: 'ready' / 'embedding'; no Pending variant anywhere)"
+        "src/rust/crates/fathomdb-engine/src/lib.rs:4104 (pub enum DenseReadiness { Unavailable, Embedding, Ready })",
+        "src/rust/crates/fathomdb-engine/src/lib.rs:4120-4138 (as_str/from_str_opt: 'unavailable' / 'embedding' / 'ready'; no Pending variant anywhere)"
       ]
     },
     {
