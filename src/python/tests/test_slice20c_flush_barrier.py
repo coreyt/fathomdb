@@ -762,7 +762,7 @@ def test_a_pending_edge_body_survives_a_full_scan_window_of_node_rows(tmp_path) 
         engine.close()
 
 
-def test_a_late_enrolment_whose_repair_fails_registers_nothing(tmp_path) -> None:
+def test_a_boot_graft_whose_repair_fails_registers_nothing(tmp_path) -> None:
     """fix-5 (codex §9 round 4 [P2]) — the boot-graft registry INSERT and the
     un-stranding it owes must commit as ONE transaction.
 
@@ -844,8 +844,8 @@ def test_a_late_enrolment_whose_repair_fails_registers_nothing(tmp_path) -> None
         engine.close()
 
     assert _leaf_rows_without_vectors(path) == 0, (
-        "SELF-SEALED FALSE READY: `drain()` returned and readiness reads \"ready\", but the rows "
-        "the torn enrolment stranded still have no vector at rest. The torn state is invisible "
+        "SELF-SEALED FALSE READY: `drain()` returned and readiness reads \"ready\", but rows "
+        "stranded by the torn boot graft still have no vector at rest. The torn state is invisible "
         "to every later write precisely BECAUSE the kind is already registered — which is why "
         "the two statements have to be atomic"
     )

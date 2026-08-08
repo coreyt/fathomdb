@@ -798,7 +798,7 @@ test("a pending edge body survives a full scan window of node rows (offline)", a
 // The READ-WRITE `DatabaseSync` is opened ONLY while no engine holds the file,
 // so the live-WAL hazard documented on `count()` above is not in play. Nothing
 // is mocked.
-test("a late enrolment whose repair fails registers nothing", async () => {
+test("a boot graft whose repair fails registers nothing", async () => {
   if (skipNetwork()) return;
   const path = freshDbPath();
 
@@ -876,8 +876,8 @@ test("a late enrolment whose repair fails registers nothing", async () => {
   assert.equal(
     leafRowsWithoutVectors(path),
     0,
-    'SELF-SEALED FALSE READY: `drain()` returned and readiness reads "ready", but the rows the ' +
-      "torn enrolment stranded still have no vector at rest. The torn state is invisible to " +
+    'SELF-SEALED FALSE READY: `drain()` returned and readiness reads "ready", but rows stranded ' +
+      "by the torn boot graft still have no vector at rest. The torn state is invisible to " +
       "every later write precisely BECAUSE the kind is already registered — which is why the " +
       "two statements have to be atomic",
   );
