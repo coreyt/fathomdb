@@ -237,6 +237,7 @@ def test_retrieved_ids_are_truncated_to_the_deepest_k(tmp_path: Path) -> None:
 
 def test_per_query_rows_are_written_per_k(tmp_path: Path) -> None:
     result = run_characterization(**_bed(tmp_path))
+    assert result.run_dir is not None
     lines = (result.run_dir / "earp.per-query.v1.jsonl").read_text().strip().splitlines()
     assert len(lines) == 4  # 2 queries x 2 K rungs
     rows = [json.loads(line) for line in lines]
@@ -272,6 +273,7 @@ def test_retrieval_error_is_a_typed_per_query_failure(tmp_path: Path) -> None:
 def test_replay_reports_no_drift_for_an_identical_run(tmp_path: Path) -> None:
     bed = _bed(tmp_path)
     first = run_characterization(**bed)
+    assert first.run_id is not None
     report = replay(
         run_id=first.run_id,
         experiments_root=bed["experiments_root"],
@@ -286,6 +288,7 @@ def test_replay_reports_code_drift_separately(tmp_path: Path) -> None:
     """The interesting case: same declared experiment, different engine."""
     bed = _bed(tmp_path)
     first = run_characterization(**bed)
+    assert first.run_id is not None
     report = replay(
         run_id=first.run_id,
         experiments_root=bed["experiments_root"],
@@ -302,6 +305,7 @@ def test_replay_marks_an_unrecorded_axis_unrecoverable(tmp_path: Path) -> None:
     missing record, and reporting it as drift would be a false positive."""
     bed = _bed(tmp_path)
     first = run_characterization(**bed, blank_provenance=True)
+    assert first.run_id is not None
     report = replay(
         run_id=first.run_id,
         experiments_root=bed["experiments_root"],
@@ -316,6 +320,7 @@ def test_replay_marks_an_unrecorded_axis_unrecoverable(tmp_path: Path) -> None:
 def test_replay_does_not_rule_on_drift(tmp_path: Path) -> None:
     bed = _bed(tmp_path)
     first = run_characterization(**bed)
+    assert first.run_id is not None
     report = replay(
         run_id=first.run_id,
         experiments_root=bed["experiments_root"],
@@ -337,6 +342,7 @@ def test_metrics_document_carries_the_negative_class_aggregate(tmp_path: Path) -
     every K >= 1), so one block, not a per-K entry."""
     result = run_characterization(**_bed(tmp_path))
     assert result.verdict is RunVerdict.COMPLETE
+    assert result.run_id is not None
     sidecar = json.loads(
         (tmp_path / "experiments" / "runs" / result.run_id / "earp.result.v1.json").read_text()
     )
@@ -359,6 +365,7 @@ def test_negative_class_is_not_applicable_without_negatives(tmp_path: Path) -> N
     bed["gold_sha256"] = hashlib.sha256(gold_path.read_bytes()).hexdigest()
     result = run_characterization(**bed)
     assert result.verdict is RunVerdict.COMPLETE
+    assert result.run_id is not None
     sidecar = json.loads(
         (tmp_path / "experiments" / "runs" / result.run_id / "earp.result.v1.json").read_text()
     )
