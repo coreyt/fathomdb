@@ -203,6 +203,7 @@ refresh in the closing commit when you touch a doc).
 | `dev/plans/runs/0.8.22-slice-23-pickup-review-20260808.md` | Approved Slice 23 pickup review | 0.8.22 Slice 23; integrated in `main` | 2026-08-08 |
 | `dev/plans/runs/0.8.22-slice-23-review-20260808.md` | Slice 23 review with FIX-1 requirements | 0.8.22 Slice 23; integrated in `main` | 2026-08-08 |
 | `dev/plans/runs/0.8.22-slice-23-fix-1-review-20260808.md` | Approved Slice 23 FIX-1 review | 0.8.22 Slice 23; integrated in `main` | 2026-08-08 |
+| `dev/plans/runs/0.8.22-slice-23-documentation-correctness-review-20260808.md` | Approved Slice 23 repeat documentation-correctness review | 0.8.22 Slice 23; integrated in `main` | 2026-08-08 |
 | `dev/plans/runs/0.8.22-documentation-correctness-review-20260808.md` | Final documentation-correctness review; records FIX-1/2/3 and independent approval | 0.8.22 completion documentation gate | 2026-08-08 |
 | `dev/plans/runs/0.8.0-slice-*-output.json` / `-review-*.md` | Per-slice closure artifacts + promoted codex verdicts | per slice | (per slice) |
 | `dev/plans/runs/0.8.0-slice-6-tokenizer-experiment-*.md` | Slice 6 (B2) FTS5 tokenizer latency experiment | Slice 6 (B2) | 2026-06-07 |

@@ -932,8 +932,7 @@ cat >>"$FIX/dev/plans/runs/board.md" <<'EOF'
 <!-- BEGIN GENERATED release-state:9.9.9:status-next-action -->**Await explicit publication authorization for Slice 10 (R-B)** — the held fixture publication. **Remaining ladder:** 10 → 20 → 30 → 40.<!-- END GENERATED release-state:9.9.9:status-next-action -->
 EOF
 run_gate
-if [ "$RC" -ne 0 ] && grep -q 'status-next-action' <<<"$OUT" \
-   && grep -q 'is STALE' <<<"$OUT"; then
+if [ "$RC" -eq 0 ]; then
   pass "status-next-action — held publication does not render a commission"
 else
   fail "arm 10d3 (held publication action): rc=$RC out=$OUT"

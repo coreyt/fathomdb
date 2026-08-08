@@ -573,13 +573,17 @@ def render_status_next_action(st):
     reader should do with it. A `REVIEWED_PENDING_INTEGRATION` entry has
     already completed implementation and independent review; telling the next
     orchestrator to commission it again is a false instruction. It must be
-    landed through the repository's integration path instead. Other live
-    states retain the ordinary commission action.
+    landed through the repository's integration path instead. Likewise,
+    `PREP_COMPLETE_PUBLISH_HELD` is not a commission: publication needs a new
+    explicit authorization. Other live states retain the ordinary commission
+    action.
     """
     nxt = st["next_slice"]
     entry = _by_slice(st)[nxt]
-    action = ("Land reviewed Slice" if entry["status"] == "REVIEWED_PENDING_INTEGRATION"
-              else "Commission Slice")
+    action = {
+        "REVIEWED_PENDING_INTEGRATION": "Land reviewed Slice",
+        "PREP_COMPLETE_PUBLISH_HELD": "Await explicit publication authorization for Slice",
+    }.get(entry["status"], "Commission Slice")
     return ("**%s %s (%s)** — %s. **Remaining ladder:** %s."
             % (action, _slice_str(nxt), entry["short"], entry["title"],
                " → ".join(_slice_str(item) for item in st["remaining_ladder"])))
