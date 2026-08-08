@@ -35,18 +35,37 @@ R4. A binding-present drift alarm pins the engine's readiness vocabulary,
    `('no_runtime', 'unavailable')` on the probe store.
 3. EARP's `ProjectionWitnesses.readiness_state` (`models.py:249-263`)
    raises `AssertionError` for any vector-spec readiness outside
-   `{ready, embedding}` — under the new engine this is a latent crash,
-   not a safety net. Today it is unreachable through EARP configs (the
-   resolver refuses vector-without-embedder, and a degraded open blocks
-   at the open-report witness before the poll) — but Slice 21 broadened
-   `unavailable` to "embedder present but not safety-approved", so the
-   assertion is one engine-behavior edge from firing mid-run.
+   `{ready, embedding}` — and the crash is **reachable today**
+   (review-executed): `classify_open` only *accumulates* a
+   `DENSE_DISABLED` blocker; the run proceeds to configure → ingest →
+   poll (`runner.py:324-328`, no early return). On a degraded open
+   (embedder present, equivalence-refused ⇒ Slice-21 `unavailable`) the
+   run records DENSE_DISABLED, then **crashes to `verdict=FAILED` at the
+   poll** with empty blockers and no readiness in the sidecar — a
+   BLOCKED run mislabeled as FAILED. The resolver's
+   vector-without-embedder refusal is the only real gate; it does not
+   cover this state. S10 is therefore a defect fix, not only adoption.
+   Post-fix outcome, pinned: degraded-open + vector declaration ⇒
+   readiness `'unavailable'` recorded + verdict BLOCKED via
+   DENSE_DISABLED.
 4. The result schema's readiness map enum is
    `{ready, embedding, not_declared}` (`projection_witnesses` block);
    `witness.source` enum most recently gained `"answer_arm"` (S9) — the
    additive-value precedent this slice follows.
-5. The resolver message at `config.py:583-586` pins the pre-Slice-21
-   story; at least one test pins that wording.
+5. The resolver message at `config.py:583-586` tells the pre-Slice-21
+   story — but **no test pins the wording** (review-verified: the
+   refusal test asserts only the blocker code). The stale prose also
+   lives in the `config.py:576-578` comment and in docstrings at
+   `test_projection_matrix.py:181-183, 368-371, 463-464`. S10 ADDS a
+   message-content pin (new, not an update) and corrects every prose
+   site.
+6. The status object's nested readiness values are the engine's
+   FOUR-value set `{not_declared, unavailable, embedding, ready}`
+   (review-executed: a vector-less projection reads `not_declared` from
+   the engine). That `not_declared` is ENGINE-produced — same spelling
+   as the poll map's EARP-derived value, different producer; the schema
+   description records the distinction so S7's "derived by EARP" doc
+   stays true.
 
 ## Changes, by file
 
@@ -59,29 +78,54 @@ R4. A binding-present drift alarm pins the engine's readiness vocabulary,
   `vector=False`; `unavailable` is the ENGINE's value, passed through,
   never derived by EARP.
 - Frozen `ProjectionStatusWitness` value type mirroring fact 2's shape
-  (name-keyed readiness mapping, reason, unsupported kinds) — EARP's
-  sidecar records the status object's content, not a repr.
+  (name-keyed readiness mapping, reason, unsupported kinds) — with an
+  explicit `as_value()` dict conversion (S7 precedent): the raw
+  dataclass is not JSON-serializable (review-executed `TypeError`), and
+  `Witness.value` flows raw into `json.dumps`.
+- `WitnessSource` gains the `PROJECTION_STATUS` member (the JSON-schema
+  enum edit alone is unimplementable; no models↔schema parity guard
+  exists to catch the omission).
 
 ### `schema/earp.result.v1.schema.json` — additive only
 
 - `projection_witnesses` readiness enum gains `"unavailable"`.
 - `witness.source` enum gains `"projection_status"`.
 - Optional `projection_status` object alongside the existing witness
-  blocks in the scenario `projection_witnesses` group: `{
-  runtime_embedder_available, runtime_unavailability_reason
-  (enum none|no_runtime|vector_equivalence_disabled),
-  readiness (name→state map), vector_unsupported_kinds }`. Absent for
-  pre-S10 sidecars and projection-less runs (S7 absence semantics).
+  blocks in the scenario `projection_witnesses` group (review-verified:
+  the readiness `additionalProperties` map is confined to its own
+  sibling property, so a new named property collides with nothing):
+  `additionalProperties: false`, `required` on all four fields —
+  `{ runtime_embedder_available, runtime_unavailability_reason
+  (enum none|no_runtime|vector_equivalence_disabled — the string
+  "none", a Literal spelling, never null), readiness (name→state map,
+  enum {not_declared, unavailable, embedding, ready} — engine-produced,
+  see fact 6), vector_unsupported_kinds }`. Absent for pre-S10 sidecars
+  and projection-less runs (S7 absence semantics).
 
 ### `runner.py`
 
-After the readiness poll settles (ready, or timeout blocker recorded),
-capture `read.projection_status(engine)` once and record it as (a) the
-`projection_status` object in the sidecar and (b) a witness with source
-`projection_status`. Projection-less runs: not captured (S7's rule —
-absent ≠ empty). The three existing witnesses are untouched; on any
-disagreement between the status object and a true-source witness, both
-are recorded as-is — EARP records, it does not reconcile.
+- **`'unavailable'` is a settled poll state** (today it exits the poll
+  loop only by accident of the `== "embedding"` comparison — now stated
+  and tested): the poll exits immediately, never spins to timeout, and
+  never emits `DENSE_READINESS_TIMEOUT` for it. Blocked-verdict coverage
+  for the degraded-open case comes from `DENSE_DISABLED` (fact 3's
+  pinned outcome).
+- After the readiness poll settles (ready, `unavailable`, or timeout
+  blocker recorded), capture `read.projection_status(engine)` once —
+  **inside the `try`, after the poll block and before the query call**,
+  so a query-time FAILED run still carries the status witness and a
+  poll-raise skips capture. Record it as (a) the `projection_status`
+  object in the sidecar and (b) a witness with source
+  `projection_status`. Capture happens on the blocked path too (S7
+  precedent: the delta witness persists on DENSE_READINESS_TIMEOUT
+  blocked runs).
+- Projection-less runs: not captured (S7's rule — absent ≠ empty; the
+  always-captured open-report witness already carries runtime
+  availability). The three existing witnesses are untouched; on any
+  disagreement between the status object and a true-source witness,
+  both are recorded as-is — capture is not atomic with the poll, so
+  transient disagreement is legitimate; EARP records, it does not
+  reconcile.
 
 ### `config.py`
 
@@ -96,11 +140,27 @@ only.)
 
 - `readiness_state` truth table gains the `unavailable` row; the
   assertion test narrows to `None`/unknown.
-- Binding-present drift alarm (R4): raw-engine test (no resolver) —
-  fresh tmp store, vector declaration, no embedder → `read.projections`
-  readiness == `'unavailable'` AND `projection_status` returns reason
-  `no_runtime` with matching per-projection state. Pins the vocabulary
-  from the consumer side.
+- **Drift alarm (R4, rewritten per review):** the raw-engine no-runtime
+  probe would duplicate the landed upstream tests
+  (`test_slice20_dense_readiness.py:126-133`,
+  `test_slice22_projection_status.py:54-58`) and would stay green
+  through the next vocabulary change. The alarm instead pins EARP's
+  HANDLING at the binding seam: (a)
+  `set(typing.get_args(fathomdb.DenseReadiness)) ==
+  {"unavailable", "embedding", "ready"}` — fires on any Literal change;
+  (b) `readiness_state(vector=True, v)` accepts **every member of
+  `get_args(DenseReadiness)` by iteration**, not literals — so a fourth
+  value breaks (a) and, until handled, (b). A slim live probe may stay
+  as a smoke check; it is not the alarm.
+- Poll semantics: `poll_override` test — first poll returns
+  `'unavailable'` → loop exits immediately, no timeout blocker, witness
+  records `unavailable`.
+- Degraded-open outcome (poll_override synthetic, per S7's own test
+  pattern): DENSE_DISABLED + `unavailable` readiness ⇒ verdict BLOCKED,
+  readiness present in the sidecar — the fact-3 mislabeling fixed and
+  pinned.
+- NEW message pin for the resolver refusal (no pin exists today);
+  stale docstrings/comment sites corrected in the same commit.
 - Runner end-to-end: a projection-declaring diagnostic run's sidecar
   carries the `projection_status` witness + object and validates; a
   projection-less run's sidecar has neither.
@@ -135,6 +195,32 @@ only.)
 - Vocabulary changes to `built`/`deferred` (OPP-12 ≥0.9.x, per Slice 21's
   own docs scope).
 
+## Acceptance-criteria amendments (review round)
+
+AC-3 is restated to match the rewritten R4: the alarm asserts the
+binding's `DenseReadiness` Literal set equality AND `readiness_state`
+acceptance over `get_args(...)` by iteration. New AC-7: a degraded-open
+scenario (synthetic via `poll_override`) yields verdict BLOCKED with
+`unavailable` recorded — never FAILED with a bare AssertionError.
+
 ## Review
 
-Pending independent code-grounded review.
+Independent code-grounded executing review, 2026-08-08. Verdict:
+**PROCEED WITH REVISIONS** — mechanics all executed and confirmed
+(schema edits exactly three-plus-enum, no map collision, blocked-path
+capture precedent); two facts corrected, four contracts pinned:
+
+| # | Sev | Finding | Resolution |
+| ---: | --- | --- | --- |
+| 1 | MAJOR | "Degraded open blocks before the poll" false — blockers accumulate, run proceeds, crashes to FAILED at the poll TODAY | Fact 3 rewritten; S10 reframed as defect fix; BLOCKED outcome pinned (AC-7) |
+| 2 | MAJOR | `'unavailable'` exits the poll only by accident of `== "embedding"` | Settled-state semantics stated + tested |
+| 3 | MAJOR | No test pins the resolver message (fact 5 false) | Fact corrected; NEW pin added; stale prose sites enumerated |
+| 4 | MAJOR | R4 raw-engine probe duplicates upstream tests and cannot satisfy AC-3 | Alarm rewritten to binding-seam Literal-set + iteration acceptance |
+| 5 | MOD | `WitnessSource.PROJECTION_STATUS` member missing from change list | Added |
+| 6 | MOD | Nested status readiness map is the engine's 4-value set incl. engine-produced `not_declared` | Fact 6 added; schema enum + producer distinction specified |
+| 7 | MOD | Raw dataclass not JSON-serializable through the writer | `as_value()` conversion required |
+| 8-10 | MIN/INFO | Schema collision checked clean; capture placement pinned; record-don't-reconcile rationale recorded | Folded in |
+
+Unverified upstream (inferred from Rust tests, marked): the
+`vector_equivalence_disabled` reason and `'none'` spelling at the Python
+layer require the Rust-only divergent-embedder seam to construct.
