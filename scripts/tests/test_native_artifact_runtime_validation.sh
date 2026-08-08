@@ -30,6 +30,10 @@ named_step() {
   ' <<<"$block"
 }
 
+normalized_step() {
+  tr '\n' ' ' <<<"$1" | sed -E 's/[[:space:]]+/ /g; s/ \\ / /g; s/ ` / /g'
+}
+
 block="$(job_block)" || fail 'missing native-artifact-runtime-validation job'
 matrix_target="\${{ matrix.target }}"
 
@@ -85,6 +89,28 @@ grep -Fqx '          npm run build:native' <<<"$napi_build_step" \
   || fail 'local N-API artifact must invoke npm run build:native'
 grep -Fqx '          npm exec -- tsc -p tsconfig.build.json' <<<"$napi_build_step" \
   || fail 'local TypeScript package must invoke its tsc build'
+
+unix_validation_step="$(named_step 'Validate local wheel and N-API package')" \
+  || fail 'missing Unix local-artifact validation step'
+grep -Fqx "        if: matrix.runner != 'windows-latest'" <<<"$unix_validation_step" \
+  || fail 'Unix local-artifact validation must exclude the Windows runner'
+grep -Fqx '        shell: bash' <<<"$unix_validation_step" \
+  || fail 'Unix local-artifact validation must use bash'
+unix_validation_command="$(normalized_step "$unix_validation_step")"
+grep -Fq 'bash scripts/release/smoke/smoke-local-native-artifacts.sh "$PWD/src/python/dist" "$PWD/src/ts" "$PWD/src/ts/npm/${{ matrix.label }}" "${{ matrix.label }}"' \
+  <<<"$unix_validation_command" \
+  || fail 'Unix local-artifact validation must pass the wheel, TypeScript, platform-package, and N-API label arguments'
+
+windows_validation_step="$(named_step 'Validate local wheel and N-API package (Windows)')" \
+  || fail 'missing Windows local-artifact validation step'
+grep -Fqx "        if: matrix.runner == 'windows-latest'" <<<"$windows_validation_step" \
+  || fail 'Windows local-artifact validation must select only the Windows runner'
+grep -Fqx '        shell: pwsh' <<<"$windows_validation_step" \
+  || fail 'Windows local-artifact validation must use PowerShell'
+windows_validation_command="$(normalized_step "$windows_validation_step")"
+grep -Fq './scripts/release/smoke/smoke-local-native-artifacts.ps1 -WheelDirectory "$PWD/src/python/dist" -TsDirectory "$PWD/src/ts" -PlatformPackageDirectory "$PWD/src/ts/npm/${{ matrix.label }}" -NapiLabel "${{ matrix.label }}"' \
+  <<<"$windows_validation_command" \
+  || fail 'Windows local-artifact validation must pass the wheel, TypeScript, platform-package, and N-API label arguments'
 
 for helper_and_command in \
   "$REPO_ROOT/scripts/release/smoke/smoke-local-native-artifacts.sh:-m pip install --no-index --find-links" \
@@ -166,6 +192,11 @@ if [ "${NATIVE_RUNTIME_VALIDATION_FIXTURE:-0}" != "1" ]; then
   sed 's#"\$PWD/src/ts/npm/${{ matrix.label }}"#"\$PWD/src/ts/npm/not-the-matrix-label"#g' "$CI_YML" > "$fixture"
   if NATIVE_RUNTIME_VALIDATION_FIXTURE=1 CI_YML="$fixture" bash "$0" >/dev/null 2>&1; then
     fail 'native validation guard accepted a wrong platform-package path'
+  fi
+
+  sed 's/"${{ matrix.label }}"/"wrong-napi-label"/g' "$CI_YML" > "$fixture"
+  if NATIVE_RUNTIME_VALIDATION_FIXTURE=1 CI_YML="$fixture" bash "$0" >/dev/null 2>&1; then
+    fail 'native validation guard accepted a wrong N-API label'
   fi
 
   sed 's/default-embedder/default-embedder-removed/' "$CI_YML" > "$fixture"
