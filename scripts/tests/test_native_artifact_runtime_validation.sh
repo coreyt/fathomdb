@@ -163,6 +163,11 @@ if [ "${NATIVE_RUNTIME_VALIDATION_FIXTURE:-0}" != "1" ]; then
     fail 'local-artifact command control accepted a registry smoke substitution'
   fi
 
+  sed 's#"\$PWD/src/ts/npm/${{ matrix.label }}"#"\$PWD/src/ts/npm/not-the-matrix-label"#g' "$CI_YML" > "$fixture"
+  if NATIVE_RUNTIME_VALIDATION_FIXTURE=1 CI_YML="$fixture" bash "$0" >/dev/null 2>&1; then
+    fail 'native validation guard accepted a wrong platform-package path'
+  fi
+
   sed 's/default-embedder/default-embedder-removed/' "$CI_YML" > "$fixture"
   if NATIVE_RUNTIME_VALIDATION_FIXTURE=1 CI_YML="$fixture" bash "$0" >/dev/null 2>&1; then
     fail 'wheel-build control accepted a missing default-embedder feature'
