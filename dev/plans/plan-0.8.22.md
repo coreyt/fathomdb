@@ -119,6 +119,9 @@ preparation, RED and GREEN implementation, and FIX-1 re-review closed all
 P1/P2. Isolated all-tier verification, full workspace clippy/check, and the
 refreshed protected-branch CI passed before landing.
 
+**Slice 22 LANDED on `origin/main` at `e95afd29`.** This explicit closure
+witness is retained for dependent-slice preflight.
+
 The corresponding plans require RED→GREEN evidence, cross-SDK conformance
 where the public contract changes, an independent review, and the normal local
 verification gates. They do not authorize a tag, registry write, or publication.
