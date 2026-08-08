@@ -58,6 +58,7 @@ fn slice19_closure_record_has_reproducible_fixture_scoped_evidence() {
     assert_eq!(required(&record, "scope"), "fixture_scoped");
     assert_eq!(required(&record, "schema.from"), 25);
     assert_eq!(required(&record, "schema.to"), 26);
+    assert_eq!(required(&record, "fixture.query_api"), "Engine::search_with_limit(query, 100)");
     assert!(required(&record, "harness.command").as_str().is_some_and(|command| {
         command.contains("slice19_measurement") && command.contains("--ignored")
     }));
@@ -70,6 +71,12 @@ fn slice19_closure_record_has_reproducible_fixture_scoped_evidence() {
     assert!(required(&record, "environment.sqlite.compile_options").is_array());
     assert!(required(&record, "environment.hardware.summary").is_string());
     assert_eq!(required(&record, "semantic_equivalence.verified"), true);
+    assert!(
+        required(&record, "semantic_equivalence.text_edge_result_count")
+            .as_u64()
+            .is_some_and(|count| count > 0),
+        "normal-search evidence must retain at least one edge FTS result"
+    );
 
     for path in [
         "raw_samples.migration_25_to_26_us",
