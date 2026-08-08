@@ -783,12 +783,12 @@ fn a_filterable_vector_declaration_round_trips_verbatim_without_an_embedder() {
         vec![ProjectionSpec {
             vector: Some(ProjectionVector {
                 embedder: None,
-                dense_readiness: Some(DenseReadiness::Ready),
+                dense_readiness: Some(DenseReadiness::Unavailable),
             }),
             ..spec.clone()
         }],
-        "the `vector` sub-object persists verbatim, plus the engine-set readiness — READS are \
-         unaffected by Slice 23's reject, which is a WRITE-path spec validation"
+        "the `vector` sub-object persists verbatim, and its engine-set readiness is unavailable \
+         without a dense runtime — Slice 23's reject remains a WRITE-path spec validation"
     );
 
     // 0.8.20 Slice 23 (`R-20-SV`) — what re-applying now does, stated as a fact

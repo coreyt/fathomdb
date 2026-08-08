@@ -993,114 +993,47 @@ fn stored_default_identity(path: &Path) -> EmbedderIdentity {
     .expect("stored default embedder identity")
 }
 
-/// **A LATE enrolment must un-strand the rows an earlier session left behind.**
+/// **The ordinary write-path enrols a kind after an empty declaration.**
 ///
-/// The declare-time path (`enqueue_declared_vector_backfill`) already deletes the
-/// permanent `'up_to_date'` terminals of rows that carry no vector and rewinds the
-/// readiness watermark to reach them. The write path enrols the same kind through
-/// a different door and, at fix-2 baseline, enqueues ONLY the row in its own
-/// batch.
-///
-/// The shape is exactly codex's: a database persists a `searchable→vector`
-/// declaration while opened WITHOUT an embedder (Q6a graceful-absent — it defers,
-/// enrolling nothing), then reopens WITH one and writes the same kind BEFORE
-/// re-applying the projection. At baseline the new row drains, readiness reports
-/// `ready`, and the rows from the no-embedder session keep their terminals with no
-/// vector — a FALSE READY, the exact defect class R-20-DR exists to eliminate.
-///
-/// The at-rest oracle is `leaf_rows_without_vectors`, keyed off
-/// `canonical_nodes.row_kind` with **no** join to `_fathomdb_vector_kinds`: a
-/// kind-registry join returns a hollow zero precisely when enrolment is the thing
-/// at issue.
+/// Slice 21's boot graft is the sole recovery door for a durable declaration
+/// with rows stranded by a no-runtime session; the boot-graft fixtures cover
+/// that cross-session repair. This fixture instead isolates the real late-
+/// enrolment path: the engine opens with no durable declaration and no rows,
+/// then accepts an empty-corpus declaration. The first ordinary write must
+/// enrol its kind and produce exactly one vector after `drain`.
 #[test]
-fn late_enrolment_backfills_the_rows_an_earlier_session_stranded() {
+fn a_first_write_after_an_empty_declaration_late_enrols_once() {
     let dir = TempDir::new().unwrap();
-    let path = db_path(&dir, "flush_barrier_late_enrol_backfill");
-
-    // ---- session 1: NO embedder. The declaration persists and DEFERS; every row
-    // written under it takes a permanent `'up_to_date'` terminal with no vector.
-    {
-        let opened = Engine::open(path.clone()).expect("open without embedder");
-        let engine = &opened.engine;
-        engine.configure_projections(&[vector_spec("summary")], &[]).expect("configure");
-        engine.write(&[node("doc", "N1", r#"{"summary":"stranded one"}"#)]).expect("write N1");
-        engine.write(&[node("doc", "N2", r#"{"summary":"stranded two"}"#)]).expect("write N2");
-        engine.drain(5_000).expect("drain must not burn its timeout on a dead dense arm");
-
-        let conn = ro(&path);
-        assert!(
-            !vector_kind_registered(&conn, "doc"),
-            "fixture: no live embedder ⇒ no dense arm ⇒ nothing enrolled"
-        );
-        assert_eq!(leaf_rows_without_vectors(&conn), 2, "fixture: two rows are stranded");
-        opened.engine.close().unwrap();
-    }
-
-    let conn = ro(&path);
-    let c1 = active_cursor(&conn, "N1");
-    let c2 = active_cursor(&conn, "N2");
-    let watermark_before = projection_cursor(&conn);
-    assert!(
-        watermark_before >= c2,
-        "fixture: session 1's terminals carried the readiness watermark past both rows"
-    );
-
-    // ---- session 2: SAME database, now WITH an embedder. The projection is NOT
-    // re-applied; the WRITE is what turns the dense arm on (late enrolment).
-    let embedder = CountingEmbedder::with_identity(stored_default_identity(&path));
+    let path = db_path(&dir, "flush_barrier_late_enrol_empty");
+    let embedder = CountingEmbedder::new();
     let calls = Arc::clone(&embedder.calls);
-    let delay_ms = Arc::clone(&embedder.delay_ms);
-    // Slow the embedder so the post-write probes below are read BEFORE the worker
-    // can advance the watermark again — otherwise "was it rewound?" is a race.
-    delay_ms.store(1_500, Ordering::SeqCst);
-    let opened = Engine::open_with_embedder_for_test(&path, Arc::new(embedder)).expect("reopen");
+    let opened = Engine::open_with_embedder_for_test(&path, Arc::new(embedder)).expect("open");
     let engine = &opened.engine;
 
-    engine.write(&[node("doc", "N3", r#"{"summary":"written before re-applying"}"#)]).expect("N3");
-
+    assert!(engine.read_projections().expect("read empty registry").is_empty());
+    engine.configure_projections(&[vector_spec("summary")], &[]).expect("declare on empty corpus");
     let conn = ro(&path);
-    assert!(vector_kind_registered(&conn, "doc"), "the write LATE-ENROLLED the kind");
     assert!(
-        projection_cursor(&conn) < c1,
-        "LATE ENROLMENT STRANDS ROWS: turning the dense arm on from the write path must run the \
-         SAME stranded-row treatment the declare-time backfill does — delete the `'up_to_date'` \
-         terminals of rows with no vector and REWIND the readiness watermark to reach them"
+        !vector_kind_registered(&conn, "doc"),
+        "fixture: an empty declaration has no kind to enrol or backfill"
     );
-    assert_eq!(
-        readiness(engine, "summary"),
-        Some(DenseReadiness::Embedding),
-        "readiness must not read `ready` while pre-existing rows still lack their vectors"
-    );
+    assert_eq!(calls.load(Ordering::SeqCst), 0, "fixture: empty declaration embeds nothing");
 
-    delay_ms.store(0, Ordering::SeqCst);
-    engine.drain(30_000).expect("drain flushes the late-enrolled backfill");
+    engine.write(&[node("doc", "N1", r#"{"summary":"first late-enrolled row"}"#)]).expect("write");
+    assert!(vector_kind_registered(&ro(&path), "doc"), "the first write late-enrols its kind");
+    engine.drain(30_000).expect("drain flushes the first late-enrolled row");
 
     assert_eq!(readiness(engine, "summary"), Some(DenseReadiness::Ready));
     let conn = ro(&path);
+    let cursor = active_cursor(&conn, "N1");
     assert_eq!(
         leaf_rows_without_vectors(&conn),
         0,
-        "FALSE-READY: `drain()` returned Ok and readiness reads `ready`, but rows written in the \
-         no-embedder session still have no vector at rest"
+        "the first late-enrolled row must have its vector at rest once readiness is ready"
     );
-    for (label, cursor) in [("N1", c1), ("N2", c2), ("N3", active_cursor(&conn, "N3"))] {
-        assert!(vector_row_exists(&conn, cursor), "{label}'s vector must exist at rest");
-        assert!(vec0_row_exists(&conn, cursor), "{label}'s vec0 row must exist at rest");
-    }
-    assert_eq!(calls.load(Ordering::SeqCst), 3, "all three rows were embedded, exactly once each");
-
-    // Idempotence: a further write of the SAME kind finds nothing stranded, so it
-    // must not rewind the watermark or re-embed.
-    let watermark_after = projection_cursor(&conn);
-    engine.write(&[node("doc", "N4", r#"{"summary":"nothing left to un-strand"}"#)]).expect("N4");
-    engine.drain(30_000).expect("drain");
-    let conn = ro(&path);
-    assert!(
-        projection_cursor(&conn) >= watermark_after,
-        "a write with nothing stranded must not rewind the readiness watermark"
-    );
-    assert_eq!(calls.load(Ordering::SeqCst), 4, "only the new row was embedded");
-    assert_eq!(leaf_rows_without_vectors(&conn), 0);
+    assert!(vector_row_exists(&conn, cursor), "the first write has a vector row at rest");
+    assert!(vec0_row_exists(&conn, cursor), "the first write has a vec0 row at rest");
+    assert_eq!(calls.load(Ordering::SeqCst), 1, "exactly the first written row was embedded");
 
     opened.engine.close().unwrap();
 }
