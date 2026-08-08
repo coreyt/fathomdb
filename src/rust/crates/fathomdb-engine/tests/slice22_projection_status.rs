@@ -196,6 +196,15 @@ fn status_is_current_sorted_and_pure_over_declarations_and_unsupported_kinds() {
     engine.write(&[node("entity", "E1")]).expect("write entity E1");
     engine.write(&[node("invoice", "I2")]).expect("write invoice I2");
 
+    // With no runtime, node work is deliberately excluded from the dispatcher
+    // scan. Drain establishes that this fixture starts idle, then freezing pins
+    // `pending_scan` so an accidental status-read wake cannot be consumed before
+    // the assertion below observes it.
+    engine.drain(30_000).expect("drain no-runtime writes");
+    engine.set_projection_scheduler_frozen_for_test(true);
+    let scheduler_before = engine.projection_scheduler_pending_scan_for_test();
+    assert!(!scheduler_before, "fixture must start with no pending scheduler scan");
+
     let before = durable_snapshot(&path);
     let first = engine.read_projection_status().expect("first status");
     let second = engine.read_projection_status().expect("second status");
@@ -222,6 +231,11 @@ fn status_is_current_sorted_and_pure_over_declarations_and_unsupported_kinds() {
         durable_snapshot(&path),
         before,
         "a status read neither changes durable registry/work state nor wakes work that writes it"
+    );
+    assert_eq!(
+        engine.projection_scheduler_pending_scan_for_test(),
+        scheduler_before,
+        "repeated status reads neither schedule nor wake projection work"
     );
 
     opened.engine.close().expect("close");
