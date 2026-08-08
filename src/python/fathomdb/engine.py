@@ -583,8 +583,11 @@ class Engine:
         Does NOT embed the query and NEVER raises
         ``VectorEquivalenceMismatchError``, so it stays serviceable when the engine
         opened in the degraded ``dense_disabled`` state (the D2 "keep FTS servable"
-        contract). Returns node-body FTS hits only — no vector recall, no CE
-        rerank, no graph arm.
+        contract). It does not invoke vector recall, CE reranking, or the graph
+        arm. Matching node- and edge-body FTS candidates are deterministically
+        body-deduplicated and ranked before ``limit`` is applied. For one
+        immutable selection and effective validity time, smaller accepted limits
+        are prefixes of larger limits; this does not extend to hybrid search.
         """
         if not isinstance(view, (ReadView, type(None))):
             raise TypeError(

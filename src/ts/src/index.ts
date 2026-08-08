@@ -1128,8 +1128,12 @@ export class Engine {
    * 0.8.18 Slice 5 (#5 vector-equivalence probe) — the explicit text-only /
    * FTS-only search path. It does NOT embed the query and NEVER throws
    * `VectorEquivalenceMismatchError`, so it stays serviceable when the engine
-   * opened in the degraded `denseDisabled` state. Returns node-body FTS hits
-   * only (no vector recall, no CE rerank, no graph arm).
+   * opened in the degraded `denseDisabled` state. It does not invoke vector
+   * recall, CE reranking, or the graph arm. Matching node- and edge-body FTS
+   * candidates are deterministically body-deduplicated and ranked before
+   * `limit` is applied. For one immutable selection and effective validity time,
+   * smaller accepted limits are prefixes of larger limits; this does not extend
+   * to hybrid search.
    */
   async searchTextOnly(query: string, view?: SearchOptions): Promise<SearchResult> {
     validateFfiString(query);

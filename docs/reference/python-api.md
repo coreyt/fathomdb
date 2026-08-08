@@ -185,9 +185,14 @@ third arm (0.8.1 R3).
 
 ### `engine.search_text_only(query, view=None, *, limit=10) -> SearchResult`
 
-Run node-body FTS retrieval without embedding, vector retrieval, fusion, or
-reranking. `limit` has the same `1..=100` validation and default of 10 as
-`engine.search`; it is applied after the validity predicate.
+Run direct FTS retrieval without embedding, vector retrieval, CE reranking, or
+graph expansion. Matching node- and edge-body candidates are deterministically
+body-deduplicated and ranked before `limit` is applied. The node candidate input
+is fixed at 100, so for the same immutable selection, query, and effective
+validity time, a smaller accepted limit returns the ordered prefix of a larger
+one. Compare `view=ReadView(valid_as_of=...)` calls only at the same explicit
+instant; an omitted `valid_as_of` resolves per call. This guarantee does not
+extend to hybrid `engine.search`.
 
 ### `engine.search_projected_text(query, name, filter=None, *, view=None, limit=10) -> SearchResult`
 

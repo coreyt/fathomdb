@@ -192,8 +192,14 @@ cross-encoder reranking (0.8.1 R1) and optional graph-BFS third arm (0.8.1 R3).
 
 ### `engine.searchTextOnly(query, options?): Promise<SearchResult>`
 
-Run node-body FTS retrieval without embedding, vector retrieval, fusion, or
-reranking. `options.limit` defaults to 10 and must be an integer in `1..=100`.
+Run direct FTS retrieval without embedding, vector retrieval, CE reranking, or
+graph expansion. Matching node- and edge-body candidates are deterministically
+body-deduplicated and ranked before `options.limit` is applied. The node
+candidate input is fixed at 100, so for the same immutable selection, query,
+and effective validity time, a smaller accepted limit returns the ordered prefix
+of a larger one. Compare `validAsOf` calls only at the same explicit instant;
+an omitted `validAsOf` resolves per call. This guarantee does not extend to
+hybrid `engine.search`.
 
 ### `engine.searchProjectedText(query, name, filter?, options?): Promise<SearchResult>`
 

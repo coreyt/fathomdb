@@ -1714,8 +1714,9 @@ impl Engine {
     /// 0.8.18 Slice 5 (#5 vector-equivalence probe, R-VEQ-4) — the explicit
     /// text-only / FTS-only search path. Does NOT embed the query and NEVER raises
     /// `FDB_VECTOR_EQUIVALENCE_MISMATCH`, so it stays serviceable when the engine
-    /// opened in the degraded `denseDisabled` state. Returns node-body FTS hits
-    /// only (no vector recall, no CE rerank, no graph arm).
+    /// opened in the degraded `denseDisabled` state. Matching node- and edge-body
+    /// FTS candidates are deterministically body-deduplicated and ranked before
+    /// `limit`; no vector recall, CE rerank, or graph arm runs on this path.
     #[napi]
     ///
     /// 0.8.20 Slice 15b fix-2 — takes the same optional `view` as `search`.

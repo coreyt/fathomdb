@@ -141,6 +141,20 @@ Rust exposes:
 - `Engine::search_text_only_with_limit(query, limit) -> Result<SearchResult, EngineError>`
 - `Engine::close(...) -> Result<(), EngineError>`
 
+### Direct text-only result-prefix contract (0.8.22 Slice 23)
+
+`search_text_only` and its explicit-limit/read-view forms do not embed, use
+vector retrieval, CE reranking, or graph expansion. Matching node- and
+edge-body FTS candidates enter one text arm, whose bodies are deterministically
+deduplicated and ranked before the returned limit is applied. The node candidate
+collection is fixed at 100 for every accepted caller limit.
+
+For one immutable selection, query, and effective validity time, the complete
+ordered result at `small` is the prefix of the result at `large` for
+`1 <= small <= large <= 100`. Calls compared through `ReadView` must use the
+same explicit `valid_as_of`; `None` resolves separately at each call. This
+direct-FTS contract does not apply to hybrid `search*` APIs.
+
 ### Read verbs
 
 The canonical-row reads take a trailing `&ReadView` (`ReadView::default()` is

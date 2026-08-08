@@ -845,6 +845,69 @@ else
   fail "arm 10d (hand-edited pointer): rc=$RC out=$OUT"
 fi
 
+# --- Arm 10d1: reviewed work is landed, never re-commissioned -------------
+# A slice whose implementation and review are complete has a different next
+# action from a not-yet-started slice. Rendering "Commission" from
+# `next_slice` alone told an orchestrator to repeat work that the state had
+# already classified as REVIEWED_PENDING_INTEGRATION. The expected wording is
+# deliberately independent of the renderer so this arm is RED against that
+# collapsed action and GREEN only when the lifecycle status is respected.
+setup_fixture
+python3 - "$FIX/dev/plans/release-state-9.9.9.json" <<'PY'
+import json, sys
+p = sys.argv[1]
+s = json.load(open(p))
+for entry in s["ladder"]:
+    if entry["slice"] == 10:
+        entry["title"] = "the reviewed fixture repair"
+        entry["status"] = "REVIEWED_PENDING_INTEGRATION"
+s["generated_views"].append({"id": "status-next-action",
+                             "file": "dev/plans/runs/board.md"})
+json.dump(s, open(p, "w"), indent=2)
+PY
+cat >>"$FIX/dev/plans/runs/board.md" <<'EOF'
+
+## Immediate next action
+
+<!-- BEGIN GENERATED release-state:9.9.9:status-next-action -->**Land reviewed Slice 10 (R-B)** — the reviewed fixture repair. **Remaining ladder:** 10 → 20 → 30 → 40.<!-- END GENERATED release-state:9.9.9:status-next-action -->
+EOF
+run_gate
+if [ "$RC" -eq 0 ]; then
+  pass "status-next-action — reviewed work renders a landing action, not a repeated commission"
+else
+  fail "arm 10d1 (reviewed landing action): rc=$RC out=$OUT"
+fi
+
+# --- Arm 10d2: an ordinary live slice still commissions -------------------
+# The reviewed-status branch above must not become an unconditional landing
+# action. This companion fixture keeps the fallback contract explicit for a
+# live slice that has not yet been reviewed.
+setup_fixture
+python3 - "$FIX/dev/plans/release-state-9.9.9.json" <<'PY'
+import json, sys
+p = sys.argv[1]
+s = json.load(open(p))
+for entry in s["ladder"]:
+    if entry["slice"] == 10:
+        entry["title"] = "the ordinary fixture work"
+        entry["status"] = "NOT_STARTED"
+s["generated_views"].append({"id": "status-next-action",
+                             "file": "dev/plans/runs/board.md"})
+json.dump(s, open(p, "w"), indent=2)
+PY
+cat >>"$FIX/dev/plans/runs/board.md" <<'EOF'
+
+## Immediate next action
+
+<!-- BEGIN GENERATED release-state:9.9.9:status-next-action -->**Commission Slice 10 (R-B)** — the ordinary fixture work. **Remaining ladder:** 10 → 20 → 30 → 40.<!-- END GENERATED release-state:9.9.9:status-next-action -->
+EOF
+run_gate
+if [ "$RC" -eq 0 ]; then
+  pass "status-next-action — an ordinary live slice remains a commission action"
+else
+  fail "arm 10d2 (ordinary commission action): rc=$RC out=$OUT"
+fi
+
 # --- Arm 10e: END OF LADDER — the renderer REFUSES, it does not blank ------
 # `next_slice: null` is a real end-of-release state. A renderer that emitted
 # "Slice None" would put a fabricated pointer in front of the next orchestrator

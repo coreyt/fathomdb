@@ -732,6 +732,16 @@ for `search`, `searchTextOnly`, and `searchProjectedText`. It defaults to 10. Th
 be an integer in `1..=100`; an out-of-range request rejects with `InvalidArgumentError` rather
 than silently clamping. `graph.neighbors` retains its separate 50-result traversal cap.
 
+### Direct FTS-only prefix stability (0.8.22 Slice 23)
+
+`engine.searchTextOnly` does not embed, invoke vector retrieval, CE reranking, or graph
+expansion. Matching node- and edge-body FTS candidates are deterministically body-deduplicated
+and ranked before `options.limit` truncates the result. The node candidate input is fixed at 100,
+so for the same immutable selection, query, and effective validity time, results at a smaller
+accepted limit are the ordered prefix of results at a larger accepted limit. Cross-call
+comparisons with `validAsOf` must use the same explicit instant; an omitted `validAsOf` resolves
+per call. This guarantee does not extend to hybrid `engine.search` APIs.
+
 ## Nested-source projections (0.8.21 Slice 60)
 
 `ProjectionSpec.source?: string[] | null` is a literal canonical-body member

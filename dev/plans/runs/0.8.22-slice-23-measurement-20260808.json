@@ -1,0 +1,119 @@
+{
+  "schema_version": 1,
+  "slice": "0.8.22-slice-23",
+  "purpose": "Witness the bounded direct-text candidate-depth repair; this is not a latency claim or threshold.",
+  "measured_api": "Python public SDK: fathomdb.Engine.search_text_only(query, limit=...)",
+  "fixture": {
+    "tracked_source": "src/python/tests/test_slice23_text_limit_prefix_stability.py",
+    "shape": "50 matching node bodies plus one edge body duplicated from node N10",
+    "query_set": [
+      {
+        "query": "s23prefix",
+        "limits": [10, 50]
+      }
+    ]
+  },
+  "method": {
+    "database": "fresh temporary SQLite database per revision",
+    "embedder": "disabled; direct FTS-only public API",
+    "warmup_calls_per_limit": 1,
+    "paired_samples_per_revision": 5,
+    "pair_order": ["limit_10", "limit_50"],
+    "timer": "Python time.perf_counter_ns"
+  },
+  "host": {
+    "platform": "Linux-7.0.0-28-generic-x86_64-with-glibc2.39",
+    "machine": "x86_64",
+    "python": "3.12.3 (main, Jun 19 2026, 12:46:00) [GCC 13.3.0]"
+  },
+  "sqlite": {
+    "runtime_version": "3.45.1",
+    "schema_version_after_open": 26,
+    "user_version": 26
+  },
+  "revisions": [
+    {
+      "name": "baseline",
+      "revision": "cb8a0539",
+      "samples": [
+        {
+          "pair": 1,
+          "limit_10_ns": 939746,
+          "limit_50_ns": 1299917,
+          "limit_10_ids": ["N00", "N01", "N02", "N03", "N04", "N05", "N06", "N07", "N08", "N09"],
+          "limit_50_prefix_10_ids": ["N10", "N00", "N01", "N02", "N03", "N04", "N05", "N06", "N07", "N08"]
+        },
+        {
+          "pair": 2,
+          "limit_10_ns": 763914,
+          "limit_50_ns": 1416157,
+          "limit_10_ids": ["N00", "N01", "N02", "N03", "N04", "N05", "N06", "N07", "N08", "N09"],
+          "limit_50_prefix_10_ids": ["N10", "N00", "N01", "N02", "N03", "N04", "N05", "N06", "N07", "N08"]
+        },
+        {
+          "pair": 3,
+          "limit_10_ns": 937472,
+          "limit_50_ns": 1135567,
+          "limit_10_ids": ["N00", "N01", "N02", "N03", "N04", "N05", "N06", "N07", "N08", "N09"],
+          "limit_50_prefix_10_ids": ["N10", "N00", "N01", "N02", "N03", "N04", "N05", "N06", "N07", "N08"]
+        },
+        {
+          "pair": 4,
+          "limit_10_ns": 489746,
+          "limit_50_ns": 951539,
+          "limit_10_ids": ["N00", "N01", "N02", "N03", "N04", "N05", "N06", "N07", "N08", "N09"],
+          "limit_50_prefix_10_ids": ["N10", "N00", "N01", "N02", "N03", "N04", "N05", "N06", "N07", "N08"]
+        },
+        {
+          "pair": 5,
+          "limit_10_ns": 493663,
+          "limit_50_ns": 882999,
+          "limit_10_ids": ["N00", "N01", "N02", "N03", "N04", "N05", "N06", "N07", "N08", "N09"],
+          "limit_50_prefix_10_ids": ["N10", "N00", "N01", "N02", "N03", "N04", "N05", "N06", "N07", "N08"]
+        }
+      ]
+    },
+    {
+      "name": "candidate",
+      "revision": "9ba52e32",
+      "samples": [
+        {
+          "pair": 1,
+          "limit_10_ns": 1079651,
+          "limit_50_ns": 1257737,
+          "limit_10_ids": ["N10", "N00", "N01", "N02", "N03", "N04", "N05", "N06", "N07", "N08"],
+          "limit_50_prefix_10_ids": ["N10", "N00", "N01", "N02", "N03", "N04", "N05", "N06", "N07", "N08"]
+        },
+        {
+          "pair": 2,
+          "limit_10_ns": 1118834,
+          "limit_50_ns": 1271884,
+          "limit_10_ids": ["N10", "N00", "N01", "N02", "N03", "N04", "N05", "N06", "N07", "N08"],
+          "limit_50_prefix_10_ids": ["N10", "N00", "N01", "N02", "N03", "N04", "N05", "N06", "N07", "N08"]
+        },
+        {
+          "pair": 3,
+          "limit_10_ns": 913306,
+          "limit_50_ns": 1303063,
+          "limit_10_ids": ["N10", "N00", "N01", "N02", "N03", "N04", "N05", "N06", "N07", "N08"],
+          "limit_50_prefix_10_ids": ["N10", "N00", "N01", "N02", "N03", "N04", "N05", "N06", "N07", "N08"]
+        },
+        {
+          "pair": 4,
+          "limit_10_ns": 621995,
+          "limit_50_ns": 1004659,
+          "limit_10_ids": ["N10", "N00", "N01", "N02", "N03", "N04", "N05", "N06", "N07", "N08"],
+          "limit_50_prefix_10_ids": ["N10", "N00", "N01", "N02", "N03", "N04", "N05", "N06", "N07", "N08"]
+        },
+        {
+          "pair": 5,
+          "limit_10_ns": 783211,
+          "limit_50_ns": 908938,
+          "limit_10_ids": ["N10", "N00", "N01", "N02", "N03", "N04", "N05", "N06", "N07", "N08"],
+          "limit_50_prefix_10_ids": ["N10", "N00", "N01", "N02", "N03", "N04", "N05", "N06", "N07", "N08"]
+        }
+      ]
+    }
+  ],
+  "observation": "All five candidate pairs preserve the same direct-text limit-10 sequence as the corresponding limit-50 prefix. Baseline pairs expose the intended defect. The timings are raw development-build samples on one host and are recorded only to witness the bounded work; they support no generalized latency or performance claim."
+}
