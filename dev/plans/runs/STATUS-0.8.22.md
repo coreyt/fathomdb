@@ -6,7 +6,7 @@
 
 ## Current state
 
-<!-- BEGIN GENERATED release-state:0.8.22:status-current-state -->**Next is Slice 20 (PUBLISH), NOT_STARTED.** Landed on `origin/main`: 0 (`55792858b2adce00d3d87193d02b23a5d8d52dd7`) · 5 (`55792858b2adce00d3d87193d02b23a5d8d52dd7`) · 10 (`4c7bb26b`) · 12 (`72a83049`) · 17 (`5a7f2484`) · 15 (`13341688fca3d02d11c10bb10eb26232156f8032`) · 18 (`8fdb27dbf00a0663772ffc8e27a243ac1e7dcd74`) — verified reachable, not asserted.<!-- END GENERATED release-state:0.8.22:status-current-state -->
+<!-- BEGIN GENERATED release-state:0.8.22:status-current-state -->**Next is Slice 20 (PUBLISH), PREP_COMPLETE_PUBLISH_HELD.** Landed on `origin/main`: 0 (`55792858b2adce00d3d87193d02b23a5d8d52dd7`) · 5 (`55792858b2adce00d3d87193d02b23a5d8d52dd7`) · 10 (`4c7bb26b`) · 12 (`72a83049`) · 17 (`5a7f2484`) · 15 (`13341688fca3d02d11c10bb10eb26232156f8032`) · 18 (`8fdb27dbf00a0663772ffc8e27a243ac1e7dcd74`) — verified reachable, not asserted.<!-- END GENERATED release-state:0.8.22:status-current-state -->
 
 | | |
 | --- | --- |
@@ -29,7 +29,7 @@
 | 19 | Canonical FTS join indexes and planner proof | Closed on reviewed local integration commit `550c4b03`; pending protected-branch landing and closure measurement. |
 | 21 | Truthful projection runtime state and safe boot graft | Closed on reviewed local integration commit `26bdd2ce`; FIX-1 through FIX-5 are closed and protected-branch landing remains pending. |
 | 22 | Governed pure projection-status read | Closed on reviewed local integration commit `6aeee48e`; C5 seq-247, RED→GREEN→FIX-1, all-tier isolated verification, and independent re-review are complete. Protected-branch landing remains pending. |
-| 20 | Ordered publication and registry smokes | Next, but no registry operation proceeds while the tag/publish hold remains in force. |
+| 20 | Ordered publication and registry smokes | Local preparation is closed at `2f94085c` after RED→GREEN→FIX-2 and independent reviews. Ordered publication and registry smokes remain explicitly held. |
 | 25 | `next` to `latest` promotion and release truth | Not started. |
 
 ## Immediate next action
@@ -48,6 +48,13 @@ governed-surface preparation is recorded in
 and FIX-1 re-review are recorded in their paired Slice 22 review files. The
 locally integrated implementation is closed at `6aeee48e` and awaits protected
 branch landing.
+
+## Slice 20 publish hold
+
+The local release-safety preparation is closed at `2f94085c`; its pickup and
+three review records document the RED→GREEN→FIX-2 closure. No production
+workflow changed. The remaining Slice 20 action is real ordered publication and
+registry smoke, which remains held pending explicit release authorization.
 
 ## Completion documentation gate
 
