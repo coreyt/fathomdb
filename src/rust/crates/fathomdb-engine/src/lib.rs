@@ -13955,11 +13955,13 @@ fn connection_has_pending_projection_work(connection: &Connection) -> rusqlite::
 /// **Failure boundary.** A row whose embed FAILED terminally records a `failed`
 /// terminal (no vector row), so it stops being outstanding. With a usable dense
 /// runtime, readiness returns to `ready`: the row will never embed, so reporting
-/// `embedding` forever would be a lie. With no usable runtime, the Slice 21
-/// runtime predicate instead reports `unavailable`. Failures stay separately
-/// observable through the `projection_failures` collection. A `ready` corpus can
-/// therefore lack a vector row only for a failed terminal; it is NOT a torn
-/// write because no `up_to_date` terminal exists for it.
+/// `embedding` forever would be a lie. This current two-value derivation has no
+/// usable-runtime predicate and therefore still selects only `Embedding` /
+/// `Ready`. The later Slice 21 runtime GREEN must select `Unavailable` for no
+/// usable runtime without changing this failed-terminal boundary. Failures stay
+/// separately observable through the `projection_failures` collection. A
+/// `ready` corpus can therefore lack a vector row only for a failed terminal; it
+/// is NOT a torn write because no `up_to_date` terminal exists for it.
 fn derive_dense_readiness(connection: &Connection) -> Result<DenseReadiness, EngineError> {
     if connection_has_pending_projection_work(connection).map_err(|_| EngineError::Storage)? {
         Ok(DenseReadiness::Embedding)
