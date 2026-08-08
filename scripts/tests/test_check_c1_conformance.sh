@@ -534,7 +534,7 @@ open(p, "w", encoding="utf-8").write(text)
 PY
 run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$BAD_ROOT2"
 expect_rc 1 "a source root with a REQUIRED symbol removed HARD-fails the gate"
-expect_out 'C1-Q4-DENSE-READINESS-TWO-MEMBERS' "the missing-symbol failure NAMES the clause id"
+expect_out 'C1-Q4-DENSE-READINESS-THREE-STATES' "the missing-symbol failure NAMES the clause id"
 expect_out 'found 0 match' "the missing-symbol failure states what it looked for and did not find"
 expect_routes_to_steward "the missing-symbol clause failure"
 
@@ -581,7 +581,7 @@ open(p, "w", encoding="utf-8").write(text)
 PY
 run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$VOCAB_ROOT"
 expect_rc 1 "an EXTRA DenseReadiness variant HARD-fails (the readiness vocabulary is CLOSED)"
-expect_out 'C1-Q4-DENSE-READINESS-TWO-MEMBERS' "the third-variant failure NAMES the clause id"
+expect_out 'C1-Q4-DENSE-READINESS-THREE-STATES' "the third-variant failure NAMES the clause id"
 expect_out 'Failed' "the third-variant failure NAMES the unpinned variant it found"
 expect_routes_to_steward "the readiness-vocabulary failure"
 
@@ -601,7 +601,7 @@ open(p, "w", encoding="utf-8").write(text)
 PY
 run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$SPELL_ROOT"
 expect_rc 1 "an EXTRA accepted readiness SPELLING HARD-fails even with the enum unchanged"
-expect_out 'C1-Q4-DENSE-READINESS-TWO-MEMBERS' "the third-spelling failure NAMES the clause id"
+expect_out 'C1-Q4-DENSE-READINESS-THREE-STATES' "the third-spelling failure NAMES the clause id"
 expect_out 'pending' "the third-spelling failure NAMES the reserved token it found"
 
 # 12f — the SAME DEFECT CLASS in a sibling clause: a FOURTH ProjectionRole. The
@@ -787,7 +787,7 @@ open(p, "w", encoding="utf-8").write(text.replace(old, new, 1))
 PY
 run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$GUARD_ROOT"
 expect_rc 1 'an accepted spelling admitted by an `if` GUARD before the match HARD-fails'
-expect_out 'C1-Q4-DENSE-READINESS-TWO-MEMBERS' "the if-guard failure NAMES the clause id"
+expect_out 'C1-Q4-DENSE-READINESS-THREE-STATES' "the if-guard failure NAMES the clause id"
 expect_out 'pending' "the if-guard failure NAMES the unpinned token it found"
 expect_routes_to_steward "the if-guard vocabulary failure"
 
@@ -923,7 +923,7 @@ expect_out 'C1-Q6A-THREE-ROLES' "the sibling-module tier-role failure NAMES the 
 expect_out 'tier_labels\.rs' "the sibling-module tier-role failure NAMES the offending FILE"
 
 # 12u — fix-3 SWEEP: the last remaining file-scoped negative, in
-# C1-Q4-DENSE-READINESS-TWO-MEMBERS. `pending` is reserved by the clause for the
+# C1-Q4-DENSE-READINESS-THREE-STATES. `pending` is reserved by the clause for the
 # orthogonal admission axis.
 SIBLING_PENDING_ROOT="$(make_root engine-sibling-module-pending-readiness)"
 cat >"$SIBLING_PENDING_ROOT/src/rust/crates/fathomdb-engine/src/readiness_ext.rs" <<'RS'
@@ -933,7 +933,7 @@ pub const RESERVED: DenseReadiness = DenseReadiness::Pending;
 RS
 run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$SIBLING_PENDING_ROOT"
 expect_rc 1 "DenseReadiness::Pending in a SIBLING MODULE HARD-fails the readiness clause"
-expect_out 'C1-Q4-DENSE-READINESS-TWO-MEMBERS' "the sibling-module Pending failure NAMES the clause id"
+expect_out 'C1-Q4-DENSE-READINESS-THREE-STATES' "the sibling-module Pending failure NAMES the clause id"
 expect_out 'readiness_ext\.rs' "the sibling-module Pending failure NAMES the offending FILE"
 
 # === Arm 12v–12ac (RED, fix-4): A PROBE MUST BE BOUND TO ITS SUBJECT =========
@@ -1301,7 +1301,7 @@ PY
 run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$STRING_DECOY_ROOT"
 expect_rc 1 "a definition/declaration planted inside a STRING LITERAL does not satisfy a structural probe"
 expect_out 'C1-AA-CRASH-HEAL-BOOT-REDERIVE' "the string-decoy failure NAMES the crash-heal clause"
-expect_out 'C1-Q4-DENSE-READINESS-TWO-MEMBERS' "the string-decoy failure NAMES the readiness clause"
+expect_out 'C1-Q4-DENSE-READINESS-THREE-STATES' "the string-decoy failure NAMES the readiness clause"
 expect_out 'Failed' "the string-decoy failure NAMES the unpinned variant the real enum carries"
 expect_routes_to_steward "the string-decoy clause failures"
 

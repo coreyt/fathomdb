@@ -236,7 +236,7 @@
       ]
     },
     {
-      "id": "C1-Q4-DENSE-READINESS-TWO-MEMBERS",
+      "id": "C1-Q4-DENSE-READINESS-THREE-STATES",
       "category": "CHECKABLE",
       "obligation": "Q4 AS AMENDED by 0.8.22 Slice 21 F5 (HITL steward-ledger seq-246): the expensive searchable->vector tier carries an engine-set, accept-inert dense_readiness axis — EXACTLY {unavailable, embedding, ready}; `pending` is reserved for the orthogonal admission axis and is not a readiness spelling.",
       "evidence": [

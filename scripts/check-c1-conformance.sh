@@ -856,7 +856,7 @@ ASSERTIONS = {
     # `arms_exact` probes below strictly dominate them — any edit that could fool
     # a file-wide spelling probe fails the exact-pair check), but a probe that
     # states its subject is worth more than one that happens to be covered.
-    "C1-Q4-DENSE-READINESS-TWO-MEMBERS": [
+    "C1-Q4-DENSE-READINESS-THREE-STATES": [
         ("present", ENG, r"pub enum DenseReadiness \{"),
         ("in_item", ENG, "impl", "DenseReadiness", r'DenseReadiness::Unavailable => "unavailable",'),
         ("in_item", ENG, "impl", "DenseReadiness", r'DenseReadiness::Ready => "ready",'),
