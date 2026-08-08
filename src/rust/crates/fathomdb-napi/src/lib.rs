@@ -555,7 +555,8 @@ pub struct ProjectionSpec {
     pub vector: bool,
     pub vector_embedder: Option<String>,
     /// 0.8.20 Slice 20 (R-20-DR) — READ METADATA, engine-set (`vectorDenseReadiness`
-    /// in JS): `"ready"` / `"embedding"` on the way OUT of `read.projections`,
+    /// in JS): `"unavailable"` / `"embedding"` / `"ready"` on the way OUT of
+    /// `read.projections`,
     /// omitted on every caller-authored spec. Inert on the way IN (the engine
     /// reports the derived truth), so `read.projections` output still re-applies
     /// as a no-op.
@@ -677,7 +678,7 @@ impl ProjectionSpec {
                 return Err(typed_error(
                     CODE_INVALID_ARGUMENT,
                     format!(
-                        "projection {:?}: unknown vectorDenseReadiness {readiness:?}: expected \"ready\" or \"embedding\" (\"pending\" is reserved for the admission axis and is never a readiness value). It is engine-set read metadata; omit it",
+                        "projection {:?}: unknown vectorDenseReadiness {readiness:?}: expected \"unavailable\", \"embedding\", or \"ready\" (\"pending\" is reserved for the admission axis and is never a readiness value). It is engine-set read metadata; omit it",
                         self.name
                     ),
                     JsonValue::Null,

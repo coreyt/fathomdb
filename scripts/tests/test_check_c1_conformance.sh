@@ -315,56 +315,32 @@ expect_out 'ok +c1-contract-conformance' "the copied-fixture pass says ok"
 # Slice 21's HITL ruling closes the C1 vocabulary as exactly
 # {unavailable, embedding, ready}.  This fixture is deliberately the complete
 # future public enum shape: the enum, outbound spellings, and inbound
-# accept-inert parsing all agree.  Until the contract/pin/checker are re-derived
-# together, the old two-member gate MUST reject it.  The expectation is already
-# the post-ruling contract, so this is a real RED witness rather than a test of
-# the previous vocabulary.
+# accept-inert parsing all agree. Commit `e619846a` established its RED witness:
+# the prior two-member gate rejected this exact shape. The re-derived gate must
+# now accept it, while the later divergent fixtures prove the vocabulary remains
+# closed.
 THREE_VALUE_ROOT="$(make_root readiness-three-value-contract)"
 python3 - "$THREE_VALUE_ROOT/src/rust/crates/fathomdb-engine/src/lib.rs" <<'PY'
 import sys
 
 p = sys.argv[1]
 text = open(p, encoding="utf-8").read()
-old_enum = '''pub enum DenseReadiness {
-    /// Every row in the vector projection's row set has reached a projection
-    /// terminal — the dense arm is caught up. Because the vector INSERT and the
-    /// terminal record are written in ONE transaction
-    /// ([`commit_projection_outcomes`]), `Ready` can never be observed with the
-    /// vector row absent (design §4.1 invariant 1).
-    Ready,
-    /// At least one row in the projection's row set has not yet reached a
-    /// projection terminal — embedding is outstanding. This is the ONLY
-    /// tolerable torn state: readiness `embedding` with the vector absent (the
-    /// dense arm reads as partial and RRF under-ranks; it does not hide).
-    Embedding,
-}'''
-new_enum = '''pub enum DenseReadiness {
-    /// No usable dense runtime is available for this session.
+start = text.index("pub enum DenseReadiness {")
+end = text.index("\n}", start) + 2
+text = text[:start] + '''pub enum DenseReadiness {
     Unavailable,
-    /// At least one row in the vector projection's row set has not yet reached a
-    /// projection terminal — embedding is outstanding. This is the ONLY
-    /// tolerable torn state: readiness `embedding` with the vector absent (the
-    /// dense arm reads as partial and RRF under-ranks; it does not hide).
     Embedding,
-    /// Every row in the vector projection's row set has reached a projection
-    /// terminal — the dense arm is caught up. Because the vector INSERT and the
-    /// terminal record are written in ONE transaction
-    /// ([`commit_projection_outcomes`]), `Ready` can never be observed with the
-    /// vector row absent (design §4.1 invariant 1).
     Ready,
-}'''
-assert old_enum in text
-text = text.replace(old_enum, new_enum, 1)
-text = text.replace(
-    '        match self {\n            DenseReadiness::Ready => "ready",\n            DenseReadiness::Embedding => "embedding",\n',
-    '        match self {\n            DenseReadiness::Unavailable => "unavailable",\n            DenseReadiness::Embedding => "embedding",\n            DenseReadiness::Ready => "ready",\n',
-    1,
-)
-text = text.replace(
-    '        match value {\n            "ready" => Some(DenseReadiness::Ready),\n            "embedding" => Some(DenseReadiness::Embedding),\n',
-    '        match value {\n            "unavailable" => Some(DenseReadiness::Unavailable),\n            "embedding" => Some(DenseReadiness::Embedding),\n            "ready" => Some(DenseReadiness::Ready),\n',
-    1,
-)
+}''' + text[end:]
+for arm in (
+    'DenseReadiness::Unavailable => "unavailable"',
+    'DenseReadiness::Embedding => "embedding"',
+    'DenseReadiness::Ready => "ready"',
+    '"unavailable" => Some(DenseReadiness::Unavailable)',
+    '"embedding" => Some(DenseReadiness::Embedding)',
+    '"ready" => Some(DenseReadiness::Ready)',
+):
+    assert arm in text
 open(p, "w", encoding="utf-8").write(text)
 PY
 run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$THREE_VALUE_ROOT"
@@ -580,7 +556,8 @@ expect_out 'C1-AA-CRASH-HEAL-BOOT-REDERIVE' "the deleted-test failure NAMES the 
 
 # === Arm 12d–12g (RED, fix-1): CLOSED VOCABULARY, not a blacklist ===========
 # codex §9 round 1, finding #1 [P2]. Three contract clauses say a vocabulary is
-# EXACTLY some set ("EXACTLY {ready, embedding}", "exactly {filterable,
+# EXACTLY some set ("EXACTLY {unavailable, embedding, ready}", "exactly
+# {filterable,
 # rankable, searchable}", "total over exactly those three"). The gate used to
 # assert "the members I want are PRESENT" plus, in one case, "one specific bad
 # name is ABSENT" — which is a BLACKLIST OF ONE, not a closed vocabulary. Any
@@ -591,7 +568,7 @@ expect_out 'C1-AA-CRASH-HEAL-BOOT-REDERIVE' "the deleted-test failure NAMES the 
 # Each arm below adds a member whose NAME the old blacklist could not have
 # known. Every one of them exited 0 before this round.
 
-# 12d — codex's own demonstration: a THIRD DenseReadiness variant.
+# 12d — codex's own demonstration: an EXTRA DenseReadiness variant.
 VOCAB_ROOT="$(make_root readiness-third-variant)"
 python3 - "$VOCAB_ROOT/src/rust/crates/fathomdb-engine/src/lib.rs" <<'PY'
 import sys
@@ -603,13 +580,13 @@ text = text[:j] + "\n    Failed," + text[j:]
 open(p, "w", encoding="utf-8").write(text)
 PY
 run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$VOCAB_ROOT"
-expect_rc 1 "a THIRD DenseReadiness variant HARD-fails (the readiness vocabulary is CLOSED)"
+expect_rc 1 "an EXTRA DenseReadiness variant HARD-fails (the readiness vocabulary is CLOSED)"
 expect_out 'C1-Q4-DENSE-READINESS-TWO-MEMBERS' "the third-variant failure NAMES the clause id"
 expect_out 'Failed' "the third-variant failure NAMES the unpinned variant it found"
 expect_routes_to_steward "the readiness-vocabulary failure"
 
-# 12e — the same hole through the STRING vocabulary: the enum keeps exactly two
-# variants, but a third accepted SPELLING is admitted. The clause reserves
+# 12e — the same hole through the STRING vocabulary: the enum keeps exactly three
+# variants, but an extra accepted SPELLING is admitted. The clause reserves
 # `pending` for the orthogonal admission axis, and the old probes could not see
 # this at all (they matched `DenseReadiness::Pending`, which never appears).
 SPELL_ROOT="$(make_root readiness-third-spelling)"
@@ -623,7 +600,7 @@ text = text.replace(old, old + '\n            "pending" => Some(DenseReadiness::
 open(p, "w", encoding="utf-8").write(text)
 PY
 run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$SPELL_ROOT"
-expect_rc 1 "a THIRD accepted readiness SPELLING HARD-fails even with the enum unchanged"
+expect_rc 1 "an EXTRA accepted readiness SPELLING HARD-fails even with the enum unchanged"
 expect_out 'C1-Q4-DENSE-READINESS-TWO-MEMBERS' "the third-spelling failure NAMES the clause id"
 expect_out 'pending' "the third-spelling failure NAMES the reserved token it found"
 
@@ -798,14 +775,14 @@ p = sys.argv[1]
 text = open(p, encoding="utf-8").read()
 old = '''    pub fn from_str_opt(value: &str) -> Option<Self> {
         match value {
-            "ready" => Some(DenseReadiness::Ready),'''
+            "unavailable" => Some(DenseReadiness::Unavailable),'''
 assert old in text
 new = '''    pub fn from_str_opt(value: &str) -> Option<Self> {
         if value == "pending" {
             return Some(DenseReadiness::Ready);
         }
         match value {
-            "ready" => Some(DenseReadiness::Ready),'''
+            "unavailable" => Some(DenseReadiness::Unavailable),'''
 open(p, "w", encoding="utf-8").write(text.replace(old, new, 1))
 PY
 run_checker --contract "$CLEAN_CONTRACT" --pin "$REAL_PIN" --root "$GUARD_ROOT"
@@ -1279,14 +1256,15 @@ expect_out 'C1-LAND-0820-SLOT' "the demoted-row failure NAMES the landing-slot c
 # Found by turning the fix-4 question on the fix-4 patch itself: the structural
 # readers read a COMMENT-STRIPPED view, but string literals were left in it, so
 # `fn foo() { }` sitting inside a `&str` constant read exactly like a definition
-# — and `enum DenseReadiness { Ready, Embedding }` inside one read exactly like a
+# — and `enum DenseReadiness { Unavailable, Embedding, Ready }` inside one read
+# exactly like a
 # declaration. That is the fix-4 class again (a probe satisfied by something that
 # is not its subject), and it is a false GREEN, not the safe direction.
 #
 # Both halves below exited 0 against the fix-4 gate:
 #   * the crash-heal proof DELETED, its name surviving only inside a string;
-#   * a THIRD DenseReadiness variant added to the real enum, with a decoy string
-#     EARLIER in the file carrying a well-formed two-variant enum — `enum_exact`
+#   * an EXTRA DenseReadiness variant added to the real enum, with a decoy string
+#     EARLIER in the file carrying a well-formed three-variant enum — `enum_exact`
 #     brace-matched the decoy and reported the vocabulary closed.
 STRING_DECOY_ROOT="$(make_root definition-inside-a-string-literal)"
 python3 - "$STRING_DECOY_ROOT/src/rust/crates/fathomdb-engine/tests/slice15d_projection_registry.rs" <<'PY'
@@ -1314,9 +1292,9 @@ text = text[:j] + "\n    Failed," + text[j:]
 # The decoy must sit EARLIER in the file than the real declaration, because the
 # structural reader takes the first parseable one it finds.
 text = (
-    "// Fixture only (fix-4 SWEEP). A well-formed two-variant enum inside a\n"
-    "// string literal, ahead of the real three-variant declaration.\n"
-    "const FIXTURE_DECOY_ENUM: &str = \"pub enum DenseReadiness { Ready, Embedding }\";\n"
+    "// Fixture only (fix-4 SWEEP). A well-formed three-variant enum inside a\n"
+    "// string literal, ahead of the real four-variant declaration.\n"
+    "const FIXTURE_DECOY_ENUM: &str = \"pub enum DenseReadiness { Unavailable, Embedding, Ready }\";\n"
 ) + text
 open(p, "w", encoding="utf-8").write(text)
 PY

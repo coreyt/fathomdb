@@ -34,7 +34,7 @@
 #     asserts, as a matter of fact, that no `EntityTypeSpec` and no `id_prefix`
 #     exists anywhere under src/ — that is a perfect falsifiable assertion and
 #     it is checked as one);
-#   * for CLOSED VOCABULARIES ("EXACTLY {ready, embedding}", "exactly three
+#   * for CLOSED VOCABULARIES ("EXACTLY {unavailable, embedding, ready}", "exactly three
 #     roles", "total over exactly those three"), that the enum's variant SET and
 #     COUNT and its string mappings are exactly the pinned ones — a structural
 #     comparison, NOT a blacklist of the names somebody happened to fear; and
@@ -510,7 +510,8 @@ def crate_manifest_for(test_path):
 #
 # ------------ CLOSED VOCABULARIES ARE STRUCTURAL, NOT BLACKLISTED ------------
 # fix-1, codex §9 round 1 finding #1 [P2]. Three clauses below assert that a
-# vocabulary is EXACTLY some set: readiness is "EXACTLY {ready, embedding}",
+# vocabulary is EXACTLY some set: readiness is
+# "EXACTLY {unavailable, embedding, ready}",
 # roles are "exactly {filterable, rankable, searchable}", the typed id space is
 # "total over exactly those three". Those obligations were originally probed as
 # "the members I want are PRESENT" plus, in one case, "one specific bad name is
@@ -835,9 +836,10 @@ ASSERTIONS = {
         ("in_item", ENG, "fn", "configure_projections", r"apply_projection_config\(&tx,"),
         ("in_item", ENG, "struct", "ProjectionDelta", r"pub\s+built\s*:\s*Vec\s*<\s*String\s*>"),
     ],
-    # "EXACTLY {ready, embedding}" is a CLOSED vocabulary, so it is asserted
-    # structurally (fix-1, codex finding #1): the enum has exactly two variants,
-    # and each conversion fn maps exactly two (variant, string) pairs. The
+    # "EXACTLY {unavailable, embedding, ready}" is a CLOSED vocabulary, so it
+    # is asserted structurally (fix-1, codex finding #1): the enum has exactly
+    # three variants, and each conversion fn maps exactly three (variant, string)
+    # pairs. The
     # `present` probes are kept as a spelling regression guard, and the negative
     # `::Pending` probe is kept because the clause names that token
     # specifically ("reserved for the orthogonal admission axis") — but neither
@@ -856,14 +858,15 @@ ASSERTIONS = {
     # states its subject is worth more than one that happens to be covered.
     "C1-Q4-DENSE-READINESS-TWO-MEMBERS": [
         ("present", ENG, r"pub enum DenseReadiness \{"),
+        ("in_item", ENG, "impl", "DenseReadiness", r'DenseReadiness::Unavailable => "unavailable",'),
         ("in_item", ENG, "impl", "DenseReadiness", r'DenseReadiness::Ready => "ready",'),
         ("in_item", ENG, "impl", "DenseReadiness", r'DenseReadiness::Embedding => "embedding",'),
         ("absent_tree", ENG_TREE, r"DenseReadiness::Pending", (".rs",)),
-        ("enum_exact", ENG, "DenseReadiness", ("Ready", "Embedding")),
+        ("enum_exact", ENG, "DenseReadiness", ("Unavailable", "Embedding", "Ready")),
         ("arms_exact", ENG, "DenseReadiness", "as_str",
-         (("Ready", "ready"), ("Embedding", "embedding"))),
+         (("Unavailable", "unavailable"), ("Embedding", "embedding"), ("Ready", "ready"))),
         ("arms_exact", ENG, "DenseReadiness", "from_str_opt",
-         (("Ready", "ready"), ("Embedding", "embedding"))),
+         (("Unavailable", "unavailable"), ("Embedding", "embedding"), ("Ready", "ready"))),
     ],
     "C1-Q4-NO-PROVISIONAL-CONCEPT": [
         ("absent_tree", SRC_TREE, r"(?i)provisional", (".rs",)),

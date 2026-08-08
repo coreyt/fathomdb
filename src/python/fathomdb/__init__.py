@@ -19,6 +19,7 @@ from fathomdb.engine import Engine
 from fathomdb.filter import Filter
 from fathomdb.types import (
     CounterSnapshot,
+    DenseReadiness,
     ExpandedNode,
     Explanation,
     IdSpace,
@@ -41,6 +42,7 @@ from fathomdb.types import (
 __all__ = [
     "ConsolidateReceipt",
     "CounterSnapshot",
+    "DenseReadiness",
     "Engine",
     "EngineConfig",
     "Filter",

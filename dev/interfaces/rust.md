@@ -501,10 +501,11 @@ Types:
   `searchable→FTS` / `searchable→vector` sub-target selectors (`None` embedder ⇒
   engine default). `dense_readiness` was added additively by 0.8.20 Slice 20
   (R-20-DR); see below.
-- `DenseReadiness` — a two-variant enum, `Ready` and `Embedding`, with
-  `as_str` / `from_str_opt` giving the `"ready" | "embedding"` wire spellings.
-  0.8.20 Slice 20 (R-20-DR), **PROPOSED, NOT SIGNED**; the only net-new type in
-  that slice, which adds ZERO net-new governed commands.
+- `DenseReadiness` — a three-variant enum, `Unavailable`, `Embedding`, and
+  `Ready`, with `as_str` / `from_str_opt` giving the
+  `"unavailable" | "embedding" | "ready"` wire spellings. Slice 21's F5/C1
+  ruling (`steward-ledger` seq-246) signs the vocabulary without adding a
+  governed command.
 - `ProjectionDelta { built, dropped, deferred, unchanged, vector_unsupported_kinds }`.
   Cheap roles (`filterable`, `searchable→FTS`) build same-transaction; `rankable`
   and the `searchable→vector` sub-target are persisted-but-deferred (reported in
@@ -589,19 +590,22 @@ for a spec that declares the `searchable→vector` sub-object; `filterable` and
 `searchable→FTS` are same-transaction (non-stale on commit) and have no readiness
 axis. It is `None` on every caller-authored spec.
 
-- **`DenseReadiness` has exactly two variants**, `Ready` and `Embedding`, wire
-  spellings `"ready"` / `"embedding"`. **`pending` is RESERVED for the orthogonal
-  ADMISSION axis** (quarantine/trust — an app judgment) and is deliberately never
-  an index-readiness value: a record can be `active ∧ is_latest ∧ admissible` and
-  still read `Embedding`. `from_str_opt("pending")` is `None`.
+- **`DenseReadiness` has exactly three variants**, `Unavailable`, `Embedding`,
+  and `Ready`, wire spellings `"unavailable"` / `"embedding"` / `"ready"`.
+  `Unavailable` means the declared vector projection lacks a usable dense
+  runtime (absent or equivalence-refused); `Embedding` means such a runtime has
+  eligible outstanding work; `Ready` means it has none. **`pending` is RESERVED
+  for the orthogonal ADMISSION axis** (quarantine/trust — an app judgment) and
+  is deliberately never an index-readiness value. `from_str_opt("pending")` is
+  `None`.
 - **DERIVED, never stored.** No schema step, no `MIGRATIONS` change,
   `SCHEMA_VERSION` stays 24. The value is computed on the way out of
   `read_projections` from the same outstanding-work predicate `drain` /
-  `wait_for_idle` use, so "readiness is `Ready`" and "`drain` reports idle" cannot
-  disagree. That is what makes `{ vector-insert ∧ readiness := ready }` atomic BY
-  CONSTRUCTION: `Ready` can never be observed with the vector row absent (only the
-  tolerated torn state — `Embedding` with the vector absent — is reachable). The
-  predicate is corpus-wide rather than per-attribute while Slice 15d still defers
+  `wait_for_idle` use, qualified by the usable-dense-runtime predicate. That is
+  what makes `{ vector-insert ∧ readiness := ready }` atomic BY CONSTRUCTION:
+  `Ready` can never be observed with the vector row absent (only the tolerated
+  torn state — `Embedding` with the vector absent — is reachable). The predicate
+  is corpus-wide rather than per-attribute while Slice 15d still defers
   per-attribute embedding.
 - **ACCEPT-INERT on the way in.** `Engine::configure_projections` neither stores
   nor honours a caller-supplied `dense_readiness` (`StoredProjection::from_spec`
@@ -616,7 +620,8 @@ axis. It is `None` on every caller-authored spec.
   declaration, and the round-trip it protects is still live.
 - **The BINDINGS hard-reject** the two shapes that could never round-trip: a
   readiness supplied with `vector = false`, and any spelling outside
-  `{ready, embedding}` (notably `pending`, and the empty string). Both reuse the
+  `{unavailable, embedding, ready}` (notably `pending`, and the empty string).
+  Both reuse the
   EXISTING `EngineError::InvalidArgument` / `InvalidArgumentError` /
   `FDB_INVALID_ARGUMENT` — **no new error type is minted.** A declared readiness
   never changes what the engine reports.
@@ -629,7 +634,8 @@ axis. It is `None` on every caller-authored spec.
 net-new governed commands (TC-55 = INSTRUMENTATION). The pinned invariant, tested
 in Rust, Python and TypeScript:
 
-> `drain(timeout)` returning `Ok(())` ⟹ `dense_readiness == Ready`,
+> With a usable dense runtime, `drain(timeout)` returning `Ok(())` ⟹
+> `dense_readiness == Ready`,
 > **and every vector-eligible row has its vector row at rest.**
 
 - **`drain` is a BARRIER, not a trigger.** It waits for the projection runtime to

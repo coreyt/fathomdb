@@ -157,19 +157,20 @@ export interface ProjectionSpec {
    * Supplying it to `configureProjections` is INERT — it is not part of the
    * declaration and the engine always reports the derived truth — so
    * `read.projections` output still re-applies as a no-op. Supplying it with
-   * `vector: false`, or any spelling outside `{"ready", "embedding"}`, throws a
+   * `vector: false`, or any spelling outside
+   * `{"unavailable", "embedding", "ready"}`, throws a
    * typed `FDB_INVALID_ARGUMENT` (it could not round-trip).
    */
   vectorDenseReadiness?: DenseReadiness | null;
 }
 
 /**
- * 0.8.20 Slice 20 (R-20-DR) — the two engine-set readiness values of the
+ * 0.8.22 Slice 21 (F5) — the three engine-set readiness values of the
  * `searchable→vector` projection. Mirrors the Rust `DenseReadiness` and the
  * Python string literals. `"pending"` is deliberately absent — that token is
  * reserved for the orthogonal admission axis.
  */
-export type DenseReadiness = "ready" | "embedding";
+export type DenseReadiness = "unavailable" | "embedding" | "ready";
 
 /**
  * 0.8.20 Slice 15d (R-20-PR) — the diff `configureProjections` applied.

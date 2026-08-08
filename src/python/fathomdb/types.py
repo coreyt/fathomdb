@@ -15,6 +15,10 @@ from typing import Literal, TypedDict, TypeGuard, Union
 #: ``PerHitExplain.arm`` (and, for graph-arm hits, ``SearchHit.branch``).
 SoftFallbackBranch = Literal["vector", "text", "text_edge", "graph_arm"]
 
+#: Engine-set dense-projection readiness values. ``"pending"`` is deliberately
+#: absent: it belongs to the orthogonal admission axis, not readiness.
+DenseReadiness = Literal["unavailable", "embedding", "ready"]
+
 
 @dataclass(frozen=True)
 class WriteReceipt:
@@ -165,9 +169,10 @@ class ProjectionSpec:
     vector: bool = False
     #: Optional embedder override; ``None`` = engine default (only with ``vector``).
     vector_embedder: str | None = None
-    #: 0.8.20 Slice 20 (R-20-DR) — **READ METADATA, engine-set.** ``"ready"`` or
-    #: ``"embedding"`` when returned by :func:`fathomdb.read.projections` for a
-    #: spec with ``vector=True``; ``None`` on every caller-authored spec.
+    #: 0.8.22 Slice 21 (F5) — **READ METADATA, engine-set.** ``"unavailable"``,
+    #: ``"embedding"``, or ``"ready"`` when returned by
+    #: :func:`fathomdb.read.projections` for a spec with ``vector=True``;
+    #: ``None`` on every caller-authored spec.
     #:
     #: ``filterable`` / ``searchable→FTS`` are same-transaction (non-stale on
     #: commit) so they carry no readiness; ``searchable→vector`` is async and
@@ -182,10 +187,10 @@ class ProjectionSpec:
     #: Supplying it to ``Engine.configure_projections`` is INERT — it is not part
     #: of the declaration and the engine always reports the derived truth — so
     #: ``read.projections`` output still re-applies as a no-op. Supplying it with
-    #: ``vector=False``, or any spelling outside ``{"ready", "embedding"}``, is a
-    #: hard :class:`fathomdb.errors.InvalidArgumentError` (it could not
+    #: ``vector=False``, or any spelling outside :data:`DenseReadiness`, is a hard
+    #: :class:`fathomdb.errors.InvalidArgumentError` (it could not
     #: round-trip) — the EXISTING typed error, no new class minted.
-    vector_dense_readiness: str | None = None
+    vector_dense_readiness: DenseReadiness | None = None
     #: Ordered literal object-member path in the canonical body. ``None`` keeps
     #: the legacy direct top-level lookup by ``name``.
     source: tuple[str, ...] | None = None

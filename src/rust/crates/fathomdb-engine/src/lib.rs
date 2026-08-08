@@ -4090,7 +4090,7 @@ pub struct ProjectionFts {
 /// `dev/design/record-lifecycle-protocol/projection-registry-and-async-embed.md`
 /// §3.
 ///
-/// **Exactly two members.** `filterable` and `searchable→FTS` are
+/// **Exactly three members.** `filterable` and `searchable→FTS` are
 /// same-transaction (non-stale on commit) so they need no readiness axis at all;
 /// `searchable→vector` is **async, rebuild-durable**, so it carries one.
 ///
@@ -4102,35 +4102,41 @@ pub struct ProjectionFts {
 /// `Embedding`, never `Pending`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub enum DenseReadiness {
+    /// No usable dense runtime is available for this session. The Slice 21
+    /// runtime implementation selects this when the embedder is absent or
+    /// vector equivalence refuses dense work.
+    Unavailable,
+    /// At least one row in the vector projection's row set has not yet reached a
+    /// projection terminal — embedding is outstanding. This is the ONLY
+    /// tolerable torn state: readiness `embedding` with the vector absent (the
+    /// dense arm reads as partial and RRF under-ranks; it does not hide).
+    Embedding,
     /// Every row in the vector projection's row set has reached a projection
     /// terminal — the dense arm is caught up. Because the vector INSERT and the
     /// terminal record are written in ONE transaction
     /// ([`commit_projection_outcomes`]), `Ready` can never be observed with the
     /// vector row absent (design §4.1 invariant 1).
     Ready,
-    /// At least one row in the projection's row set has not yet reached a
-    /// projection terminal — embedding is outstanding. This is the ONLY
-    /// tolerable torn state: readiness `embedding` with the vector absent (the
-    /// dense arm reads as partial and RRF under-ranks; it does not hide).
-    Embedding,
 }
 
 impl DenseReadiness {
     #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
-            DenseReadiness::Ready => "ready",
+            DenseReadiness::Unavailable => "unavailable",
             DenseReadiness::Embedding => "embedding",
+            DenseReadiness::Ready => "ready",
         }
     }
 
-    /// The two accepted spellings. `"pending"` is DELIBERATELY not one of them
+    /// The three accepted spellings. `"pending"` is DELIBERATELY not one of them
     /// (reserved for the admission axis) and so parses to `None`.
     #[must_use]
     pub fn from_str_opt(value: &str) -> Option<Self> {
         match value {
-            "ready" => Some(DenseReadiness::Ready),
+            "unavailable" => Some(DenseReadiness::Unavailable),
             "embedding" => Some(DenseReadiness::Embedding),
+            "ready" => Some(DenseReadiness::Ready),
             _ => None,
         }
     }
@@ -4171,7 +4177,7 @@ pub struct ProjectionVector {
     ///
     /// The bindings still HARD-REJECT the shapes that could
     /// not round-trip: a readiness supplied with `vector = false`, and any
-    /// spelling outside `{ready, embedding}`.
+    /// spelling outside `{unavailable, embedding, ready}`.
     pub dense_readiness: Option<DenseReadiness>,
 }
 
@@ -13946,12 +13952,13 @@ fn connection_has_pending_projection_work(connection: &Connection) -> rusqlite::
 /// When per-attribute embedding lands, this function is where the scoping goes.
 ///
 /// **Failure boundary.** A row whose embed FAILED terminally records a `failed`
-/// terminal (no vector row), so it stops being outstanding and readiness returns
-/// to `ready`. That is the correct reading of a two-member vocabulary — the row
-/// will never embed, so reporting `embedding` forever would be a lie — and
-/// failures stay separately observable through the `projection_failures`
-/// collection. It is the one case where a `ready` corpus can lack a vector row,
-/// and it is NOT a torn write: no `up_to_date` terminal exists for it.
+/// terminal (no vector row), so it stops being outstanding. With a usable dense
+/// runtime, readiness returns to `ready`: the row will never embed, so reporting
+/// `embedding` forever would be a lie. With no usable runtime, the Slice 21
+/// runtime predicate instead reports `unavailable`. Failures stay separately
+/// observable through the `projection_failures` collection. A `ready` corpus can
+/// therefore lack a vector row only for a failed terminal; it is NOT a torn
+/// write because no `up_to_date` terminal exists for it.
 fn derive_dense_readiness(connection: &Connection) -> Result<DenseReadiness, EngineError> {
     if connection_has_pending_projection_work(connection).map_err(|_| EngineError::Storage)? {
         Ok(DenseReadiness::Embedding)

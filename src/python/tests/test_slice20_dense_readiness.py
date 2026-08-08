@@ -18,10 +18,11 @@ ZERO net-new governed commands: this rides the already-governed
 from __future__ import annotations
 
 import sqlite3
+from typing import cast
 
 import pytest
 
-from fathomdb import Engine, ProjectionRole, ProjectionSpec, read
+from fathomdb import DenseReadiness, Engine, ProjectionRole, ProjectionSpec, read
 from fathomdb.errors import InvalidArgumentError
 
 _SOURCE_ID = "py-test:slice20"
@@ -210,7 +211,7 @@ def test_readiness_with_vector_false_is_refused(tmp_path) -> None:
 
 @pytest.mark.parametrize("bad", ["pending", "", "Ready", "embedded"])
 def test_unknown_readiness_spelling_is_refused(tmp_path, bad: str) -> None:
-    """``read.projections`` only ever emits ``"ready"`` / ``"embedding"``, so any
+    """``read.projections`` only ever emits a declared readiness literal, so any
     other spelling could not round-trip. ``"pending"`` in particular is RESERVED
     for the orthogonal admission axis (quarantine/trust, an app judgment) and is
     never a readiness value."""
@@ -221,7 +222,8 @@ def test_unknown_readiness_spelling_is_refused(tmp_path, bad: str) -> None:
             name="summary",
             roles=frozenset({ProjectionRole.SEARCHABLE}),
             vector=True,
-            vector_dense_readiness=bad,
+            # Deliberately cross the typed boundary to exercise runtime rejection.
+            vector_dense_readiness=cast(DenseReadiness, bad),
         )
         with pytest.raises(InvalidArgumentError):
             engine.configure_projections([spec])

@@ -7,7 +7,7 @@ Hand-maintained — keep in sync with the binding's `#[pyclass]` /
 
 from typing import Any, Iterable
 
-from fathomdb.types import EmbedderEvent
+from fathomdb.types import DenseReadiness, EmbedderEvent
 
 class WriteReceipt:
     cursor: int
@@ -333,8 +333,8 @@ class ProjectionSpec:
     fts_tokenizer: str | None
     vector: bool
     vector_embedder: str | None
-    # 0.8.20 Slice 20 (R-20-DR) — engine-set READ METADATA ("ready"/"embedding").
-    vector_dense_readiness: str | None
+    # 0.8.22 Slice 21 (F5) — engine-set READ METADATA.
+    vector_dense_readiness: DenseReadiness | None
     source: list[str] | None
     def __init__(
         self,
@@ -344,7 +344,7 @@ class ProjectionSpec:
         fts_tokenizer: str | None = ...,
         vector: bool = ...,
         vector_embedder: str | None = ...,
-        vector_dense_readiness: str | None = ...,
+        vector_dense_readiness: DenseReadiness | None = ...,
         source: list[str] | None = ...,
     ) -> None: ...
 

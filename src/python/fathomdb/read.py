@@ -241,7 +241,8 @@ def projections(engine: "Engine") -> builtins.list[ProjectionSpec]:
             vector=s.vector,
             vector_embedder=s.vector_embedder,
             # 0.8.20 Slice 20 (R-20-DR) — engine-set readiness read metadata
-            # (`"ready"` / `"embedding"`; `None` when no vector sub-object).
+            # (`"unavailable"` / `"embedding"` / `"ready"`; `None` when no
+            # vector sub-object).
             vector_dense_readiness=s.vector_dense_readiness,
             source=tuple(s.source) if s.source is not None else None,
         )

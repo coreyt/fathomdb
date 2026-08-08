@@ -382,7 +382,7 @@ never be embedded" (permanent) both arrived as the same `deferred` entry.
 the `vector` sub-object, typed by the net-new exported string union
 
 ```ts
-export type DenseReadiness = "ready" | "embedding";
+export type DenseReadiness = "unavailable" | "embedding" | "ready";
 ```
 
 It is `null`/omitted on every caller-authored spec and is populated only on the
@@ -391,11 +391,12 @@ way OUT of `read.projections(engine)` — and only for a spec that declares
 on commit) so they have no readiness axis at all; `searchable→vector` is async
 and rebuild-durable, so it carries one.
 
-- **Exactly two spellings: `"ready"` and `"embedding"`.** `"pending"` is
+- **Exactly three spellings: `"unavailable"`, `"embedding"`, and `"ready"`.**
+  `"unavailable"` means no usable dense runtime (absent or
+  equivalence-refused); `"embedding"` means a usable runtime has eligible
+  outstanding work; and `"ready"` means it is quiescent. `"pending"` is
   DELIBERATELY not one of them — that token is RESERVED for the orthogonal
-  **admission** axis (quarantine/trust, an app judgment). Index-readiness and
-  admission are different dimensions: a record can be admissible and still read
-  `"embedding"`. Do not reuse the word.
+  **admission** axis (quarantine/trust, an app judgment). Do not reuse the word.
 - **Derived, never stored.** There is no schema step and no `SCHEMA_VERSION`
   bump; the value is computed per `read.projections` call from outstanding
   projection work (the same predicate `drain` uses), which is what makes
@@ -415,9 +416,10 @@ and rebuild-durable, so it carries one.
   never part of a declaration.
 - **Two shapes are still hard-rejected**, because they could never round-trip: a
   readiness supplied with `vector: false`, and any spelling outside
-  `{"ready", "embedding"}` (including `"pending"`, `""`, and `"Ready"`). Both
-  throw the EXISTING `InvalidArgumentError`, mapped from the `FDB_INVALID_ARGUMENT`
-  envelope — **no new error type is minted**. `null`/omitted is always accepted.
+  `{"unavailable", "embedding", "ready"}` (including `"pending"`, `""`, and
+  `"Ready"`). Both throw the EXISTING `InvalidArgumentError`, mapped from the
+  `FDB_INVALID_ARGUMENT` envelope — **no new error type is minted**.
+  `null`/omitted is always accepted.
 - **Additive.** A caller who never reads the field sees identical behaviour, and
   the slice adds ZERO net-new governed commands; `DenseReadiness` is the only
   net-new export.
@@ -429,8 +431,9 @@ note **MILLISECONDS** here, seconds in Python — carries those semantics, so th
 surface gains ZERO net-new governed commands. The pinned invariant, tested in
 Rust, Python and TypeScript:
 
-> `await engine.drain(timeoutMs)` resolving ⟹ `vectorDenseReadiness === "ready"`,
-> **and every vector-eligible row has its vector row at rest.**
+> With a usable dense runtime, `await engine.drain(timeoutMs)` resolving ⟹
+> `vectorDenseReadiness === "ready"`, **and every vector-eligible row has its
+> vector row at rest.**
 
 - **`drain` is a BARRIER, not a trigger.** It waits for the engine's projection
   runtime to go quiescent; it never schedules or wakes anything.

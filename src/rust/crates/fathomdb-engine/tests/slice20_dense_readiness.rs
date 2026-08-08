@@ -485,11 +485,11 @@ fn atomic_flip_never_exposes_ready_without_the_vector_under_concurrent_write() {
 ///      `up_to_date` terminal with no vector; a `failed` terminal is a terminal
 ///      decision that there will never be a vector.
 ///
-/// It also pins the documented boundary of the two-member vocabulary: once the
-/// failure is terminal, nothing is outstanding, so readiness returns to `ready`
-/// even though that row has no vector. Reporting `embedding` forever would be a
-/// lie (the row will never embed); the failure stays observable through the
-/// `projection_failures` collection.
+/// With this test's usable dense runtime, it also pins the failure boundary:
+/// once failure is terminal, nothing is outstanding, so readiness returns to
+/// `ready` even though that row has no vector. Reporting `embedding` forever
+/// would be a lie (the row will never embed); the failure stays observable
+/// through the `projection_failures` collection.
 #[test]
 fn a_failed_embed_is_not_a_torn_write_and_the_detector_is_not_vacuous() {
     let dir = TempDir::new().unwrap();

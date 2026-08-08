@@ -850,8 +850,8 @@ struct PyProjectionSpec {
     fts_tokenizer: Option<String>,
     vector: bool,
     vector_embedder: Option<String>,
-    /// 0.8.20 Slice 20 (R-20-DR) — READ METADATA, engine-set: `"ready"` /
-    /// `"embedding"` on the way OUT of `read.projections`, `None` on every
+    /// 0.8.22 Slice 21 (F5) — READ METADATA, engine-set: `"unavailable"` /
+    /// `"embedding"` / `"ready"` on the way OUT of `read.projections`, `None` on every
     /// caller-authored spec. Inert on the way IN (the engine reports the derived
     /// truth), so `read.projections` output still re-applies as a no-op.
     vector_dense_readiness: Option<String>,
@@ -969,7 +969,8 @@ impl PyProjectionSpec {
         //   * supplied while `vector` is false — there is no vector sub-object
         //     to carry it, so `read.projections` could not echo it back;
         //   * an unrecognised spelling — `read.projections` only ever emits
-        //     `"ready"` / `"embedding"`, so anything else (notably `"pending"`,
+        //     `"unavailable"` / `"embedding"` / `"ready"`, so anything else
+        //     (notably `"pending"`,
         //     which is RESERVED for the orthogonal admission axis, and `""`)
         //     could not round-trip and is a caller mistake worth naming.
         if let Some(readiness) = self.vector_dense_readiness.as_deref() {
@@ -982,7 +983,7 @@ impl PyProjectionSpec {
             }
             if RustDenseReadiness::from_str_opt(readiness).is_none() {
                 return Err(InvalidArgumentError::new_err(format!(
-                    "projection {:?}: unknown vector_dense_readiness {readiness:?}: expected \"ready\" or \"embedding\" (\"pending\" is reserved for the admission axis and is never a readiness value). It is engine-set read metadata; omit it",
+                    "projection {:?}: unknown vector_dense_readiness {readiness:?}: expected \"unavailable\", \"embedding\", or \"ready\" (\"pending\" is reserved for the admission axis and is never a readiness value). It is engine-set read metadata; omit it",
                     self.name
                 )));
             }
