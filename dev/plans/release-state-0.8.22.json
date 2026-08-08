@@ -9,10 +9,10 @@
   "schema_version_source": "pub const SCHEMA_VERSION in src/rust/crates/fathomdb-schema/src/lib.rs",
   "origin_main_schema_version_source": "origin/main at 15ffef37 has pub const SCHEMA_VERSION = 25 in src/rust/crates/fathomdb-schema/src/lib.rs",
   "documentation_correctness_review": {
-    "status": "APPROVED_LOCAL_PENDING_LANDING",
-    "final_review_sha": "ad14c879",
+    "status": "PENDING_FINAL_FIX_REVIEW",
+    "final_review_sha": "282bfe45",
     "record": "dev/plans/runs/0.8.22-documentation-correctness-review-20260808.md",
-    "evidence": "Independent FIX-3 re-review found no P1/P2 across 77f04282..ad14c879; release-state rendering, Markdown/public-doc lint, and full agent verification passed locally."
+    "evidence": "Independent final review of cbd2b725..282bfe45 found no P1 and one P2: the documentation approval witness stopped at ad14c879, before the Slice 19 closure record and CI-contract correction review. Final-FIX-1 re-review is required before this gate is passed."
   },
   "ladder": [
     {"slice": 0, "short": "CONTRACT", "title": "release contract, platform acceptance, and trusted-publishing runbook", "depends_on": [], "status": "LANDED", "design_refs": ["dev/design/release.md", "dev/design/bindings.md"], "sha": "55792858b2adce00d3d87193d02b23a5d8d52dd7", "merge_subject": "merge(0.8.22): Slice 0 — candidate prerequisites", "evidence": "PR #198 merged at this SHA; safe release dry-run #31064185518 passed all five Python and all five N-API actual-runner builds. No registry publish or registry smoke occurred."},

@@ -64,9 +64,9 @@ public `docs/` match the final implementation and release witnesses. Repair
 material drift and run the applicable documentation checks; code or CI success
 does not bypass this gate.
 
-**Local result (2026-08-08): PASSED.** The independent review record at
-`dev/plans/runs/0.8.22-documentation-correctness-review-20260808.md` closed
-documentation FIX-1 through FIX-3 at `ad14c879` with no remaining P1/P2.
-Release-state rendering, Markdown/public-doc lint, and full agent verification
-passed. This is a local integration result only: protected-branch landing and
-the explicitly held real publication/smokes remain outstanding.
+**Local result (2026-08-08): PENDING final-FIX-1 re-review.** The independent
+review of `cbd2b725..282bfe45` found no P1 and one P2: its completion witness
+stopped at `ad14c879`, before the integrated Slice 19 closure record and
+CI-contract correction review. The correction and a focused independent
+re-review are required before this documentation gate passes. Protected-branch
+landing and the explicitly held real publication/smokes remain outstanding.
