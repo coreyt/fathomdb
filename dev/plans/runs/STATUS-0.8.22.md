@@ -26,9 +26,9 @@
 | 17 | Pre-register 0.8.23 scale-measurement protocol | Landed — `5a7f2484`; protocol only, no scale run or scale claim. |
 | 15 | Native build and validation matrix | Landed — `13341688fca3d02d11c10bb10eb26232156f8032`; CI run #31186535382 passed the full heavy verifier, five-runner native runtime matrix, and five wheel-size gates. |
 | 18 | Ranked retrieval result limits and SDK parity | Landed — `8fdb27dbf00a0663772ffc8e27a243ac1e7dcd74`; default 10 and validated 1..=100 limits across Rust, Python, and TypeScript. |
-| 19 | Canonical FTS join indexes and planner proof | Landed in PR #207 at `e95afd29`; reviewed source ends at `550c4b03`, and fixture-scoped closure evidence is recorded in `0.8.22-slice-19-join-index-measurement-20260808.json`. |
-| 21 | Truthful projection runtime state and safe boot graft | Landed in PR #207 at `e95afd29`; FIX-1 through FIX-5 and the post-integration test-only FIX-1 through FIX-3 correction are closed. |
-| 22 | Governed pure projection-status read | Landed in PR #207 at `e95afd29`; C5 seq-247, RED→GREEN→FIX-1, isolated verification, independent re-review, and refreshed CI are complete. |
+| 19 | Canonical FTS join indexes and planner proof | Landed in PR #207 at `e95afd292561d203d1001ea992ecbc191e129536`; reviewed source ends at `550c4b03`, and fixture-scoped closure evidence is recorded in `0.8.22-slice-19-join-index-measurement-20260808.json`. |
+| 21 | Truthful projection runtime state and safe boot graft | Landed in PR #207 at `e95afd292561d203d1001ea992ecbc191e129536`; FIX-1 through FIX-5 and the post-integration test-only FIX-1 through FIX-3 correction are closed. |
+| 22 | Governed pure projection-status read | Landed in PR #207 at `e95afd292561d203d1001ea992ecbc191e129536`; C5 seq-247, RED→GREEN→FIX-1, isolated verification, independent re-review, and refreshed CI are complete. |
 | 20 | Ordered publication and registry smokes | Local preparation is closed at `2f94085c` after RED→GREEN→FIX-2 and independent reviews. Ordered publication and registry smokes remain explicitly held. |
 | 25 | `next` to `latest` promotion and release truth | Not started. |
 
