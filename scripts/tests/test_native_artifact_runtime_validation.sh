@@ -68,6 +68,50 @@ run_contains_invocation() {
       sub(/[[:space:]]+$/, "", value)
       return value
     }
+    function start_bash_heredoc(value, remainder, quote, closing) {
+      if (index(value, "<<") == 0) {
+        return 0
+      }
+      remainder = value
+      if (remainder !~ /<<-?[[:space:]]*/) {
+        return -1
+      }
+      heredoc_strip_tabs = remainder ~ /<<-[[:space:]]*/
+      sub(/^.*<<-?[[:space:]]*/, "", remainder)
+      quote = substr(remainder, 1, 1)
+      if (quote == sprintf("%c", 39) || quote == "\"") {
+        closing = index(substr(remainder, 2), quote)
+        if (closing == 0) {
+          return -1
+        }
+        heredoc_delimiter = substr(remainder, 2, closing - 1)
+        remainder = substr(remainder, closing + 2)
+      } else if (match(remainder, /^[A-Za-z_][A-Za-z0-9_]*/)) {
+        heredoc_delimiter = substr(remainder, RSTART, RLENGTH)
+        remainder = substr(remainder, RLENGTH + 1)
+      } else {
+        return -1
+      }
+      if (heredoc_delimiter !~ /^[A-Za-z_][A-Za-z0-9_]*$/ || remainder !~ /^[[:space:]]*(#.*)?$/) {
+        return -1
+      }
+      return 1
+    }
+    function start_powershell_here_string(value, single_quote) {
+      single_quote = sprintf("%c", 39)
+      if (value == "@" single_quote) {
+        here_string_end = single_quote "@"
+        return 1
+      }
+      if (value == "@\"") {
+        here_string_end = "\"@"
+        return 1
+      }
+      if (index(value, "@" single_quote) != 0 || index(value, "@\"") != 0) {
+        return -1
+      }
+      return 0
+    }
     function check_invocation(value, suffix) {
       value = trim(value)
       gsub(/[[:space:]]+/, " ", value)
@@ -80,18 +124,54 @@ run_contains_invocation() {
       }
     }
     {
-      line = trim($0)
+      raw = $0
+      if (heredoc_delimiter != "") {
+        candidate = raw
+        if (heredoc_strip_tabs) {
+          sub(/^\t*/, "", candidate)
+        }
+        if (candidate == heredoc_delimiter) {
+          heredoc_delimiter = ""
+          heredoc_strip_tabs = 0
+        }
+        next
+      }
+      if (here_string_end != "") {
+        if (raw == here_string_end) {
+          here_string_end = ""
+        }
+        next
+      }
+      line = raw
+      sub(/^[[:space:]]+/, "", line)
       if (line == "" || line ~ /^#/) {
         next
       }
+      literal = start_bash_heredoc(line)
+      if (literal < 0 || (literal > 0 && pending != "")) {
+        invalid = 1
+        next
+      }
+      if (literal > 0) {
+        next
+      }
+      literal = start_powershell_here_string(line)
+      if (literal < 0 || (literal > 0 && pending != "")) {
+        invalid = 1
+        next
+      }
+      if (literal > 0) {
+        next
+      }
       continues = 0
-      if (continuation == "backslash" && line ~ /\\[[:space:]]*$/) {
-        sub(/\\[[:space:]]*$/, "", line)
+      if (continuation == "backslash" && line ~ /\\$/) {
+        sub(/\\$/, "", line)
         continues = 1
-      } else if (continuation == "backtick" && line ~ /`[[:space:]]*$/) {
-        sub(/`[[:space:]]*$/, "", line)
+      } else if (continuation == "backtick" && line ~ /`$/) {
+        sub(/`$/, "", line)
         continues = 1
       }
+      line = trim(line)
       pending = pending (pending == "" ? "" : " ") line
       if (!continues) {
         check_invocation(pending)
@@ -99,10 +179,13 @@ run_contains_invocation() {
       }
     }
     END {
+      if (heredoc_delimiter != "" || here_string_end != "") {
+        invalid = 1
+      }
       if (pending != "") {
         check_invocation(pending)
       }
-      exit !found
+      exit !(found && !invalid)
     }
   ' <<<"$command"
 }
