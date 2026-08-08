@@ -95,7 +95,13 @@ _RECOVERY_DENYLIST = frozenset(_CONTRACT["recovery_denylist"])
 # namespace. Asserted present-in-the-introspected-surface so a future REMOVAL of
 # any `read.*` verb fails this suite (not merely a documented-allowlist member).
 _NOW_LIVE_READ_VERBS = frozenset(
-    {"read.get", "read.get_many", "read.collection", "read.mutations"}
+    {
+        "read.get",
+        "read.get_many",
+        "read.collection",
+        "read.mutations",
+        "read.projection_status",
+    }
 )
 
 
@@ -174,7 +180,7 @@ def test_search_text_only_verb_is_live() -> None:
 
 def test_read_is_module_level_namespace() -> None:
     assert inspect.ismodule(read)
-    for verb in ("get", "get_many", "collection", "mutations"):
+    for verb in ("get", "get_many", "collection", "mutations", "projection_status"):
         assert callable(getattr(read, verb, None)), f"read.{verb} must be callable"
 
 
