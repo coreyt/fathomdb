@@ -485,7 +485,7 @@ def test_boot_graft_backfills_rows_a_no_embedder_session_stranded(tmp_path) -> N
     """
 
     _skip_if_no_network()
-    path = str(tmp_path / "flush_late_enrol_backfill.sqlite")
+    path = str(tmp_path / "flush_boot_graft_backfill.sqlite")
 
     # ---- session 1: no embedder. The declaration persists and DEFERS. ----
     engine = Engine.open(path, use_default_embedder=False)
@@ -624,8 +624,8 @@ def test_a_no_embedder_session_leaves_an_enrolled_kinds_write_recoverable(tmp_pa
 
 
 # ---------------------------------------------------------------------------
-# fix-5 (codex §9 round 4) — the scheduler's SCAN WINDOW, and the ATOMICITY of a
-# late enrolment
+# fix-5 (codex §9 round 4) — the scheduler's SCAN WINDOW, and BOOT-GRAFT
+# ATOMICITY
 # ---------------------------------------------------------------------------
 
 # `PROJECTION_SCAN_FETCH`, restated: the engine's dispatcher fetches at most

@@ -650,8 +650,8 @@ test("a no-embedder session leaves an enrolled kind's write recoverable", async 
 });
 
 // ---------------------------------------------------------------------------
-// fix-5 (codex §9 round 4) — the scheduler's SCAN WINDOW, and the ATOMICITY of a
-// late enrolment
+// fix-5 (codex §9 round 4) — the scheduler's SCAN WINDOW, and BOOT-GRAFT
+// ATOMICITY
 // ---------------------------------------------------------------------------
 
 // `PROJECTION_SCAN_FETCH`, restated: the engine's dispatcher fetches at most
