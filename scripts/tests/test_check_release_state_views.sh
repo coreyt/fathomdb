@@ -872,8 +872,7 @@ cat >>"$FIX/dev/plans/runs/board.md" <<'EOF'
 <!-- BEGIN GENERATED release-state:9.9.9:status-next-action -->**Land reviewed Slice 10 (R-B)** — the reviewed fixture repair. **Remaining ladder:** 10 → 20 → 30 → 40.<!-- END GENERATED release-state:9.9.9:status-next-action -->
 EOF
 run_gate
-if [ "$RC" -ne 0 ] && grep -q 'status-next-action' <<<"$OUT" \
-   && grep -q 'is STALE' <<<"$OUT"; then
+if [ "$RC" -eq 0 ]; then
   pass "status-next-action — reviewed work renders a landing action, not a repeated commission"
 else
   fail "arm 10d1 (reviewed landing action): rc=$RC out=$OUT"

@@ -567,11 +567,21 @@ def render_status_current_state(st):
 
 
 def render_status_next_action(st):
-    """STATUS board's commission action, derived from the next ladder entry."""
+    """STATUS board's lifecycle-aware next action, derived from state.
+
+    `next_slice` alone says which slice controls the release, not what a
+    reader should do with it. A `REVIEWED_PENDING_INTEGRATION` entry has
+    already completed implementation and independent review; telling the next
+    orchestrator to commission it again is a false instruction. It must be
+    landed through the repository's integration path instead. Other live
+    states retain the ordinary commission action.
+    """
     nxt = st["next_slice"]
     entry = _by_slice(st)[nxt]
-    return ("**Commission Slice %s (%s)** — %s. **Remaining ladder:** %s."
-            % (_slice_str(nxt), entry["short"], entry["title"],
+    action = ("Land reviewed Slice" if entry["status"] == "REVIEWED_PENDING_INTEGRATION"
+              else "Commission Slice")
+    return ("**%s %s (%s)** — %s. **Remaining ladder:** %s."
+            % (action, _slice_str(nxt), entry["short"], entry["title"],
                " → ".join(_slice_str(item) for item in st["remaining_ladder"])))
 
 

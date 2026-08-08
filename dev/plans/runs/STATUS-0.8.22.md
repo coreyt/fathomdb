@@ -37,7 +37,7 @@
 
 | | |
 | --- | --- |
-| **Immediate next action** | <!-- BEGIN GENERATED release-state:0.8.22:status-next-action -->**Commission Slice 23 (FTS-PREFIX)** — direct FTS limit-prefix stability. **Remaining ladder:** 23 → 20 → 25.<!-- END GENERATED release-state:0.8.22:status-next-action --> |
+| **Immediate next action** | <!-- BEGIN GENERATED release-state:0.8.22:status-next-action -->**Land reviewed Slice 23 (FTS-PREFIX)** — direct FTS limit-prefix stability. **Remaining ladder:** 23 → 20 → 25.<!-- END GENERATED release-state:0.8.22:status-next-action --> |
 
 ## Slice 22 pickup gate
 
