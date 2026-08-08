@@ -1,7 +1,10 @@
 # EARP tests
 
-This directory will contain test-first coverage for EARP configuration,
-SDK-backed scenario execution, artifact writing, and comparison validation.
+This directory contains test-first coverage for strict configuration,
+gold/refusal handling, Rust-parity metrics, durable artifact ordering,
+SDK-backed diagnostic execution, corpus characterization, projection witnesses,
+comparison statistics, public result-limit adoption, and the priced-arm guard.
 
-Tests must use a real FathomDB database for runner integration coverage. Small,
-human-authored fixtures are appropriate; generated relevance oracles are not.
+Runner integration tests use a real FathomDB database with small,
+human-authored fixtures. Generated relevance oracles are not permitted.
+Network, real-model, and priced paths are opt-in and visibly skipped by default.

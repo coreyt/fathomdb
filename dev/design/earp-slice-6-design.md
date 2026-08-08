@@ -1,5 +1,5 @@
 ---
-status: PROPOSED
+status: COMPLETE
 ---
 
 # EARP Slice 6 — corpus-scale characterization and replay
@@ -118,9 +118,9 @@ So S6 **retrieves once per query**, caches the ranked doc-id list truncated to
 `max(ladder)`, and feeds every K rung from that cache. `aggregate` is handed a
 cache lookup, never a live engine call.
 
-This figure is escalated to the HITL rather than absorbed: it plausibly
-re-prices the D-5.2 fanout slice from "unblocks @20/@50" to "is also the
-performance fix", since a bounded fanout would cut this by orders of magnitude.
+This historical pricing was superseded by the Slice 19 canonical join-index
+work. Do not use it as a current performance estimate or as a rationale for
+the now-retired D-5.2 fanout proposal.
 
 ## Resumability
 

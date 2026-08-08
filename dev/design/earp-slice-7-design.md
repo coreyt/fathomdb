@@ -1,5 +1,5 @@
 ---
-status: PROPOSED
+status: COMPLETE
 ---
 
 # EARP Slice 7 — store/projection/query matrix + readiness witnesses

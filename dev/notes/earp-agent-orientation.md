@@ -1,5 +1,5 @@
 ---
-status: REVISED-POST-REVIEW
+status: CURRENT
 ---
 
 # EARP agent orientation
@@ -35,9 +35,7 @@ snapshot. It is **gitignored**, so it is absent from worktrees: resolve it
 through an explicit configured root and treat absence as a typed blocker, never
 as an empty gold set. Pin it by SHA-256 and **refuse `qrels_version:
 ir-c-reused-v1`** — the cached files are v1 while the committed generator emits
-v2 with span locators (`build_ir_gold.py:46`), so using the cache unvalidated
-is a silent metric change. Claims stay scoped to reuse-tier, document-level
-evidence gold.
+v2. Claims stay scoped to reuse-tier, document-level evidence gold.
 
 You **port** IR-B's metric definitions; you do not reuse them. IR-B lives only
 in `fathomdb-engine/tests/support/ir_eval.rs` with no Python surface. Hold the
@@ -55,15 +53,14 @@ zero. The R2 identical-answerer protocol applies where relevant.
 Never feed arbitrary YAML through to SDK calls. A supported knob needs a
 maintained catalog entry with its concrete call path and an observed witness.
 `use_default_embedder` is the only `EngineConfig`-adjacent setting that reaches
-native open (`engine.py:171-173`).
+native open.
 
 Key the catalog on **whether a concrete call path exists**, not on whether a
 knob is an `EngineConfig` field — they are different questions.
 `slow_threshold_ms` is an `EngineConfig` field that `Engine.open` never
-forwards, yet it has its own live path, `Engine.set_slow_threshold_ms`
-(`engine.py:748-749`), so it is supported. Classifying it unsupported because
-of where it sits in a dataclass would write a false statement about the SDK
-into a test.
+forwards, yet it has its own live path, `Engine.set_slow_threshold_ms`, so it
+is supported. Classifying it unsupported because of where it sits in a
+dataclass would write a false statement about the SDK into a test.
 
 For projection work, use actual typed `ProjectionSpec` declarations. Three
 signals come from three different places — do not collapse them:
@@ -98,19 +95,17 @@ recorded only with an explicit blocked verdict and its durable evidence.
 
 That ordering is **not** what you get by calling `_lib.write_record` and then
 writing the sidecar — `write_record` materializes and appends the index in one
-call (`_lib.py:457-493`), so the naive version writes the sidecar after the
-index line, inverting the rule. Derive the identity yourself first
+call, so the naive version writes the sidecar after the index line, inverting
+the rule. Derive the identity yourself first
 (`config_sha256` → `make_run_id` → `runs/<run_id>/`), stage and validate
 sidecars there, then call `write_record` with a byte-identical `config_obj` and
 the same `ts`. `run_id` is minute-resolution, so an identical config inside one
 UTC minute collides and silently overwrites — refuse a pre-existing run
 directory whose sidecar differs.
 
-Depth is mode-aware. The rerank floor bounds only the vector path, so FTS-only
-modes admit @20/@50 while vector and hybrid must reject them as
-`metric_not_measurable`. Do not reach for the hidden
-`set_search_limit_for_test` seam; the fanout control is separately
-commissioned work.
+Depth follows the public result limit in every mode: `@K` is measurable exactly
+when `K <= limit <= 100`; deeper rungs are `metric_not_measurable`. Do not
+reach for the hidden `set_search_limit_for_test` seam.
 
 Remember what EARP is for. It never gates FathomDB, which means nothing
 downstream will ever catch a wrong EARP number. The failure mode that matters

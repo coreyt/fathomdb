@@ -14,6 +14,7 @@
 |------|---------|-------------------|--------------|
 | `dev/README.md` | Entry map for the engineering docs tree | — | 2026-05-02 |
 | `dev/needs.md` | Product/consumer needs driving requirements | — | 2026-05-28 |
+| `dev/notes/earp-agent-orientation.md` · `earp-hitl-decisions.md` | **EARP developer harness guidance.** Explains how the off-wheel evaluation platform differs from FathomDB and records its current HITL boundaries. | EARP developer harness | 2026-08-08 |
 | `dev/notes/0.8.23-architecture-tradeoffs.md` | **0.8.23 follow-up note.** Update architecture documentation to explain the retrieval/projection design trade-offs surfaced in 0.8.22; non-blocking and not 0.8.22 scope. | 0.8.23 planning | 2026-08-07 |
 | `dev/requirements.md` | Numbered requirements (REQ-*); REQ-053 = governed SDK surface (allowlist + parity + recovery-denylist + typed boundary) | 25 amended REQ-053 (Q3) | 2026-06-04 |
 | `dev/acceptance.md` | Acceptance criteria (AC-*); AC-057a five-verb cap superseded by AC-074 (governed surface); AC-074 Rust-facade measurement filled (Q5=BIND-RUST), tightened to method-level + feature-gated by 27 fix-1; 40/GA-2 mints AC-075 (recall verdict — real-embedder eu7 VECTOR STAGE, ◆ B-1) + AC-076 (ac_012 tier) | 25 (AC-057a→AC-074); 27 fills AC-074 Rust clause; 27 fix-1 method-level; 40/GA-2 mints AC-075/076 | 2026-06-08 |

@@ -1,5 +1,5 @@
 ---
-status: PROPOSED
+status: COMPLETE
 ---
 
 # EARP Slice 5 — the diagnostic runner

@@ -1,34 +1,26 @@
 # EARP evaluation package
 
-EARP is a developer-side experiment harness (D-1). It is EVAL-ONLY and
-off-wheel by construction — maturin packages only the `fathomdb` module — and
-it never gates FathomDB (D-2).
+EARP is a developer-side, EVAL-ONLY experiment harness. It is off-wheel by
+construction — maturin packages only the `fathomdb` module — and it never
+gates FathomDB.
 
-## What is here now
+The implemented v1 platform provides strict configuration resolution, pinned
+gold validation, IR-B metric parity, diagnostic and corpus-scale runners,
+projection witnesses, deterministic comparison/sweep statistics, and an
+opt-in, budget-guarded R2 answer arm. Its command entry point is:
 
-`schema/` is the Slice 0 lock artifact: declarations only, no runner and no SDK
-calls.
+```text
+python -m eval.earp.cli validate <earp-config.json-or-yaml>
+```
 
-| File | Locks |
-| --- | --- |
-| `schema/earp.config.v1.schema.json` | Campaign configuration (strict) |
-| `schema/earp.result.v1.schema.json` | Run sidecar, witness and blocker shapes |
-| `schema/earp.per-query.v1.schema.json` | Per-query JSONL line |
-| `schema/models.py` | Frozen dataclasses + pinned vocabularies |
+The schemas in `schema/` remain the v1 lock artifact. They define the strict
+campaign configuration, result sidecar, per-query JSONL, frozen dataclasses,
+run verdicts, and blocker vocabulary used by every runner component.
 
-The vocabularies are closed on purpose. `experiments/_lib.Record.verdict` is an
-untyped `str`, so the run verdict tokens (`complete` / `blocked` / `failed`)
-and the twelve blocker codes are pinned here rather than being spelled
-differently in each slice.
-
-## What comes next
-
-The runner, resolver, metric port, adapters, and CLI. They are built *against*
-these schemas — S3-S5 in `dev/plans/earp-foundation.md`, which fixes the
-test-first order.
-
-Durable run records belong under `experiments/runs/<run_id>/`, and versioned
-campaign configurations under `experiments/configs/earp/`.
+Versioned campaign inputs belong in `experiments/configs/earp/`. A completed
+or blocked run writes its structured artifacts under
+`experiments/runs/<run_id>/`; retain evidence according to the repository's
+experiment-record policy before making a campaign claim.
 
 See [`dev/design/earp.md`](../../../../dev/design/earp.md),
 [`dev/plans/earp-foundation.md`](../../../../dev/plans/earp-foundation.md), and

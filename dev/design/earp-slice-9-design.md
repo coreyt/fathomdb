@@ -1,5 +1,5 @@
 ---
-status: PROPOSED
+status: COMPLETE
 ---
 
 # EARP Slice 9 — opt-in priced arms behind the D-3 cumulative budget gate

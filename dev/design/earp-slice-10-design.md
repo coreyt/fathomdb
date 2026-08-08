@@ -1,5 +1,5 @@
 ---
-status: PROPOSED
+status: COMPLETE
 ---
 
 # EARP Slice 10 — engine adoption: `unavailable` readiness + `projection_status` witness

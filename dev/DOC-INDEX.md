@@ -45,6 +45,7 @@ refresh in the closing commit when you touch a doc).
 |------|---------|-------------------|--------------|
 | `dev/README.md` | Entry map for the engineering docs tree | — | 2026-05-02 |
 | `dev/needs.md` | Product/consumer needs driving requirements | — | 2026-05-28 |
+| `dev/notes/earp-agent-orientation.md` · `earp-hitl-decisions.md` | EARP navigation, boundaries, and current HITL rulings | EARP developer harness | 2026-08-08 |
 | `dev/notes/0.8.23-architecture-tradeoffs.md` | 0.8.23 architecture documentation follow-up | 0.8.23 planning | 2026-08-07 |
 | `dev/requirements.md` | Numbered requirements (REQ-*); REQ-053 = governed SDK surface (allowlist + parity + recovery-denylist + typed boundary) | 25 amended REQ-053 (Q3) | 2026-06-04 |
 | `dev/acceptance.md` | Acceptance criteria (AC-*); AC-057a five-verb cap superseded by AC-074 (governed surface); AC-074 Rust-facade... | 25 (AC-057a→AC-074); 27 fills AC-074 Rust clause; 27 fix-1 method-level; 40/GA-2 mints AC-075/076 | 2026-06-08 |
@@ -89,6 +90,7 @@ refresh in the closing commit when you touch a doc).
 | `dev/design/0.8.22-slice-21-projection-state.md` | Landed in PR #207: design for truthful projection runtime state | 0.8.22 Slice 21; publication held | 2026-08-08 |
 | `dev/design/0.8.22-slice-22-projection-status.md` | Landed in PR #207: design for governed projection status reads | 0.8.22 Slice 22; publication held | 2026-08-08 |
 | `dev/design/0.8.22-slice-23-text-limit-prefix-stability.md` | Reviewed integration candidate for direct FTS result-prefix stability | 0.8.22 Slice 23; landing pending, publication held | 2026-08-08 |
+| `dev/design/earp.md` · `earp-slice-*-design.md` | As-built EARP experiment platform design and per-slice contracts | EARP developer harness | 2026-08-08 |
 | `dev/design/0.8.2-m1-multihop-harness.md` | 0.8.2 / M1 multi-hop answer-accuracy harness — design + FROZEN pre-registration (AMENDED 2026-06-16; re-frozen... | 0.8.2 Slice 0-rev2 | 2026-06-19 |
 | `dev/design/0.8.3-mem0-parity.md` | 0.8.3 Slice-0 design + FROZEN pre-registration (Mem0-parity resolution) | 0.8.3 Slice 0 | 2026-06-21 |
 | `dev/design/0.8.5-ce-rerank-slice-design.md` · `dev/plans/0.8.5-ce-rerank-alpha-expose-slice.md` | 0.8.5 (EXP-0) — expose tuned CE-rerank α / pool_n / ce_score | 0.8.5 (EXP-0) | 2026-06-25 |
@@ -196,6 +198,7 @@ refresh in the closing commit when you touch a doc).
 | `dev/plans/prompts/0.8.22-slice-21-projection-state.md` | Landed in PR #207: Slice 21 projection-runtime-state plan | 0.8.22 Slice 21; publication held | 2026-08-08 |
 | `dev/plans/prompts/0.8.22-slice-22-projection-status.md` | Landed in PR #207: Slice 22 projection-status API plan | 0.8.22 Slice 22; publication held | 2026-08-08 |
 | `dev/plans/prompts/0.8.22-slice-23-text-limit-prefix-stability.md` | Completed Slice 23 direct FTS result-prefix repair plan | 0.8.22 Slice 23; landing pending, publication held | 2026-08-08 |
+| `dev/plans/earp-foundation.md` | As-built EARP evaluation-platform plan and acceptance criteria | EARP developer harness | 2026-08-08 |
 | `dev/plans/runs/0.8.22-slice-23-design-review-20260808.md` | Approved Slice 23 design review and FIX-1 closure | 0.8.22 Slice 23; publication held | 2026-08-08 |
 | `dev/plans/runs/0.8.22-slice-23-pickup-review-20260808.md` | Approved Slice 23 pickup review | 0.8.22 Slice 23; publication held | 2026-08-08 |
 | `dev/plans/runs/0.8.22-slice-23-review-20260808.md` | Slice 23 review with FIX-1 requirements | 0.8.22 Slice 23; publication held | 2026-08-08 |

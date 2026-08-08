@@ -1,5 +1,5 @@
 ---
-status: PROPOSED
+status: COMPLETE
 ---
 
 # EARP Slice 1 — gold basis
@@ -130,7 +130,7 @@ carry one. S1 **requires** it and refuses a gold set with any query lacking
 one, rather than letting S8's pairing degrade silently.
 
 Shapes follow the reference: `locator` is optional (`ir_eval.rs:170`) and
-`Locator.spans` is optional (`:159`), even though today every unit is
+`Locator.spans` is optional, even though today every unit is
 `{"kind": "whole_body"}` with no spans.
 
 `query_count` is `len(queries)` — the total, including the 125 negatives.

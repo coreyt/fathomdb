@@ -1,15 +1,14 @@
 ---
 title: EARP foundation — configurable retrieval evaluation platform
-status: PROPOSED
+status: COMPLETE
 ---
 
 # EARP foundation — plan
 
-**Revision 2** — revised 2026-08-06 after an independent code-grounded design
-review and HITL rulings D-1…D-6 (`dev/notes/earp-hitl-decisions.md`). The prior
-draft's slice order is superseded; § "What changed and why" records the
-reasoning. Status stays `PROPOSED`: the revision resolves the review's
-findings, but nothing here authorizes implementation.
+**As-built revision** — S0–S10 were implemented with their recorded
+code-grounded design reviews and RED/GREEN evidence. This document is the
+as-built foundation plan; EARP remains off-ladder and does not change the
+0.8.22 release scope or publication gate.
 
 ## Objective
 
@@ -24,9 +23,9 @@ depends on it.
 - EVAL-ONLY Python tooling under `src/python/eval/earp/`, off-wheel by
   construction (`src/python/pyproject.toml:80-81`), following the existing
   `m1_*` / `r2_parity_eval` harness convention.
-- No production SDK, schema, query-path, or CI-gate change. Where the SDK is
-  insufficient (D-5 fanout control), the gap is named and commissioned
-  separately — never worked around inside EARP.
+- No production SDK, schema, query-path, or CI-gate change. A future missing
+  SDK capability is named and commissioned separately — never worked around
+  inside EARP.
 - Metric semantics are **ported from IR-B with a pinned parity test**, not
   "reused" — IR-B exists only as Rust test-support
   (`src/rust/crates/fathomdb-engine/tests/support/ir_eval.rs`) with no Python
@@ -94,7 +93,8 @@ declarative schema with no behaviour to test.
 | 6a | Public result-limit adoption (D-5 retirement successor; 0.8.22 Slice 18): `limit` knob, K ≤ limit ≤ 100 for every mode, limit recorded with every number — interstitial slice added 2026-08-07 | 6 |
 | 7 | Store/projection/query matrix + readiness witnesses (split by real source) | 6a |
 | 8 | Comparison and sweep statistics: pairing, strata, fixed CI method/seed, declared power rules | 7 |
-| 9 | Opt-in priced arms (R2, Mem0, extractor, GPU) behind the D-3 cumulative budget gate | 8 |
+| 9 | Opt-in R2 answer arm behind the D-3 cumulative budget gate; Mem0, extractor, and GPU explicitly unsupported | 8 |
+| 10 | Adopt current projection readiness and `read.projection_status` witnesses | 9 |
 
 Slices 1 and 2 are independent of each other and may run in parallel.
 
@@ -131,12 +131,11 @@ queries, and `experiment_to_json` emits `null` for the unavailable case. EARP
 ports it faithfully — `null` → `not_applicable`, `supporting_query_n` carried
 into the sidecar — and the parity test asserts **every field, no exclusions**.
 
-**Dependency:** that fix is not yet merged to `main`. S2's parity test must be
-written against it, so S2 cannot close until the branch lands.
+**Resolved dependency:** the upstream fix is on `main`; S2's parity test is
+complete and checks every field without exclusions.
 
-Also lands the mode-aware depth rules (D-5): FTS-only admits @20/@50;
-vector-only and hybrid reject above 10 with a typed `metric_not_measurable`
-naming `SEARCH_RERANK_LIMIT` and the D-5.2 fanout slice.
+Result depth follows the current public result-limit contract: every mode
+admits `@K` exactly when `K <= limit <= 100`; other depths are typed refusals.
 
 ### S3 · Resolver and catalog
 
@@ -149,18 +148,17 @@ worst-case cost estimate for D-3.
 The knob catalog is keyed on **"does a concrete SDK call path exist"**, never
 on dataclass membership. Each of `EngineConfig`'s five fields gets an
 individual verdict; `slow_threshold_ms` is **supported** (`runtime`, path
-`Engine.set_slow_threshold_ms`, `engine.py:748-749`), and
-`Engine.set_profiling` (`:745-746`) joins the candidate list. The catalog
-records that `Engine.open` never forwards `EngineConfig` to native
-(`engine.py:171-173`) as an observed finding.
+`Engine.set_slow_threshold_ms`), and `Engine.set_profiling` joins the
+candidate list. The catalog records that `Engine.open` never forwards
+`EngineConfig` to native as an observed finding.
 
 ### S4 · Durable writer
 
 `_lib.write_record` performs materialize-and-append in one call
 (`experiments/_lib.py:457-493`) with no hook between them, so the required
 stage → materialize → append-last ordering is only achievable by pre-deriving
-the run identity: `config_sha256` (`:182`) → `make_run_id` (`:201`) →
-`runs/<run_id>/`, stage and validate sidecars there, then call `write_record`
+the run identity: `config_sha256` → `make_run_id` → `runs/<run_id>/`, stage
+and validate sidecars there, then call `write_record`
 with a byte-identical `config_obj` and the same `ts` so it recomputes the same
 id. That contract is locked in S0 and tested here.
 
@@ -177,8 +175,8 @@ database through the real Python SDK, exercising the whole machinery with no
 gold and therefore no retrieval-quality claim. The fixture must carry
 `source_id` on every canonical item — `Engine.write` makes it mandatory
 (`engine.py:186-187`). Names one of the three real search entry points
-(`search` `:443`, `search_projected_text` `:543`, `search_text_only` `:577`)
-rather than the symbolic `operation: search`.
+(`search`, `search_projected_text`, `search_text_only`) rather than the
+symbolic `operation: search`.
 
 Embedder-cache evidence is **post-hoc**, not preflight: there is no Python
 cache-status API and the Rust cache path derives from `pub(crate)` constants,
@@ -241,7 +239,7 @@ because the prior draft declared `diagnostic` and delivered it nowhere:
 | Slice | Requirement | Acceptance criterion |
 | ---: | --- | --- |
 | 1 | Gold is trustworthy before it is measured against | Pinned SHA-256 matches; `corpus_hash` equals the snapshot hash; `ir-c-reused-v1` refused as `gold_stale_qrels_version`; absent root refused as `corpus_root_absent`; snapshot and manifest recorded separately |
-| 2 | Ported metrics are the reference's metrics | Byte-parity with Rust output on `synthetic_gold.json`, no excluded fields, including `null` supporting coverage and `supporting_query_n`; ~~depth rules refuse K>10 for vector/hybrid and admit it for FTS-only~~ (retired with D-5, 2026-08-07 — superseded by the S6a rule below) |
+| 2 | Ported metrics are the reference's metrics | Byte-parity with Rust output on `synthetic_gold.json`, no excluded fields, including `null` supporting coverage and `supporting_query_n` |
 | 6a | Depth follows the engine's public limit, not a mode table | `@K` admitted for every mode when `K ≤ limit ≤ 100`, refused typed above it; limit recorded (`fanout_used`) with every number; a limit-less config resolves to the engine default 10 with its `config_sha256` unmoved |
 | 3 | A config cannot express a run that cannot be honestly executed | Unknown, missing, invalid, and unused keys rejected; unmeasurable K rejected; ineligible metric rejected or `not_applicable`; decision rule predeclared or absent; every catalog entry has a call path and witness |
 | 4 | A partial run can never appear complete | Sidecar staged and validated before the index line exists; run id pre-derived and stable across `write_record`; colliding run dir with differing sidecar refused; blocked runs indexed only with a blocked verdict |

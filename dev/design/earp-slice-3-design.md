@@ -1,5 +1,5 @@
 ---
-status: PROPOSED
+status: COMPLETE
 ---
 
 # EARP Slice 3 — strict resolver and knob catalog
@@ -132,21 +132,11 @@ the vector branch is skipped entirely and the run is pure node FTS. Deriving
 `hybrid` from the call alone would record a mode the run did not use *and*
 refuse depths it could honestly measure.
 
-So the resolver derives `(mode, max_k)` from **`(call, use_default_embedder)`**:
-
-| `call` | embedder | mode | max K |
-| --- | --- | --- | ---: |
-| `Engine.search_text_only` | either | `fts_only` | unbounded |
-| `Engine.search` | absent | `fts_only` | unbounded |
-| `Engine.search` | present | `hybrid` | 10 |
-| `Engine.search_projected_text` | either | `fts_only` | **10** |
-
-`search_projected_text` is the exception that proves depth is a *call-site*
-property, not a mode property: it is FTS by mechanism, yet its reader breaks at
-`results.len() >= limit` with `limit = max(override, SEARCH_RERANK_LIMIT)`, so
-it truncates at 10. `MAX_MEASURABLE_K` remains the mode table; this call
-overrides it downward, and the design records why so nobody "fixes" the
-override later.
+The resolver derives retrieval mode from **`(call, use_default_embedder)`** so
+the sidecar records whether a vector branch was actually configured. S6a then
+superseded this design's per-mode maximum-K table: every search call has the
+same public result-limit contract, and `@K` is measurable exactly when
+`K <= limit <= 100`.
 
 `scenario.query.mode` is **removed from the schema**.
 `RetrievalMode.VECTOR_ONLY` is **retained** — it is live in `MAX_MEASURABLE_K`,
@@ -239,8 +229,8 @@ negative aggregate, rather than being quietly papered over by an `@k` this
 slice invents.
 
 `emits(name, scenario) -> bool` is what AC-5 calls: `ndcg` and `mrr` are always
-false; `<name>@20` under a hybrid call is false via `check_depth`;
-`abstention_rate` is false when gold carries no negatives.
+false; a depth above the scenario's public result limit is false via
+`check_depth`; `abstention_rate` is false when gold carries no negatives.
 
 The design-of-record's example uses `evidence_recall_strict@10`, which matches
 no field in the result schema (spelled `strict_evidence_recall`). That example

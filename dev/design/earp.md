@@ -1,14 +1,15 @@
 ---
-status: PROPOSED
+status: COMPLETE
 ---
 
 # EARP — configurable retrieval evaluation platform
 
-> **Status:** Revised 2026-08-06 after an independent code-grounded design
-> review and HITL rulings D-1…D-6 (`dev/notes/earp-hitl-decisions.md`). EARP is
-> offline, EVAL-ONLY, developer-side tooling (D-1). It does not alter the
-> library query path, mint a quality gate (D-2), select a release, or authorize
-> priced or network-backed evaluation beyond the D-3 authorization.
+> **Execution status:** S0–S10 are implemented and independently reviewed on
+> the EARP integration candidate. EARP remains offline, EVAL-ONLY,
+> developer-side tooling (D-1): it does not alter the library query path, mint
+> a quality gate (D-2), select a release, or authorize priced or network-backed
+> evaluation beyond the D-3 authorization. Current rulings are recorded in
+> `dev/notes/earp-hitl-decisions.md`.
 
 ## Purpose
 
@@ -93,8 +94,8 @@ scenario:
     # Engine.search | Engine.search_projected_text | Engine.search_text_only
     call: Engine.search
 metrics:
-  # Mode-aware (D-5): hybrid/vector reject K>10 until the fanout slice lands.
-  # FTS-only modes admit [5, 10, 20, 50].
+  # Every search mode requires K <= the declared public result limit (default 10,
+  # maximum 100). The runner records that limit with each metric.
   evidence_recall_k: [5, 10]
   document_metrics: [mrr]        # ndcg is not_applicable — no graded gold exists
   integrity: [projection_coverage, provenance]
@@ -122,33 +123,29 @@ bases, deliberately: a small human-authored document-level fixture for the
 fast, network-free diagnostic path, and the frozen corpus snapshot with the
 IR-C reuse-tier gold for the quality campaign (D-6). Both use canonical
 document writes through the public Python SDK and one **named** production
-search operation. Three search entry points exist — `Engine.search`
-(`engine.py:443`), `Engine.search_projected_text` (`:543`), and
-`Engine.search_text_only` (`:577`) — so a scenario names the call rather than a
-symbolic label. Every canonical item must carry `source_id`, which
-`Engine.write` makes mandatory (`engine.py:186-187`). Each scenario uses a
-fresh temporary SQLite database and records store and result integrity
-witnesses.
+search operation. Three search entry points exist — `Engine.search`,
+`Engine.search_projected_text`, and `Engine.search_text_only` — so a scenario
+names the call rather than a symbolic label. `Engine.write` requires every
+canonical item to carry `source_id`. Each scenario uses a fresh temporary
+SQLite database and records store and result integrity witnesses.
 
 Every catalog entry names its SDK call path and its expected witness before it
 can be `supported`. In the current SDK, `Engine.open(...,
 use_default_embedder=...)` is the only `EngineConfig`-adjacent setting passed
-to the native open call: `Engine.open` constructs the `EngineConfig`, stores it
-on the handle, and calls `_NativeEngine.open(path,
-use_default_embedder=...)` — the config object never crosses
-(`engine.py:171-173`).
+to the native open call: `Engine.open` calls `_NativeEngine.open` with
+`use_default_embedder`; the `EngineConfig` object itself does not cross the
+native boundary.
 
 **The catalog is keyed on whether a concrete SDK call path exists, not on
 dataclass membership.** Those are different questions, and conflating them
 produces false entries. `slow_threshold_ms` is an `EngineConfig` field that
 `Engine.open` does not forward, yet it has a live native path of its own —
-`Engine.set_slow_threshold_ms` (`engine.py:748-749`) — so it is **supported**
-(`runtime`), not `unsupported`. Its sibling `Engine.set_profiling`
-(`:745-746`) belongs on the candidate list for the same reason. Each of
-`EngineConfig`'s five fields therefore receives an individual verdict rather
-than a blanket one. The SDK's own docstring calling `EngineConfig` "equivalent
-to the keyword form on `Engine.open`" (`config.py:17-18`) is misleading given
-`:171-173`; EARP records that as an observed finding rather than repeating it.
+`Engine.set_slow_threshold_ms` — so it is **supported** (`runtime`), not
+`unsupported`. Its sibling `Engine.set_profiling` belongs on the candidate
+list for the same reason. Each of `EngineConfig`'s five fields therefore
+receives an individual verdict rather than a blanket one. EARP records the
+native-boundary distinction as an observed finding rather than repeating the
+SDK's broad `EngineConfig` docstring.
 
 Typed store, projection, and retrieval matrices are later extensions. They
 must expose concrete SDK calls, not symbolic labels. For example, a projection
@@ -213,8 +210,7 @@ interchangeable, and only the first comes from polling:
   disabled": it is the 0.8.18 vector-*equivalence* degraded open, after which
   every vector-dependent arm refuses at query time while `search_text_only`
   stays serviceable. It is a typed blocker when dense retrieval was required,
-  and the companion `vector_equivalence_refusal_count()` (`:615-617`) is
-  recorded with it.
+  and the companion `vector_equivalence_refusal_count()` is recorded with it.
 
 None of the three is converted into an empty retrieval result.
 
@@ -245,15 +241,11 @@ unsatisfiable and must be reported as such rather than as numbers:
   `not_applicable`, and `supporting_query_n` is carried into the sidecar so a
   reader can tell an empty denominator from a genuine zero. The parity test
   asserts every field with no exclusions.
-- **Depth beyond K=10** is mode-dependent (D-5). The production rerank floor
-  `SEARCH_RERANK_LIMIT = 10` (`lib.rs:9851`) bounds only the vector path —
-  `final_limit` reaches `build_vector_phase1_sql` (`:10834,10848`) and the
-  survivor loop (`:11374`) and appears nowhere in the text branch, whose FTS
-  SQL carries no `LIMIT` (`:11120-11126`). So FTS-only modes admit @20/@50,
-  while vector-only and hybrid reject them with a typed
-  `metric_not_measurable` naming `SEARCH_RERANK_LIMIT` and the commissioned
-  fanout slice. EARP records the fanout it used with every number. It does not
-  export the hidden `set_search_limit_for_test` seam.
+- **Depth beyond the public result limit** is unavailable. The 0.8.22
+  result-limit contract applies to every EARP search mode: `@K` is measurable
+  exactly when `K <= limit <= 100`. The runner records the resolved limit with
+  every metric and returns a typed `metric_not_measurable` blocker above it.
+  EARP does not export the hidden `set_search_limit_for_test` seam.
 
 Comparison pairs use immutable query IDs, state their inclusion/exclusion and
 strata, and resolve a fixed confidence-interval method and seed before running.
@@ -265,15 +257,12 @@ only against that declared rule.
 That rule cannot stay implicit: the CI method, seed policy, and power
 conditions are **named concretely in the lock artifact**, not left to the
 implementing slice. The in-repo prior art is the percentile bootstrap over
-per-query recall — `bootstrap_ci` in the Rust harness
-(`eu8_ir_validation.rs:280-283`, with a pinned `BOOTSTRAP_SEED` at `:71` and a
-deterministic SplitMix64 RNG at `:103`), cited by IR-B §(f) — and its Python
-analogues `paired_bootstrap_delta` (`eval/exp_cov1_common.py:410`) and
-`bootstrap_mean_ci`, which exists **twice** (`eval/expa_recall_run.py:55` and
-`eval/expb_joint_tune_run.py:116`). That duplication is itself an instance of
-the fork problem EARP is meant to end. EARP adopts one method explicitly,
-records which, and pins its seed the way the Rust harness does rather than
-inventing a new one.
+per-query recall: `bootstrap_ci` in the Rust harness, with its pinned
+`BOOTSTRAP_SEED` and deterministic SplitMix64 RNG, plus the Python
+`paired_bootstrap_delta`/`bootstrap_mean_ci` helpers. That duplication is
+itself an instance of the fork problem EARP is meant to end. EARP adopts one
+method explicitly, records which, and pins its seed rather than inventing a
+new one.
 
 ## Outputs
 
@@ -309,22 +298,21 @@ The writer stages and validates all artifacts first, materializes the shared
 record and metrics second, and appends the index last. **That ordering is not
 achievable by calling `_lib.write_record` and then writing the sidecar**:
 `write_record` materializes the record, config, and metrics and appends the
-index in a single call with no hook between them (`_lib.py:457-493`), so the
-naive implementation puts the sidecar *after* the index append — the exact
-inversion this rule forbids. The required sequence is:
+index in a single call with no hook between them, so the naive implementation
+puts the sidecar *after* the index append — the exact inversion this rule
+forbids. The required sequence is:
 
-1. Resolve the config, then derive the identity directly —
-   `config_sha256` (`_lib.py:182`) → `make_run_id` (`:201`) →
-   `experiments/runs/<run_id>/`.
+1. Resolve the config, then derive the identity directly — `config_sha256` →
+   `make_run_id` → `experiments/runs/<run_id>/`.
 2. Stage and validate the EARP sidecars in that directory.
 3. Call `write_record` with a **byte-identical** `config_obj` and the **same**
    `ts`, so it recomputes the same `run_id` and materializes into the same
    directory. Any drift in the config object silently produces a second run
    directory.
 
-`run_id` is minute-resolution (`_lib.py:193-194`), so two runs with the same
-resolved config inside one UTC minute collide: `write_record` suppresses the
-duplicate index line (`:491-493`) but still overwrites `record.json` and
+`run_id` is minute-resolution, so two runs with the same resolved config
+inside one UTC minute collide: `write_record` suppresses the duplicate index
+line but still overwrites `record.json` and
 `metrics.json` in place. For a tool that offers `replay`, that is a durability
 defect in the shared substrate. EARP refuses when a run directory already
 exists carrying a differing sidecar, rather than overwriting.

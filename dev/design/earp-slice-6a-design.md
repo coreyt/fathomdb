@@ -1,5 +1,5 @@
 ---
-status: PROPOSED
+status: COMPLETE
 ---
 
 # EARP Slice 6a — public result-limit adoption (D-5 successor)
@@ -26,7 +26,7 @@ The catalog guard already caught this:
    all take keyword `limit: int = 10` (`engine.py:353,530,578`).
 2. `DEFAULT_SEARCH_RESULT_LIMIT = 10`, `MAX_SEARCH_RESULT_LIMIT = 100`;
    `validate_search_result_limit` **refuses** values outside `1..=100` with a
-   typed engine error — refusal, not clamp (`lib.rs:10027-10040`).
+   typed engine error — refusal, not clamp.
 3. Text-only mode puts a real `LIMIT {final_limit}` in the node-FTS SQL
    (`fts_only_limit = query_vector.is_none().then_some(final_limit)`); the
    candidate set is bounded at the source, not post-truncated.
@@ -141,10 +141,10 @@ fact, not a depth fact); the resolver owns it, below.
   limit": it passes `limit=max(ladder)` **explicitly** at its
   `search_text_only` call (`characterize.py:304`), refuses a ladder whose
   max exceeds `ENGINE_MAX_RESULT_LIMIT`, and records that value at the two
-  `fanout_used` sites (`:340`, `:459`). Today it truncates to
+  `fanout_used` sites. Today it truncates to
   `deepest = max(ladder)` while calling with the engine default — a ladder
   of (5, 10, 50) would silently score @50 over 10 hits. `DEFAULT_FANOUT` is
-  deleted, including from `__all__` (`:532`).
+  deleted, including from `__all__`.
 - `cli.py:51` prints `max_measurable_k or 'unbounded'`; the `'unbounded'`
   branch is now dead. Replaced with an honest `result limit` line.
 

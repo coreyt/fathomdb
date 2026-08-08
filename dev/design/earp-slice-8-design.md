@@ -1,5 +1,5 @@
 ---
-status: PROPOSED
+status: COMPLETE
 ---
 
 # EARP Slice 8 — comparison and sweep statistics
@@ -61,7 +61,7 @@ Everything else follows from four rules:
 4. **One RNG, one method, pinned.** Percentile bootstrap over paired
    per-query deltas (`ci_method: paired_bootstrap`), driven by a Python
    port of the Rust harness's SplitMix64 (`eu8_ir_validation.rs:103`,
-   `BOOTSTRAP_SEED` precedent at `:71`) — not `random`, not numpy. The
+   `BOOTSTRAP_SEED` precedent) — not `random`, not numpy. The
    port is pinned two ways: published SplitMix64 test vectors, and an
    executed expectations file generated once from the Rust `bootstrap_ci`
    (S2's methodology: run the reference locally, commit its actual output;
