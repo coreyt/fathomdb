@@ -334,9 +334,9 @@ test("re-applying a satisfied vector declaration is an idempotent no-op", async 
 });
 
 test("a declaration without a live embedder defers and does not enrol the kind", async () => {
-  // No embedder ⇒ no dense arm, so the declaration persists and DEFERS (Q6a
-  // graceful-absent, exactly like `rankable`) rather than queueing embeds that
-  // could only fail. Needs no network, so this arm always runs.
+  // No embedder ⇒ no usable dense runtime. The declaration persists and DEFERS
+  // (Q6a graceful-absent, exactly like `rankable`) rather than queueing embeds
+  // that could only fail. Needs no network, so this arm always runs.
   const path = freshDbPath();
   const engine = await Engine.open(path, { useDefaultEmbedder: false });
   try {
@@ -344,11 +344,15 @@ test("a declaration without a live embedder defers and does not enrol the kind",
     await engine.configureProjections([vectorSpec()]);
     assert.equal(
       await readiness(engine),
-      "ready",
-      "no live embedder ⇒ no dense arm ⇒ nothing outstanding",
+      "unavailable",
+      "no live embedder makes the declared dense projection unavailable, even with no work",
     );
     await engine.drain(5_000);
-    assert.equal(await readiness(engine), "ready");
+    assert.equal(
+      await readiness(engine),
+      "unavailable",
+      "a no-runtime drain cannot establish dense readiness",
+    );
   } finally {
     await engine.close();
   }
@@ -552,11 +556,9 @@ test("a no-embedder session leaves an enrolled kind's write recoverable", async 
   // the whole recovery path.
   //
   // The CONSUMER-VISIBLE consequence is asserted on purpose, so it cannot change
-  // back silently: while the row is outstanding and this session cannot satisfy
-  // it, readiness reads `"embedding"` and `drain` rejects with `SchedulerError`.
-  // That is what design-of-record §4.1 invariant 1 demands (the ONLY tolerable
-  // torn state is `embedding` with the vector absent) and it is LOUD rather than
-  // silent.
+  // back silently: with no usable dense runtime, readiness reads `"unavailable"`
+  // regardless of outstanding work. The pending row remains recoverable and
+  // `drain` rejects with `SchedulerError`, rather than recording a failed terminal.
   if (skipNetwork()) return;
   const path = freshDbPath();
 
@@ -602,8 +604,8 @@ test("a no-embedder session leaves an enrolled kind's write recoverable", async 
 
     assert.equal(
       await readiness(cold),
-      "embedding",
-      "§4.1 invariant 1: readiness must never read `ready` for an ENROLLED row with no vector",
+      "unavailable",
+      "an absent runtime is unavailable even when an enrolled row remains recoverably pending",
     );
 
     const c2 = activeCursor(path, "N2");
@@ -779,17 +781,16 @@ test("a pending edge body survives a full scan window of node rows (offline)", a
   }
 });
 
-// fix-5 [P2] — the late-enrolment registry INSERT and the un-stranding it owes
-// must commit as ONE transaction.
+// fix-5 [P2] — the boot-graft registry INSERT and the un-stranding it owes must
+// commit as ONE transaction.
 //
-// A late enrolment registers the kind in `_fathomdb_vector_kinds` AND repairs the
+// Safe boot graft registers the kind in `_fathomdb_vector_kinds` AND repairs the
 // rows that kind stranded (delete their `'up_to_date'` terminals, rewind the
-// watermark). While the INSERT autocommitted ahead of the repair's own
-// transaction, a failure in between left the kind REGISTERED with older rows
-// still holding their terminals and no vectors. That state is SELF-SEALING: the
-// kind is now registered, so every later write skips the enrolment path and
-// therefore skips the repair, while readiness reads `"ready"` for rows nothing
-// will ever embed.
+// watermark). If the INSERT committed ahead of the repair's transaction, a
+// failure in between would leave the kind REGISTERED with older rows still
+// holding their terminals and no vectors. That state is SELF-SEALING: later
+// opens see the kind as registered and skip the graft, while the stranded rows
+// remain invisible to recovery.
 //
 // The failure is injected as a real SQLite `BEFORE DELETE` trigger on
 // `_fathomdb_projection_terminal` — the repair genuinely fails, against a real
@@ -828,28 +829,23 @@ test("a late enrolment whose repair fails registers nothing", async () => {
     injector.close();
   }
 
-  // ---- session B: WITH an embedder. The write triggers the LATE enrolment,
-  // whose repair now fails.
-  {
-    const engine = await Engine.open(path, { useDefaultEmbedder: true });
-    try {
-      await assert.rejects(
-        engine.write([node("N3", '{"summary":"the late write"}')]),
-        "fixture: the repair failed, so the write must surface an error",
-      );
-      assert.equal(
-        vectorKindRegistered(path),
-        false,
-        "TORN LATE ENROLMENT: the registry INSERT committed while the un-stranding it owes did " +
-          "not. `_fathomdb_vector_kinds` now holds `doc` with N1/N2 still carrying " +
-          "`'up_to_date'` terminals and no vectors — and because the kind is now registered, " +
-          "every future write SKIPS the enrolment path and therefore skips the repair. The " +
-          "registry insert and the terminal/cursor repair must commit as ONE transaction",
-      );
-    } finally {
-      await engine.close();
-    }
-  }
+  // ---- session B: WITH an embedder. Slice 21's boot graft repairs during
+  // `open`, before an Engine exists to close; the injected terminal delete must
+  // make that open fail without leaving a registered kind behind.
+  await assert.rejects(
+    Engine.open(path, { useDefaultEmbedder: true }),
+    /could not graft declared vector projection on boot/,
+    "fixture: the injected terminal delete must abort the boot graft during open",
+  );
+  assert.equal(
+    vectorKindRegistered(path),
+    false,
+    "TORN BOOT GRAFT: the registry INSERT committed while the un-stranding it owes did not. " +
+      "`_fathomdb_vector_kinds` would then hold `doc` with N1/N2 still carrying " +
+      "`'up_to_date'` terminals and no vectors, preventing every later boot graft from " +
+      "repairing them. The registry insert and terminal/cursor repair must commit as one " +
+      "transaction",
+  );
 
   const remover = new DatabaseSync(path);
   try {
@@ -858,11 +854,17 @@ test("a late enrolment whose repair fails registers nothing", async () => {
     remover.close();
   }
 
-  // ---- session C: one ordinary write must now enrol AND un-strand, because
-  // nothing was left half-done behind it. No re-apply, no operator rebuild.
+  // ---- session C: ordinary open/write/drain now recovers through the boot
+  // graft, because the failed open left no partial registration behind it. No
+  // re-apply or operator rebuild.
   {
     const engine = await Engine.open(path, { useDefaultEmbedder: true });
     try {
+      assert.equal(
+        vectorKindRegistered(path),
+        true,
+        "the unblocked boot graft registers the kind before ordinary writes continue",
+      );
       await engine.write([node("N4", '{"summary":"the healing write"}')]);
       await engine.drain(DRAIN_TIMEOUT_MS);
       assert.equal(await readiness(engine), "ready");
