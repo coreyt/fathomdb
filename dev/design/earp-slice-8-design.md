@@ -11,7 +11,7 @@ projection knobs). Plan requirement row: arms differ only at
 `changed_knobs`; pairing on immutable query ids; CI method, seed, and power
 rule fixed before running; `UNDERPOWERED` emitted against the declared rule.
 
-## What S0 already locked (verified in the schemas)
+## Pre-S8 starting point (verified in the schemas)
 
 - **The comparison stats tuple is locked, but the result side is NOT
   done** (review-executed against the S4 validator):
@@ -21,15 +21,14 @@ rule fixed before running; `UNDERPOWERED` emitted against the declared rule.
   `comparison.metric`, exclusions by reason, per-arm metrics/blockers,
   two-arm scenario identity — has nowhere to live without the additive
   edits listed under § writer.py below.
-- **Config side is half-done.** `earp.config.v1.schema.json` has the
+- **Config side was half-done.** `earp.config.v1.schema.json` had the
   `comparison` block (`changed_knobs` required; `strata`, `ci_method`,
   `seed`, `resamples`, `min_n` optional) and the D-4 `decision_rule` block.
-- **Per-query side** has `query_id`, `stratum`, and typed `outcome` — the
+- **Per-query side** had `query_id`, `stratum`, and typed `outcome` — the
   pairing substrate exists.
-- **What is missing is the input:** `earp.v1` has one `scenario` and no
-  arms array — `comparison` and `sweep` are in `INEXPRESSIBLE` for exactly
-  that reason (`config.py:73-76`), and every `comparison.*` consumer is
-  registered `_never`.
+- **What was missing was the input:** `earp.v1` had one `scenario` and no
+  arms array. `comparison` and `sweep` were in `INEXPRESSIBLE` for exactly
+  that reason, and every `comparison.*` consumer was registered `_never`.
 
 ## Contract
 
@@ -51,7 +50,7 @@ Everything else follows from four rules:
    (schema keeps them optional — sweep and future kinds share the block).
    `decision_rule` stays optional per D-4: without it the paired delta and
    CI are still computed and recorded (they are the comparison's *output*,
-   per `earp.md:58`), but no better-than claim token is emitted.
+   per the core EARP decision-rule contract), but no better-than claim token is emitted.
 3. **Pairing is on gold `query_id`, and only both-scored pairs count.** A
    query enters the paired set only when both arms produced a scored
    outcome for it; every exclusion is counted by reason (blocked, failed,
@@ -60,7 +59,7 @@ Everything else follows from four rules:
    `underpowered = n < min_n`, meaningful only against the declared rule.
 4. **One RNG, one method, pinned.** Percentile bootstrap over paired
    per-query deltas (`ci_method: paired_bootstrap`), driven by a Python
-   port of the Rust harness's SplitMix64 (`eu8_ir_validation.rs:103`,
+   port of the Rust harness's SplitMix64 (`eu8_ir_validation.rs`,
    `BOOTSTRAP_SEED` precedent) — not `random`, not numpy. The
    port is pinned two ways: published SplitMix64 test vectors, and an
    executed expectations file generated once from the Rust `bootstrap_ci`
@@ -137,10 +136,10 @@ Everything else follows from four rules:
 - `splitmix64(seed) -> Iterator[int]` — the RNG, pinned to the published
   Vigna vectors (seed 0 → `0xE220A8397B1DCDAF`, …) AND to the Rust
   harness's exact usage: index mapping is `next_u64() % n`
-  (`eu8_ir_validation.rs:118`), not rejection sampling.
+  (the reference's index-mapping rule), not rejection sampling.
 - `paired_bootstrap_ci(deltas, seed, resamples, alpha=0.05) ->
   (low, high)` — percentile bootstrap over the paired deltas, byte-faithful
-  to the Rust `bootstrap_ci` (`eu8_ir_validation.rs:283`): percentiles are
+  to the Rust `bootstrap_ci`: percentiles are
   **truncated-index order statistics**, `lo = means[int(resamples *
   alpha/2)]`, `hi = means[min(int(resamples * (1 - alpha/2)),
   resamples - 1)]` — NOT interpolated. These numerics **intentionally
@@ -175,7 +174,7 @@ let a blocked arm write its own blocked run. So:
   `characterize.py` — ingest + `verify_gold` + retrieve loop + score →
   `(cache, errors, per-query rows)`, **no writes** — taking a
   `ResolvedScenario`, threading `query_call`/`query_params` through
-  `_resolve_call` + `PARAM_RENAMES` (today runner-only), honoring the
+  `_resolve_call` + `PARAM_RENAMES` (runner-only before S8), honoring the
   arm's resolved limit, embedder flag, and projections, with a per-arm
   `retrieve_override`. `run_characterization` becomes a thin
   single-arm wrapper around it (behaviour pinned by the existing S6
@@ -218,7 +217,7 @@ let a blocked arm write its own blocked run. So:
   This is where sweep outcomes and a blocked-comparison's surviving-arm
   partials live.
 - Run identity is unchanged and already correct: `make_run_id` keys on
-  the **whole-document** `config_sha256` (verified `_lib.py:182-205`),
+  the **whole-document** `config_sha256` (verified through `_lib.make_run_id`),
   which covers both arms; per-arm synthesized hashes are supplementary
   labels, never the run identity.
 - Per-query schema: optional `arm` property (additive). All schema edits
@@ -277,7 +276,7 @@ tuple (metric, method, seed, resamples, min_n) for arms campaigns.
 
 ## Strata (scoped commitment, not vacuous)
 
-Nothing populates per-query `stratum` today (review-verified). S8 commits
+Before S8, nothing populated per-query `stratum` (review-verified). S8 commits
 to the minimal honest version: v1 `comparison.strata` entries are
 restricted to the vocabulary `{"query_class"}`; declaring it sets each
 per-query row's `stratum` to its gold `query_class`. Per-stratum CIs

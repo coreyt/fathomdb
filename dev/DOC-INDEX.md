@@ -49,11 +49,11 @@ refresh in the closing commit when you touch a doc).
 | `dev/notes/0.8.23-architecture-tradeoffs.md` | 0.8.23 architecture documentation follow-up | 0.8.23 planning | 2026-08-07 |
 | `dev/requirements.md` | Numbered requirements (REQ-*); REQ-053 = governed SDK surface (allowlist + parity + recovery-denylist + typed boundary) | 25 amended REQ-053 (Q3) | 2026-06-04 |
 | `dev/acceptance.md` | Acceptance criteria (AC-*); AC-057a five-verb cap superseded by AC-074 (governed surface); AC-074 Rust-facade... | 25 (AC-057a→AC-074); 27 fills AC-074 Rust clause; 27 fix-1 method-level; 40/GA-2 mints AC-075/076 | 2026-06-08 |
-| `dev/interfaces/rust.md` | Rust public interface (owner of Rust-visible spelling + governed facade contract); Slice 21 records dense readiness and Slice 22 records the pure projection-status facade. | 27 (governed-surface contract); Slice 21/22 landed in PR #207; publication held | 2026-08-08 |
-| `dev/interfaces/python.md` | Python public interface (owner of Python-visible spelling + attribute casing); Slice 21 records engine-set dense readiness and Slice 22 records `read.projection_status`. | Slice 21/22 landed in PR #207; publication held; parity owned by `design/bindings.md` | 2026-08-08 |
-| `dev/interfaces/typescript.md` | TypeScript public interface (owner of TS-visible spelling + export shape); Slice 21 records engine-set dense readiness and Slice 22 records `read.projectionStatus`. | Slice 21/22 landed in PR #207; publication held; parity owned by `design/bindings.md` | 2026-08-08 |
+| `dev/interfaces/rust.md` | Rust public interface (owner of Rust-visible spelling + governed facade contract); Slice 21 records dense readiness and Slice 22 records the pure projection-status facade. | 27 (governed-surface contract); Slices 21/22 integrated in `main` | 2026-08-08 |
+| `dev/interfaces/python.md` | Python public interface (owner of Python-visible spelling + attribute casing); Slice 21 records engine-set dense readiness and Slice 22 records `read.projection_status`. | Slices 21/22 integrated in `main`; parity owned by `design/bindings.md` | 2026-08-08 |
+| `dev/interfaces/typescript.md` | TypeScript public interface (owner of TS-visible spelling + export shape); Slice 21 records engine-set dense readiness and Slice 22 records `read.projectionStatus`. | Slices 21/22 integrated in `main`; parity owned by `design/bindings.md` | 2026-08-08 |
 | `dev/interfaces/cli.md` | CLI public interface (concrete flag spelling, root paths, exit-code classes, `--json` wrapping for the two-root... | 34 (dump-mutations); owned-by ADR-0.6.0-cli-scope | 2026-06-06 |
-| `dev/architecture.md` | System architecture (engine, projections, reader pool, surface); Slice 22 distinguishes pure projection introspection from ReaderWorkerPool retrieval. | 5/10/15/30 update read-path + receipt surface; Slice 22 landed in PR #207; publication held | 2026-08-08 |
+| `dev/architecture.md` | System architecture (engine, projections, reader pool, surface); Slice 22 distinguishes pure projection introspection from ReaderWorkerPool retrieval. | 5/10/15/30 update read-path + receipt surface; Slice 22 integrated in `main` | 2026-08-08 |
 | `dev/test-plan.md` | Test strategy + tiers (incl. functional-harness tier X1 + the Slice 10 G9/G10/G12-recency tier) | 5 adds functional tier; 10 adds RRF/filter/recency tier | 2026-06-03 |
 | `dev/traceability.md` | REQ ↔ AC ↔ test trace matrix | 25 re-points REQ-053↔new AC; 30 adds read ACs | 2026-05-28 |
 | `dev/security-review.md` | Security review (SR-*) | — (SR-005/SR-011 candidate reserved-gap) | 2026-05-02 |
@@ -86,10 +86,10 @@ refresh in the closing commit when you touch a doc).
 | `dev/adr/ADR-0.8.18-full-publish-pipeline.md` | #11-full full publish pipeline | 0.8.18 Slice 0 gates; Slice 20 implements | 2026-07-09 |
 | `dev/design/0.8.16-slice-0-f9-onnx-design.md` | 0.8.16 Slice-0 design package — F9 importance/confidence ranking + cross-vendor ONNX embedder | 0.8.16 Slice 0 | 2026-07-08 |
 | `dev/design/0.8.18-slice-5-vector-equivalence-probe.md` | 0.8.18 Slice 5 — #5 vector-equivalence probe (SHIPPED surface) | 0.8.18 Slice 5 | 2026-07-09 |
-| `dev/design/0.8.22-slice-19-join-index.md` | Landed in PR #207: design for canonical FTS join indexes | 0.8.22 Slice 19; publication held | 2026-08-08 |
-| `dev/design/0.8.22-slice-21-projection-state.md` | Landed in PR #207: design for truthful projection runtime state | 0.8.22 Slice 21; publication held | 2026-08-08 |
-| `dev/design/0.8.22-slice-22-projection-status.md` | Landed in PR #207: design for governed projection status reads | 0.8.22 Slice 22; publication held | 2026-08-08 |
-| `dev/design/0.8.22-slice-23-text-limit-prefix-stability.md` | Reviewed integration candidate for direct FTS result-prefix stability | 0.8.22 Slice 23; landing pending, publication held | 2026-08-08 |
+| `dev/design/0.8.22-slice-19-join-index.md` | Landed in PR #207: design for canonical FTS join indexes | 0.8.22 Slice 19; integrated in `main` | 2026-08-08 |
+| `dev/design/0.8.22-slice-21-projection-state.md` | Landed in PR #207: design for truthful projection runtime state | 0.8.22 Slice 21; integrated in `main` | 2026-08-08 |
+| `dev/design/0.8.22-slice-22-projection-status.md` | Landed in PR #207: design for governed projection status reads | 0.8.22 Slice 22; integrated in `main` | 2026-08-08 |
+| `dev/design/0.8.22-slice-23-text-limit-prefix-stability.md` | Landed in PR #209: direct FTS result-prefix stability repair | 0.8.22 Slice 23; integrated in `main` | 2026-08-08 |
 | `dev/design/earp.md` · `earp-slice-*-design.md` | As-built EARP experiment platform design and per-slice contracts | EARP developer harness | 2026-08-08 |
 | `dev/design/0.8.2-m1-multihop-harness.md` | 0.8.2 / M1 multi-hop answer-accuracy harness — design + FROZEN pre-registration (AMENDED 2026-06-16; re-frozen... | 0.8.2 Slice 0-rev2 | 2026-06-19 |
 | `dev/design/0.8.3-mem0-parity.md` | 0.8.3 Slice-0 design + FROZEN pre-registration (Mem0-parity resolution) | 0.8.3 Slice 0 | 2026-06-21 |
@@ -194,15 +194,15 @@ refresh in the closing commit when you touch a doc).
 | `dev/plans/prompts/PLAN-TEMPLATE.md` | Per-release plan authoring template | authors every plan-<release>.md | 2026-06-26 |
 | `dev/plans/prompts/0.8.0-SLICE-TEMPLATE.md` | Per-slice prompt template | authors every slice prompt | 2026-06-03 |
 | `dev/plans/prompts/0.8.0-slice-*.md` | Self-contained per-slice subagent prompts | per slice | (per slice) |
-| `dev/plans/prompts/0.8.22-slice-19-join-index.md` | Landed in PR #207: Slice 19 canonical join-index plan | 0.8.22 Slice 19; publication held | 2026-08-08 |
-| `dev/plans/prompts/0.8.22-slice-21-projection-state.md` | Landed in PR #207: Slice 21 projection-runtime-state plan | 0.8.22 Slice 21; publication held | 2026-08-08 |
-| `dev/plans/prompts/0.8.22-slice-22-projection-status.md` | Landed in PR #207: Slice 22 projection-status API plan | 0.8.22 Slice 22; publication held | 2026-08-08 |
-| `dev/plans/prompts/0.8.22-slice-23-text-limit-prefix-stability.md` | Completed Slice 23 direct FTS result-prefix repair plan | 0.8.22 Slice 23; landing pending, publication held | 2026-08-08 |
+| `dev/plans/prompts/0.8.22-slice-19-join-index.md` | Landed in PR #207: Slice 19 canonical join-index plan | 0.8.22 Slice 19; integrated in `main` | 2026-08-08 |
+| `dev/plans/prompts/0.8.22-slice-21-projection-state.md` | Landed in PR #207: Slice 21 projection-runtime-state plan | 0.8.22 Slice 21; integrated in `main` | 2026-08-08 |
+| `dev/plans/prompts/0.8.22-slice-22-projection-status.md` | Landed in PR #207: Slice 22 projection-status API plan | 0.8.22 Slice 22; integrated in `main` | 2026-08-08 |
+| `dev/plans/prompts/0.8.22-slice-23-text-limit-prefix-stability.md` | Completed Slice 23 direct FTS result-prefix repair plan | 0.8.22 Slice 23; integrated in `main` | 2026-08-08 |
 | `dev/plans/earp-foundation.md` | As-built EARP evaluation-platform plan and acceptance criteria | EARP developer harness | 2026-08-08 |
-| `dev/plans/runs/0.8.22-slice-23-design-review-20260808.md` | Approved Slice 23 design review and FIX-1 closure | 0.8.22 Slice 23; publication held | 2026-08-08 |
-| `dev/plans/runs/0.8.22-slice-23-pickup-review-20260808.md` | Approved Slice 23 pickup review | 0.8.22 Slice 23; publication held | 2026-08-08 |
-| `dev/plans/runs/0.8.22-slice-23-review-20260808.md` | Slice 23 review with FIX-1 requirements | 0.8.22 Slice 23; publication held | 2026-08-08 |
-| `dev/plans/runs/0.8.22-slice-23-fix-1-review-20260808.md` | Approved Slice 23 FIX-1 review | 0.8.22 Slice 23; publication held | 2026-08-08 |
+| `dev/plans/runs/0.8.22-slice-23-design-review-20260808.md` | Approved Slice 23 design review and FIX-1 closure | 0.8.22 Slice 23; integrated in `main` | 2026-08-08 |
+| `dev/plans/runs/0.8.22-slice-23-pickup-review-20260808.md` | Approved Slice 23 pickup review | 0.8.22 Slice 23; integrated in `main` | 2026-08-08 |
+| `dev/plans/runs/0.8.22-slice-23-review-20260808.md` | Slice 23 review with FIX-1 requirements | 0.8.22 Slice 23; integrated in `main` | 2026-08-08 |
+| `dev/plans/runs/0.8.22-slice-23-fix-1-review-20260808.md` | Approved Slice 23 FIX-1 review | 0.8.22 Slice 23; integrated in `main` | 2026-08-08 |
 | `dev/plans/runs/0.8.22-documentation-correctness-review-20260808.md` | Final documentation-correctness review; records FIX-1/2/3 and independent approval | 0.8.22 completion documentation gate | 2026-08-08 |
 | `dev/plans/runs/0.8.0-slice-*-output.json` / `-review-*.md` | Per-slice closure artifacts + promoted codex verdicts | per slice | (per slice) |
 | `dev/plans/runs/0.8.0-slice-6-tokenizer-experiment-*.md` | Slice 6 (B2) FTS5 tokenizer latency experiment | Slice 6 (B2) | 2026-06-07 |

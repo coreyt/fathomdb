@@ -36,7 +36,7 @@ The two resolution roots are different and that is deliberate: the gold lives
 under a gitignored `data_root`, while `tests/corpus/snapshot.json` and
 `tests/corpus/scripts/manifest.json` are committed in-repo. Resolving all three
 the same way would send the snapshot lookup into `data_root` and fail. Repo
-root is the one `experiments/_lib.py:41` already establishes.
+root is the one established by `experiments._lib`.
 
 When `gold.path` is relative and no `data_root` is configured, that is a
 configuration-resolution error owned by S3, not a runtime blocker: the config
@@ -67,13 +67,13 @@ same reason, and before the field checks that depend on it.
 Check 6 is a **three-way** equality: the config's declared pin, the gold file's
 own field, and the snapshot's field must all agree. Comparing the gold's field
 to the snapshot's field is the correct comparison — it is the same value the
-generator wrote from that source (`build_ir_gold.py:231`) — and hashing the
+generator wrote from that source — and hashing the
 snapshot *file* would be a weaker, different check. `manifest.json` carries no
 `corpus_hash` at all; it is raw-acquisition provenance only.
 
 ### Why v1 is refused
 
-`build_ir_gold.py:46` emits `ir-c-reused-v2`; every cached file on disk says
+`build_ir_gold.py` emits `ir-c-reused-v2`; every cached file on disk says
 `ir-c-reused-v1`. The refusal is **provenance and version hygiene**: a gold set
 must declare the version its committed generator actually emits, so the
 identity recorded alongside every number cannot name a version no code
@@ -84,7 +84,7 @@ so. Verified: `evidence_spans` is non-empty on zero of 4,597 source rows, so
 regenerating to v2 produces zero span locators. The only differences are the
 version string, the tracer renames `_source`/`_answer_type` →
 `source`/`answer_type`, and `query_origin: "human_dataset"` — which the
-reference already defaults to when absent (`ir_eval.rs:292-296`). Regeneration
+reference already defaults to when absent. Regeneration
 is therefore cheap and carries no re-baselining. The blocker message says this,
 so an operator is never told to regenerate for a reason that is untrue.
 
@@ -102,15 +102,15 @@ metric layer. Fields fall into three classes:
 **Validated against closed vocabularies** — an unknown value is
 `gold_malformed`, matching the reference's hard errors:
 
-- `query_class` (`ir_eval.rs:250-252`)
-- `necessity` (`ir_eval.rs:301-311`)
-- `query_origin` (`ir_eval.rs:292-296`). This one is *not* an inert tracer:
+- `query_class` (the `ir_eval.rs` reference parser)
+- `necessity` (the `ir_eval.rs` reference parser)
+- `query_origin` (the `ir_eval.rs` reference parser). This one is *not* an inert tracer:
   `templated` marks high lexical-leakage risk held to a higher validation bar
-  (`ir_eval.rs:100-116`). Blanket retention would let `"templeted"` through and
+  (the reference's eligibility rule). Blanket retention would let `"templeted"` through and
   score leaked queries as clean.
 
 **Typed but optional** — accepted under the v2 names with the `_`-prefixed
-legacy fallback the reference implements (`ir_eval.rs:284-291`):
+legacy fallback the reference implements:
 `relation_type`, `chain_shape`, `source`, `answer_type`, and the GoldSet-level
 `note`, which names the generator and reuse tier and is exactly the provenance
 this slice exists to preserve.
@@ -121,15 +121,15 @@ explicit slot; it does not happen by itself.
 
 This is the one place EARP is deliberately permissive, and the asymmetry is
 justified: IR-B defines the gold schema as an additive superset
-(`ir_eval.rs:174-177`) and it is owned upstream, whereas EARP's own
+(the `ir_eval.rs` additive GoldSet contract) and it is owned upstream, whereas EARP's own
 configuration is owned by EARP and stays strict.
 
-`query_id` is optional in the reference (`ir_eval.rs:178`) but is the pairing
+`query_id` is optional in the reference but is the pairing
 key for comparisons (`earp.per-query.v1.schema.json`). All 4,597 real queries
 carry one. S1 **requires** it and refuses a gold set with any query lacking
 one, rather than letting S8's pairing degrade silently.
 
-Shapes follow the reference: `locator` is optional (`ir_eval.rs:170`) and
+Shapes follow the reference: `locator` is optional and
 `Locator.spans` is optional, even though today every unit is
 `{"kind": "whole_body"}` with no spans.
 

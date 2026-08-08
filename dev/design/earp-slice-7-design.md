@@ -28,10 +28,10 @@ them separate and typed.
    interpretation keys on `deferred` for the dense portion.
    `vector_unsupported_kinds` exists **only** on this delta —
    `read.projections()` never carries it.
-2. `read.projections(engine)` returns `ProjectionSpec`s whose
-   `vector_dense_readiness` is binding-enforced to `"ready"`, `"embedding"`,
-   or `None` (`read.py:227`; observed `'ready'` after deferred build, `None`
-   for an FTS-only spec).
+2. **Pre-Slice-21 observation (superseded):** `read.projections(engine)`
+   returned `ProjectionSpec`s whose `vector_dense_readiness` was
+   binding-enforced to `"ready"`, `"embedding"`, or `None`. Slice 21 added
+   `"unavailable"`; the current vocabulary and EARP handling are owned by S10.
 3. `None` readiness is ambiguous by itself: it means both "no vector
    sub-target declared on this spec" and "caller-authored spec". The
    disambiguator is the spec's own `vector` flag, which the probe confirmed
@@ -45,9 +45,9 @@ them separate and typed.
    empty result: `search_projected_text('x', 'title')` on a bare DB raises
    `InvalidFilterError: projected text field "title" is not declared`.
 6. Custom embedder implementations are unsupported by the Python SDK
-   (`earp.md:182-185`); the only embedder lever remains
+   (the core EARP design's SDK catalog); the only embedder lever remains
    `scenario.engine.use_default_embedder`.
-7. **Vacuous readiness (review-corrected):** with NO embedder configured, a
+7. **Pre-Slice-21 observation (superseded):** with NO embedder configured, a
    `vector: true` spec reads `'ready'` on the very first poll — readiness
    derives from outstanding embed work, and with no embedder no work is
    ever enqueued, so it is vacuously ready with zero dense vectors behind
@@ -137,9 +137,10 @@ projected-text config.
     `CONFIG_INVALID_VALUE` naming the declared set;
   - a declared spec with `vector: true` while
     `scenario.engine.use_default_embedder` is false → collected error.
-    Rationale (fact 7): readiness goes **vacuously ready** with zero dense
-    vectors behind it, so the poll witness would *lie* rather than time
-    out — resolution is the only place this dishonest config can be caught;
+    Rationale: the no-embedder vector state is not usable for dense retrieval.
+    Before Slice 21 it reported vacuous `ready`; it now reports
+    `unavailable`. Resolution remains the only honest place to refuse this
+    dishonest configuration;
   - `fts: true` requires `"searchable"` in roles (mirror of the engine's
     sub-target rule, which refuses typed — verified), same for
     `vector: true`;
@@ -187,7 +188,7 @@ capture delta witness → ingest → poll readiness → query.
 - **Open-report witness** (source: `open_report()` at open): this is an
   **amendment to `classify_open`, not an addition** — the function already
   captures the open-report fields and already emits `DENSE_DISABLED`
-  unconditionally (`runner.py:98-143`), pinned by
+  unconditionally (the `runner.classify_open` path), pinned by
   `test_dense_disabled_is_blocked`. It gains scenario-awareness (a
   `dense_required: bool` parameter derived from the declared specs):
   `dense_disabled` is the typed blocker only when the scenario declares a
@@ -246,8 +247,8 @@ pointer costs nothing and keeps old validators working).
    `ready`, `embedding`, or `not_declared`, and `not_declared` occurs only
    for `vector: false` specs.
 4. A `vector: true` declaration with `use_default_embedder: false` is a
-   collected config error, not a run that records a vacuously-`ready`
-   witness (fact 7: it would never time out — it would lie).
+   collected config error, not a run that reports the current `unavailable`
+   witness for an unusable dense arm.
 5. A readiness timeout is the typed blocker `DENSE_READINESS_TIMEOUT`
    (blocked-run recording per S4 — indexed with a blocked verdict, no
    metrics); simulated via the `poll_override` seam with zero real waiting.
@@ -277,7 +278,7 @@ pointer costs nothing and keeps old validators working).
    recorded; timeout path via `poll_override` (no real waiting); sidecar
    shape per AC-7. The embedder-on readiness test (real model load) is
    **opt-in behind the established `integration` marker / env-gate pattern
-   (`pyproject.toml:89-96`), visibly SKIPPED by default with a reason** —
+   (the Python project's integration-test marker), visibly SKIPPED by default with a reason** —
    D-2's rule as prior slices implement it, not availability-conditional.
 5. Existing tests that change (deliberate): `test_dense_disabled_is_blocked`
    gains the scenario-awareness arm (blocks only when dense is required;
@@ -303,7 +304,7 @@ fact caught before implementation. All 11 required edits incorporated above:
 | ---: | --- | --- | --- |
 | 1 | BLOCKER | Proposed "new" BlockerCodes duplicate pre-declared ones and fail the result schema's closed enum — the blocked-run path would crash in `write_run` | Reuse `VECTOR_UNSUPPORTED_KINDS` / `DENSE_READINESS_TIMEOUT` / `DENSE_DISABLED`; zero schema edits |
 | 2 | BLOCKER | `exclusiveMinimum` silently uninterpreted and `minLength` loudly unsupported by the stdlib walker | `minimum: 0.1`; empty-name enforcement moved to the resolver |
-| 3 | MAJOR | "Can never become ready" is false — readiness goes **vacuously ready** with no embedder (executed) | Fact 7 added; AC-4 rationale rewritten: the witness would lie, not time out |
+| 3 | MAJOR | **Pre-Slice-21:** "Can never become ready" was false — readiness went **vacuously ready** with no embedder (executed) | Fact 7 added; the historical AC-4 rationale recorded why resolution was the gate; Slice 21 later replaced that engine state with `unavailable` |
 | 4 | MAJOR | Conditional `DENSE_DISABLED` is an unlisted amendment to `classify_open` (pure, unconditional today, pinned by a test) | Spelled out: scenario-awareness parameter, pure-function preservation, test amendment listed |
 | 5 | MAJOR | Absent-block × `search_projected_text` contradiction | Projected-text calls now require the block; byte-for-byte claim scoped |
 | 6 | MAJOR | Embedder-availability skip violates D-2's opt-in pattern | `integration`-marker opt-in, visibly skipped by default |

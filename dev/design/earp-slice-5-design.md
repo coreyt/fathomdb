@@ -160,6 +160,8 @@ five findings closed before implementation.
 Confirmed by execution, no change required: the doc-id mapping is sound and
 `logical|content` is total for `search_text_only`; a hash-shaped `logical_id`
 still reports the logical space; superseded nodes and edges never appear;
-`source_id`'s own error message is clear and helpful. Also confirmed, and
-relevant to S6: the FTS branch really is **not** truncated at 10 — 30 matching
-documents returned 30 hits — so S3's `CALL_MODE` unbounded entry is right.
+`source_id`'s own error message is clear and helpful. The observation that the
+FTS branch returned 30 matching documents was made before Slice 18
+introduced the public result-limit contract. It is not an as-built EARP fact:
+every search mode now defaults to `limit=10` and refuses a limit above 100.
+S6a owns the corresponding depth and `fanout_used` cutover.

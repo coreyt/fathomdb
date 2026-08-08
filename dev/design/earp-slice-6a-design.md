@@ -23,7 +23,7 @@ The catalog guard already caught this:
 ## Engine facts this design stands on (verified in the merged tree)
 
 1. `Engine.search`, `Engine.search_text_only`, `Engine.search_projected_text`
-   all take keyword `limit: int = 10` (`engine.py:353,530,578`).
+   all take keyword `limit: int = 10` on their Python `Engine` methods.
 2. `DEFAULT_SEARCH_RESULT_LIMIT = 10`, `MAX_SEARCH_RESULT_LIMIT = 100`;
    `validate_search_result_limit` **refuses** values outside `1..=100` with a
    typed engine error — refusal, not clamp.
@@ -57,7 +57,7 @@ no longer *depth*.
 
 `scenario.query` gains optional `limit`: integer, `minimum: 1`,
 `maximum: 100`. **Absent means 10**, the engine default. `config_sha256` is
-computed over the raw document (`config.py:444` → `_lib.canonical_json`), so
+computed over the raw document through `config` and `_lib.canonical_json`, so
 no existing config's hash moves.
 
 Two resolution-behaviour changes are owned openly rather than hidden behind
@@ -70,7 +70,7 @@ Two resolution-behaviour changes are owned openly rather than hidden behind
 - K > 100 becomes permanently unmeasurable in every mode
   (`ENGINE_MAX_RESULT_LIMIT`).
 
-`evidence_recall_k`'s own description at `earp.config.v1.schema.json:164`
+`evidence_recall_k`'s own schema description
 still recites the retired D-5 doctrine ("fts_only is unbounded") and is
 amended in the same edit.
 
@@ -121,7 +121,7 @@ fact, not a depth fact); the resolver owns it, below.
   self-explaining; no bespoke resolver check is added.
 - Resolver: `limit` resolves from the config (default 10) and is **injected
   into `query_params`** — the single source the runner already passes
-  through (`config.py:449` → `runner.py:259-264`), so no duplicate-kwarg
+  through the resolver to the runner, so no duplicate-kwarg
   path exists and the runner needs no knowledge of the knob. Every declared
   `evidence_recall_k` is checked via `check_depth(mode, k, limit)`.
 - `ResolvedScenario.max_measurable_k` becomes the resolved `limit` (an `int`,
@@ -135,17 +135,17 @@ fact, not a depth fact); the resolver owns it, below.
 
 - The runner stays a pass-through: the resolved limit arrives via
   `query_params` (above). Its diagnostic sidecar gains `fanout_used` in the
-  scenario block (`runner.py:_write`), which it does not record today.
+  scenario block (`runner.py:_write`), which was not recorded before S6a.
   `query_override` test callables gain the new kwarg.
 - `characterize()` does not resolve a config, so it cannot take "the resolved
   limit": it passes `limit=max(ladder)` **explicitly** at its
-  `search_text_only` call (`characterize.py:304`), refuses a ladder whose
+  `search_text_only` call, refuses a ladder whose
   max exceeds `ENGINE_MAX_RESULT_LIMIT`, and records that value at the two
-  `fanout_used` sites. Today it truncates to
+  `fanout_used` sites. Before S6a it truncated to
   `deepest = max(ladder)` while calling with the engine default — a ladder
   of (5, 10, 50) would silently score @50 over 10 hits. `DEFAULT_FANOUT` is
   deleted, including from `__all__`.
-- `cli.py:51` prints `max_measurable_k or 'unbounded'`; the `'unbounded'`
+- The CLI printed `max_measurable_k or 'unbounded'`; the `'unbounded'`
   branch is now dead. Replaced with an honest `result limit` line.
 
 ### `schema/earp.result.v1.schema.json`
@@ -195,12 +195,13 @@ two readings coincide on all sidecars that exist.
 | `test_config_resolver.py::test_mode_derives_from_call_and_embedder` | `CALL_MODE` tuples lose the max-K column |
 | `test_config_resolver.py::test_deep_k_allowed_for_text_only` | must declare `limit: 50` to keep its deep ladder |
 
-Stale docstrings at `test_config_resolver.py:215,241` and `models.py:250`
+Stale docstrings in `test_config_resolver.py` and `models.py`
 are corrected in the same commit.
 
 ## Test-first sequence (RED before GREEN)
 
-1. The already-failing catalog coverage test (RED exists in the tree today).
+1. The catalog coverage test first observed failing before S6a (the RED
+   evidence).
 2. Resolver: limit-range refusal triplet (0 / 101 / non-integer), collected.
 3. Depth: `(hybrid, k=50, limit=50) → None`;
    `(fts_only, k=20, limit=10) → METRIC_NOT_MEASURABLE`; message-content
@@ -227,7 +228,7 @@ required edits are incorporated above:
 | ---: | --- | --- | --- |
 | 1 | MAJOR | The S2 drift detector guards `ir_eval.rs`, not `lib.rs`; the mirrored constants would drift silently | Claim deleted; dedicated binding-present guard test added (AC-6) |
 | 2 | MAJOR | "No config changes meaning" overstated — fts_only deep-K flips from accepted to refused; two green tests pin the old doctrine | Doctrine change owned in prose; breaking tests enumerated |
-| 3 | MAJOR | `characterize()` never resolves a config and today scores @K>10 over 10 hits silently | `limit=max(ladder)` passed explicitly; deep ladders refused; `DEFAULT_FANOUT` deleted |
+| 3 | MAJOR | Before S6a, `characterize()` never resolved a config and scored @K>10 over 10 hits silently | `limit=max(ladder)` passed explicitly; deep ladders refused; `DEFAULT_FANOUT` deleted |
 | 4 | MAJOR | Breaking-test inventory absent | "Existing tests that change" section added |
 | 5 | MINOR | `scenario.query.limit` missing from `CONSUMER_REGISTRY` | Added, owner S5 |
 | 6 | MINOR | `cli.py` `'unbounded'` branch goes dead | cli.py added to changes |

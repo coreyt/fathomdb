@@ -163,7 +163,7 @@ SDK. Each exposed knob is classified as one of:
   `configure_projections` diffs against the durable registry and backfills the
   difference in one transaction, with explicit `drop` semantics and
   `ProjectionDestructiveError` for unnamed destructive changes
-  (`engine.py:286-297`);
+  (the Python `Engine.configure_projections` method);
 - `runtime`: can alter performance or execution but is not a relevance claim;
 - `observability`: captures evidence without changing the result contract; or
 - `held_constant`: known but intentionally unchanged for the scenario, with a
@@ -194,19 +194,18 @@ distinct signals from **three different sources** — they are not
 interchangeable, and only the first comes from polling:
 
 - `vector_dense_readiness` — polled from `read.projections()` to a declared
-  timeout (`read.py:245`; `types.py:188`). Values are exactly `"ready"`,
-  `"embedding"`, or `None`, binding-enforced. Because `None` means both "no
-  vector sub-target declared" and "caller-authored spec", the runner must
-  distinguish "no dense projection was ever declared" from "dense not ready"
-  before interpreting it. A transient `embedding` state that times out is a
-  typed blocker.
+  timeout. The binding values are `"unavailable"`, `"embedding"`, and
+  `"ready"`; `None` belongs only to a declaration without a vector sub-target.
+  The runner distinguishes no declared dense projection from a declared but
+  unavailable one before interpreting it. A transient `embedding` state that
+  times out is a typed blocker.
 - `vector_unsupported_kinds` — captured from the `ProjectionDelta` returned by
-  `configure_projections` at declaration time (`types.py:219`;
-  `engine.py:321-330`). It is **not** on `read.projections()` output; a poll
+  `configure_projections` at declaration time (the projection-spec and
+  engine configuration contracts). It is **not** on `read.projections()` output; a poll
   loop will never see it. Permanent unsupported kinds are a typed unsupported
   outcome.
 - `dense_disabled` / `dense_disabled_reason` — captured from `open_report` at
-  open time (`engine.py:602-613,730-731`). This is **not** "dense indexing
+  open time (the `Engine.open_report` contract). This is **not** "dense indexing
   disabled": it is the 0.8.18 vector-*equivalence* degraded open, after which
   every vector-dependent arm refuses at query time while `search_text_only`
   stays serviceable. It is a typed blocker when dense retrieval was required,
@@ -228,7 +227,7 @@ unsatisfiable and must be reported as such rather than as numbers:
   IR-C reuse tier carries a three-value `query_class` and binary `necessity`
   only. nDCG is `not_applicable`, not merely ineligible in principle.
 - **Supporting-evidence coverage** is a separate diagnostic in principle, but
-  `build_ir_gold.py:132` is the generator's only `necessity` emission site and
+  `build_ir_gold.py` is the generator's only `necessity` emission site and
   it emits `required` exclusively — the bucket is empty on every gold set in
   this repo. The Rust reference now models this correctly:
   `PerQueryRecall.supporting_coverage` is `Option<f64>`, `None` when the query
@@ -291,7 +290,7 @@ The sidecar contains campaign kind, scenario manifest, per-query outcomes,
 blockers, comparison data, and environment/open evidence. `record.json` and
 append-only `experiments/index.jsonl` remain the shared summary source of
 truth. The record schema is closed — `record_from_dict` rejects unknown *and*
-missing keys, top-level and nested (`_lib.py:138-161`) — so the sidecar is
+missing keys, top-level and nested — so the sidecar is
 forced, not stylistic.
 
 The writer stages and validates all artifacts first, materializes the shared
@@ -319,7 +318,7 @@ exists carrying a differing sidecar, rather than overwriting.
 
 A partial or invalid run is never indexed as complete; a valid blocked run is
 indexed only with its explicit blocked verdict. Because `Record.verdict` is an
-untyped `str` (`_lib.py:95`), the exact verdict tokens are pinned in the lock
+untyped `str`, the exact verdict tokens are pinned in the lock
 artifact so "blocked" cannot be spelled three ways. Comparison output includes
 N, effect size, confidence interval, decision-rule result, and `UNDERPOWERED`
 when that is the honest outcome.
@@ -333,11 +332,11 @@ opt-in.
 have to prove the cache is populated before open, and the SDK offers no way to
 ask: there is no Python cache-status API, and the Rust cache directory derives
 from `sha256("<repo>@<revision>")[..12]` over `pub(crate)` constants
-(`fathomdb-embedder/src/loader.rs:50-62,436-444`), with `expected_cache_dir()`
+(the embedder loader), with `expected_cache_dir()`
 gated behind a test cfg. Reimplementing that in Python would hardcode a model
 revision and drift from it silently — the run would report "cached" against a
 stale directory and download anyway. So EARP instead records
-`OpenReport.embedder_download_ms` and `embedder_events` (`engine.py:726-727`)
+`OpenReport.embedder_download_ms` and `embedder_events`
 and **blocker-marks a run that fetched**, which is detectable, drift-free, and
 honest. A real preflight becomes available only if a cache-status accessor is
 added to the SDK as separately-reviewed work.
@@ -351,7 +350,7 @@ a successful result.
 Cost is **enforced, not merely recorded** (D-3): $5.00 is pre-authorized
 cumulatively across all priced runs, and anything beyond requires HITL
 approval. Recording alone already exists — `Record.cost_usd` and the index
-row's `cost_usd` (`_lib.py:103,481`). Enforcement sums `cost_usd` across
+row's `cost_usd`. Enforcement sums `cost_usd` across
 `experiments/index.jsonl`, adds the pending run's declared worst-case
 estimate, and refuses to start when the projected total exceeds the remaining
 authorization. The refusal is a typed blocker with a durable record, never a
@@ -370,9 +369,9 @@ silent skip.
 | `dev/plans/earp-foundation.md` | Implementation plan and slice sequence |
 | `dev/notes/earp-hitl-decisions.md` | HITL rulings D-1…D-6 |
 
-`experiments/runs/<run_id>/` uses an underscore, matching `_lib.py:417`.
+`experiments/runs/<run_id>/` uses an underscore, matching the `_lib` run path.
 
-**A noted convention divergence.** `experiments/README.md:31-35` states the
+**A noted convention divergence.** `experiments/README.md` states the
 standing rule that "an experiment is a typed CONFIG … new experiments are new
 config files (the `eval/*/config.py` convention), not bespoke runners with
 inlined constants." EARP introduces declarative YAML under a new

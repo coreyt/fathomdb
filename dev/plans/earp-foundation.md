@@ -21,7 +21,7 @@ depends on it.
 ## Scope and boundaries
 
 - EVAL-ONLY Python tooling under `src/python/eval/earp/`, off-wheel by
-  construction (`src/python/pyproject.toml:80-81`), following the existing
+  construction (the Python project's package-discovery configuration), following the existing
   `m1_*` / `r2_parity_eval` harness convention.
 - No production SDK, schema, query-path, or CI-gate change. A future missing
   SDK capability is named and commissioned separately — never worked around
@@ -71,7 +71,7 @@ reviewed.
 4. **TDD, RED then GREEN.** Every behaviour lands as a failing test first. The
    RED and GREEN evidence is recorded in the slice's closure notes and in the
    `tdd_evidence` field the shared record already carries
-   (`experiments/_lib.py:104`). A test that passes on first write is not
+   (the shared experiment record). A test that passes on first write is not
    evidence; it is a test that was never proven to fail.
 
 Slice 0 satisfies these by construction: its design is `dev/design/earp.md`,
@@ -114,7 +114,7 @@ is a typed blocker rather than a silent empty gold set.
 ### S2 · Metric port with pinned parity
 
 Pure functions, no SDK, no database. Ports `evidence_recall_at_k`,
-`negative_abstained`, and the eligibility rules from `ir_eval.rs:385-411`.
+`negative_abstained`, and the eligibility rules from `ir_eval.rs`.
 Parity is asserted against the committed fixture
 `src/rust/crates/fathomdb-engine/tests/fixtures/ir_gold/synthetic_gold.json`
 (committed, so it survives into worktrees) plus a checked-in Rust-produced
@@ -155,14 +155,14 @@ candidate list. The catalog records that `Engine.open` never forwards
 ### S4 · Durable writer
 
 `_lib.write_record` performs materialize-and-append in one call
-(`experiments/_lib.py:457-493`) with no hook between them, so the required
+with no hook between them, so the required
 stage → materialize → append-last ordering is only achievable by pre-deriving
 the run identity: `config_sha256` → `make_run_id` → `runs/<run_id>/`, stage
 and validate sidecars there, then call `write_record`
 with a byte-identical `config_obj` and the same `ts` so it recomputes the same
 id. That contract is locked in S0 and tested here.
 
-`run_id` is minute-resolution (`_lib.py:193-194`), so two runs with the same
+`run_id` is minute-resolution, so two runs with the same
 resolved config in the same minute collide and the second silently overwrites
 the first while producing one index row. The collision policy — refuse when a
 run directory already exists with a differing sidecar — is part of this slice.
@@ -174,7 +174,7 @@ delivered. Runs the small human-authored fixture against a fresh temporary
 database through the real Python SDK, exercising the whole machinery with no
 gold and therefore no retrieval-quality claim. The fixture must carry
 `source_id` on every canonical item — `Engine.write` makes it mandatory
-(`engine.py:186-187`). Names one of the three real search entry points
+(the `Engine.write` contract). Names one of the three real search entry points
 (`search`, `search_projected_text`, `search_text_only`) rather than the
 symbolic `operation: search`.
 

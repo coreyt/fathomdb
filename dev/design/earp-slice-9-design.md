@@ -19,7 +19,7 @@ visible SKIP; a skipped arm is never a pass or a zero).
   actual_usd)`; `BlockerCode.BUDGET_EXCEEDED`.
 - Result schema: `cost` block mirroring `CostLedger` exactly.
 - The durable spend ledger already exists outside EARP:
-  `experiments/index.jsonl` rows carry `cost_usd` (`_lib.py:103,481`);
+  `experiments/index.jsonl` rows carry `cost_usd` through `_lib`;
   the writer already appends the index line last (S4).
 
 ## Scope decision (owned openly)
@@ -89,7 +89,7 @@ A priced arm runs only when **all four** of these hold, in order:
 **The runtime meter (closing the estimate loophole):** pricing is
 **fail-closed and pinned** — a `PRICE_PER_1M`-style table with a
 `price_for` lookup that refuses an unpinned model as a typed blocker,
-never a default (the `gap_decomposition_run.py:94,165-176` precedent:
+never a default (the `gap_decomposition_run.py` precedent:
 "a $-cap is unenforceable without pinned pricing"). Usage is captured
 from the completion response's `usage` body (the current `LLMAnswerer.
 _complete` discards it, so the adapter wraps the completion to capture

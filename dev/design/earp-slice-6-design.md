@@ -66,7 +66,7 @@ requires it, producing an unattributable recall loss. S6 asserts
 `len(set(doc_ids)) == n_docs` before the first write, exactly as S5's fixture
 loader does at fixture scale.
 
-## The gold basis, and why the real campaign is currently blocked
+## The gold basis and real-campaign preconditions
 
 S1 already enforces D-6's four conditions. Two of them bite here, and the
 design states plainly what that means rather than quietly working around it:
@@ -84,11 +84,11 @@ Regenerating is an **operator action**, not something S6 performs.
 belongs to whoever owns that tree. S6 names the command in the blocker message
 and stops.
 
-This is the honest position: **S6 lands complete and tested, and the real
-corpus-scale number awaits gold regeneration.** The alternative — relaxing the
-version check so a number can be produced today — would trade a blocked run for
-an untrustworthy one, which is the whole failure mode this platform exists to
-avoid.
+This is the honest position: **S6 is complete and tested; a corpus-scale
+number requires a valid regenerated gold file in the selected data root.** The
+alternative — relaxing the version check merely to produce a number — would
+trade a blocked run for an untrustworthy one, which is the whole failure mode
+this platform exists to avoid.
 
 Because the content is semantically identical between v1 and v2 (verified:
 `evidence_spans` is non-empty on zero of 4,597 source rows), regeneration is
@@ -158,7 +158,9 @@ drifts.
   relevance.
 - `supporting_coverage` is `not_applicable` per K: no gold carries supporting
   units.
-- The fanout actually used is recorded with every number, per IR-B §(c).
+- The resolved public result limit is recorded with every number. The retained
+  `fanout_used` field has that meaning after S6a; it does not report an
+  internal engine fanout.
 
 Depth is checked once, at config time, by S3 — S6 does not re-derive it. The
 ladder is whatever the config declared and the resolver admitted, which for a
@@ -208,8 +210,8 @@ axes are unrecoverable. `_lib.git_info()` and `_lib.env_info()` exist and were
 simply unused; S6 calls them, and reports an empty prior `git_sha` as
 `axis_unrecoverable` rather than as drift from `""`.
 
-`replay` is currently refused by S3 as `config_campaign_inexpressible`. S6
-lands the replay mechanism over a stored record and removes that refusal.
+Before S6, `replay` was refused by S3 as `config_campaign_inexpressible`. S6
+landed the replay mechanism over a stored record and removed that refusal.
 
 ## Non-goals
 
@@ -230,7 +232,8 @@ lands the replay mechanism over a stored record and removes that refusal.
 5. A retrieval error is a typed per-query failure, never a miss or an
    abstention.
 6. `ndcg` and `supporting_coverage` are `not_applicable`, never zero.
-7. The fanout used is recorded with every number.
+7. The resolved public result limit is recorded with every number through the
+   retained `fanout_used` compatibility field.
 8. Per-query rows validate against `earp.per-query.v1`, including the
    scored-rows-carry-numbers conditional.
 9. Replay recomputes the identity and reports config, code, and environment
@@ -242,5 +245,6 @@ lands the replay mechanism over a stored record and removes that refusal.
 
 ## Review
 
-Pending — an independent code-grounded review is required before
-implementation, per the per-slice governance in the plan.
+Independent code-grounded review and implementation are complete. The
+as-built review and RED/GREEN evidence are retained in this design and the
+foundation plan.
