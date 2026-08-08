@@ -16,6 +16,7 @@ const FIXTURE_VERSION: &str = "slice19-deterministic-v1";
 const FIXTURE_SEED: u64 = 0x5A19_2026_0808_0001;
 const FIXTURE_NODES: usize = 500;
 const FIXTURE_EDGES: usize = 500;
+const MATCHING_NODES: usize = 50;
 const WRITE_BATCH_SIZE: usize = 250;
 const MIGRATION_SAMPLES: usize = 3;
 const INGEST_SAMPLES: usize = 3;
@@ -97,6 +98,7 @@ struct ScenarioSamples {
     ingest_us: Vec<u64>,
     query_us: Vec<u64>,
     query_signature: Vec<String>,
+    text_edge_result_count: usize,
 }
 
 fn db_path(dir: &TempDir, name: &str) -> PathBuf {
@@ -116,7 +118,8 @@ fn fixture_writes() -> (Vec<PreparedWrite>, Vec<PreparedWrite>) {
         .map(|index| PreparedWrite::Node {
             kind: "fixture_doc".to_string(),
             body: format!(
-                "{QUERY} deterministic node {index} payload {:016x}",
+                "{} deterministic node {index} payload {:016x}",
+                if index < MATCHING_NODES { QUERY } else { "fixture-nonmatch" },
                 fixture_words(index)
             ),
             source_id: SourceId::new(format!("fixture:node:{index}")).expect("fixture source id"),
@@ -175,20 +178,27 @@ fn open_ingest_scenario(path: &PathBuf, indexes_present: bool) -> Engine {
     Engine::open(path).expect("reopen no-index control fixture").engine
 }
 
-fn search_signature(engine: &Engine) -> Vec<String> {
-    engine
-        .search_text_only_with_limit(QUERY, 100)
-        .expect("run fixture text search")
-        .results
-        .into_iter()
-        .map(|hit| format!("{}|{}|{}|{:?}", hit.write_cursor, hit.kind, hit.body, hit.branch))
-        .collect()
+fn search_signature(engine: &Engine) -> (Vec<String>, usize) {
+    let results = engine.search_with_limit(QUERY, 100).expect("run fixture text search").results;
+    let text_edge_result_count = results
+        .iter()
+        .filter(|hit| hit.branch == fathomdb_engine::SoftFallbackBranch::TextEdge)
+        .count();
+    assert!(text_edge_result_count > 0, "the normal-search fixture must return an edge FTS result");
+    (
+        results
+            .into_iter()
+            .map(|hit| format!("{}|{}|{}|{:?}", hit.write_cursor, hit.kind, hit.body, hit.branch))
+            .collect(),
+        text_edge_result_count,
+    )
 }
 
 fn measure_scenario(indexes_present: bool) -> ScenarioSamples {
     let mut ingest_us = Vec::with_capacity(INGEST_SAMPLES);
     let mut query_us = Vec::with_capacity(QUERY_SAMPLES);
     let mut expected_signature = None;
+    let mut expected_text_edge_result_count = None;
 
     for sample in 0..INGEST_SAMPLES {
         let dir = TempDir::new().expect("scenario tempdir");
@@ -198,7 +208,7 @@ fn measure_scenario(indexes_present: bool) -> ScenarioSamples {
         write_fixture(&engine);
         ingest_us.push(elapsed_us(started));
 
-        let signature = search_signature(&engine);
+        let (signature, text_edge_result_count) = search_signature(&engine);
         assert_eq!(
             signature.len(),
             100,
@@ -209,19 +219,31 @@ fn measure_scenario(indexes_present: bool) -> ScenarioSamples {
         } else {
             expected_signature = Some(signature);
         }
+        if let Some(expected) = expected_text_edge_result_count {
+            assert_eq!(
+                text_edge_result_count, expected,
+                "repeat edge FTS result count remains stable"
+            );
+        } else {
+            expected_text_edge_result_count = Some(text_edge_result_count);
+        }
 
         if sample == 0 {
             for _ in 0..QUERY_WARMUPS {
                 assert_eq!(
-                    search_signature(&engine),
+                    search_signature(&engine).0,
                     *expected_signature.as_ref().expect("signature")
                 );
             }
             for _ in 0..QUERY_SAMPLES {
                 let started = Instant::now();
-                let signature = search_signature(&engine);
+                let (signature, text_edge_result_count) = search_signature(&engine);
                 query_us.push(elapsed_us(started));
                 assert_eq!(signature, *expected_signature.as_ref().expect("signature"));
+                assert_eq!(
+                    text_edge_result_count,
+                    expected_text_edge_result_count.expect("edge FTS result count")
+                );
             }
         }
         engine.close().expect("close scenario engine");
@@ -231,6 +253,8 @@ fn measure_scenario(indexes_present: bool) -> ScenarioSamples {
         ingest_us,
         query_us,
         query_signature: expected_signature.expect("at least one scenario sample"),
+        text_edge_result_count: expected_text_edge_result_count
+            .expect("at least one edge FTS result"),
     }
 }
 
@@ -335,7 +359,7 @@ fn write_cursor_join_index_measurement() {
     assert_eq!(
         scenarios.get(WITH_INDEXES).expect("with-index scenario").query_signature,
         scenarios.get(WITHOUT_INDEXES).expect("without-index scenario").query_signature,
-        "the diagnostic no-index control must preserve the public Engine text-search result sequence"
+        "the diagnostic no-index control must preserve the public Engine normal-search result sequence"
     );
     let (sqlite_version, sqlite_compile_options) = sqlite_environment();
     let record = serde_json::json!({
@@ -357,13 +381,13 @@ fn write_cursor_join_index_measurement() {
             "generator": {
                 "version": FIXTURE_VERSION,
                 "seed": FIXTURE_SEED,
-                "description": "500 active nodes and 500 body-bearing edges. Every body matches slice19needle; per-row payload is a SplitMix64-style deterministic transform of the seed and row index."
+                "500 active nodes and 500 body-bearing edges. The first 50 node bodies and every edge body match slice19needle; per-row payload is a SplitMix64-style deterministic transform of the seed and row index."
             },
             "nodes": FIXTURE_NODES,
             "edges": FIXTURE_EDGES,
             "write_batch_size": WRITE_BATCH_SIZE,
             "query": QUERY,
-            "query_api": "Engine::search_text_only_with_limit(query, 100)"
+            "query_api": "Engine::search_with_limit(query, 100)"
         },
         "environment": {
             "os": env::consts::OS,
@@ -381,7 +405,7 @@ fn write_cursor_join_index_measurement() {
         "cache_treatment": {
             "fixture_paths": "Every migration and ingest sample uses a fresh TempDir database path.",
             "migration": "A schema-25 database is closed before the timed schema-26 Engine::open. The harness does not attempt privileged OS page-cache eviction.",
-            "query": format!("{QUERY_WARMUPS} unrecorded Engine::search_text_only_with_limit calls warm each scenario's reader/process path before {QUERY_SAMPLES} recorded calls."),
+            "query": format!("{QUERY_WARMUPS} unrecorded Engine::search_with_limit calls warm each scenario's reader/process path before {QUERY_SAMPLES} recorded calls."),
             "os_page_cache_evicted": false,
             "caveat": "Samples are not classified as cold-cache measurements; host filesystem-cache state is uncontrolled."
         },
@@ -391,8 +415,9 @@ fn write_cursor_join_index_measurement() {
         },
         "semantic_equivalence": {
             "verified": true,
-            "method": "The full ordered public Engine::search_text_only_with_limit result signature (write cursor, kind, body, branch) is equal between controls and across repeats.",
-            "result_count": scenarios.get(WITH_INDEXES).expect("with-index scenario").query_signature.len()
+            "method": "The full ordered public Engine::search_with_limit result signature (write cursor, kind, body, branch) is equal between controls and across repeats; the signature contains TextEdge results.",
+            "result_count": scenarios.get(WITH_INDEXES).expect("with-index scenario").query_signature.len(),
+            "text_edge_result_count": scenarios.get(WITH_INDEXES).expect("with-index scenario").text_edge_result_count
         },
         "raw_samples": {
             "units": "microseconds",
@@ -404,7 +429,7 @@ fn write_cursor_join_index_measurement() {
         "limitations": [
             "This is a deterministic synthetic fixture, not a corpus-scale, workload-representative benchmark.",
             "The result does not assert a CI latency target, production throughput target, or generalized speedup.",
-            "Only the public Engine write and text-search paths are timed; the direct SQLite index removal exists solely to create the diagnostic no-index control."
+            "Only the public Engine write and normal-search paths are timed; the direct SQLite index removal exists solely to create the diagnostic no-index control."
         ]
     });
     std::fs::write(
