@@ -1463,7 +1463,7 @@ fn a_boot_graft_whose_repair_fails_registers_nothing() {
     // ---- session A: NO embedder. The declaration persists and DEFERS (fix-2:
     // a kind is only enrolled by a session that has a live embedder), so these
     // rows take permanent `'up_to_date'` terminals with no vector: the stranded
-    // set a later late enrolment owes a repair to.
+    // set a later boot graft owes a repair to.
     {
         let opened = Engine::open(path.clone()).expect("create without embedder");
         let engine = &opened.engine;
@@ -1532,8 +1532,8 @@ fn a_boot_graft_whose_repair_fails_registers_nothing() {
     assert_eq!(
         leaf_rows_without_vectors(&conn),
         0,
-        "SELF-SEALED FALSE READY: `drain()` returned Ok and readiness reads `ready`, but the rows \
-         the torn enrolment stranded still have no vector at rest. The torn state is invisible to \
+        "SELF-SEALED FALSE READY: `drain()` returned Ok and readiness reads `ready`, but rows \
+         stranded by the torn boot graft still have no vector at rest. The torn state is invisible to \
          every later write precisely BECAUSE the kind is already registered — which is why the \
          two statements have to be atomic"
     );

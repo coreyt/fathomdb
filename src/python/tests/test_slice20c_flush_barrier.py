@@ -474,17 +474,14 @@ def test_a_kind_the_vector_writer_cannot_commit_gets_no_dense_arm(tmp_path) -> N
     ), "a kind with no dense arm is not a FAILURE — it must not pollute the failure audit"
 
 
-def test_late_enrolment_backfills_rows_a_no_embedder_session_stranded(tmp_path) -> None:
-    """fix-2 (codex §9 [P2]) — a LATE enrolment owes the same backfill.
+def test_boot_graft_backfills_rows_a_no_embedder_session_stranded(tmp_path) -> None:
+    """Slice 21 — a BOOT GRAFT repairs a durable declaration's stranded rows.
 
     A database persists a ``searchable→vector`` declaration while opened WITHOUT
-    an embedder (it defers, enrolling nothing), then reopens WITH one and writes
-    the same kind BEFORE re-applying the projection. The write enrols the kind —
-    and used to enqueue only its OWN row, leaving every row from the no-embedder
-    session holding a permanent terminal with no vector. After the flush,
-    readiness reported ``"ready"`` with pre-existing vector-eligible rows
-    unembedded: a FALSE READY, the exact defect class R-20-DR exists to
-    eliminate.
+    an embedder (it defers, enrolling nothing), then reopens WITH one. The boot
+    graft enrols the kind and repairs those rows DURING open, before an ordinary
+    write. Without that repair, the no-embedder rows retain permanent terminals
+    with no vector and later ``drain`` can report ``"ready"``: a FALSE READY.
     """
 
     _skip_if_no_network()
@@ -507,11 +504,13 @@ def test_late_enrolment_backfills_rows_a_no_embedder_session_stranded(tmp_path) 
         engine.close()
 
     # ---- session 2: SAME database, now WITH an embedder. The projection is NOT
-    # re-applied — the WRITE is what turns the dense arm on. ----
+    # re-applied: the boot graft repairs it during open, before an ordinary write.
     engine = Engine.open(path, use_default_embedder=True)
     try:
+        assert _vector_kind_registered(path), (
+            "the boot graft enrols the kind during open before ordinary writes continue"
+        )
         engine.write([_node("N3", '{"summary":"written before re-applying"}')])
-        assert _vector_kind_registered(path), "the write LATE-ENROLLED the kind"
         engine.drain(timeout_s=_DRAIN_TIMEOUT_S)
         assert _readiness(engine) == "ready"
     finally:
