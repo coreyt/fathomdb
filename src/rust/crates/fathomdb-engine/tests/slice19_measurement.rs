@@ -352,6 +352,7 @@ fn scenario_map(
 #[ignore = "measurement-only; set FATHOMDB_SLICE19_MEASUREMENT_OUTPUT to write the raw JSON"]
 fn write_cursor_join_index_measurement() {
     let output = env::var_os(OUTPUT_ENV).expect("measurement output path is required");
+    let output_display = output.to_string_lossy();
     let (migration_us, migration_step_report_ms) = measure_migration();
     let mut scenarios = BTreeMap::new();
     scenarios.insert(WITH_INDEXES, measure_scenario(true));
@@ -374,7 +375,7 @@ fn write_cursor_join_index_measurement() {
         "harness": {
             "test_target": "slice19_measurement",
             "test_name": "write_cursor_join_index_measurement",
-            "command": "FATHOMDB_SLICE19_MEASUREMENT_OUTPUT=/tmp/fathomdb-slice19-measurement.json ~/.cargo/bin/cargo test -p fathomdb-engine --test slice19_measurement write_cursor_join_index_measurement -- --ignored --exact",
+            "command": format!("FATHOMDB_SLICE19_MEASUREMENT_OUTPUT={output_display} ~/.cargo/bin/cargo test -p fathomdb-engine --test slice19_measurement write_cursor_join_index_measurement -- --ignored --exact"),
             "output_env": OUTPUT_ENV
         },
         "fixture": {
