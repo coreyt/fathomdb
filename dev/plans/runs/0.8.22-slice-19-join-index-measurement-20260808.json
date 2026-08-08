@@ -1,0 +1,151 @@
+{
+  "cache_treatment": {
+    "caveat": "Samples are not classified as cold-cache measurements; host filesystem-cache state is uncontrolled.",
+    "fixture_paths": "Every migration and ingest sample uses a fresh TempDir database path.",
+    "migration": "A schema-25 database is closed before the timed schema-26 Engine::open. The harness does not attempt privileged OS page-cache eviction.",
+    "os_page_cache_evicted": false,
+    "query": "1 unrecorded Engine::search_text_only_with_limit calls warm each scenario's reader/process path before 3 recorded calls."
+  },
+  "control": {
+    "with_indexes": "Fresh schema-26 database with both Slice 19 indexes present.",
+    "without_indexes": "Fresh schema-26 database, closed, then both Slice 19 indexes removed with rusqlite before reopening. This deliberately altered database is a diagnostic control, not a supported production state."
+  },
+  "environment": {
+    "arch": "x86_64",
+    "hardware": {
+      "logical_cpus": 24,
+      "summary": "AMD Ryzen Threadripper PRO 5945WX 12-Cores"
+    },
+    "kernel": "7.0.0-28-generic",
+    "os": "linux",
+    "sqlite": {
+      "compile_options": [
+        "ATOMIC_INTRINSICS=1",
+        "COMPILER=gcc-13.3.0",
+        "DEFAULT_AUTOVACUUM",
+        "DEFAULT_CACHE_SIZE=-2000",
+        "DEFAULT_FILE_FORMAT=4",
+        "DEFAULT_FOREIGN_KEYS",
+        "DEFAULT_JOURNAL_SIZE_LIMIT=-1",
+        "DEFAULT_MMAP_SIZE=0",
+        "DEFAULT_PAGE_SIZE=4096",
+        "DEFAULT_PCACHE_INITSZ=20",
+        "DEFAULT_RECURSIVE_TRIGGERS",
+        "DEFAULT_SECTOR_SIZE=4096",
+        "DEFAULT_SYNCHRONOUS=2",
+        "DEFAULT_WAL_AUTOCHECKPOINT=1000",
+        "DEFAULT_WAL_SYNCHRONOUS=2",
+        "DEFAULT_WORKER_THREADS=0",
+        "DIRECT_OVERFLOW_READ",
+        "ENABLE_API_ARMOR",
+        "ENABLE_COLUMN_METADATA",
+        "ENABLE_DBSTAT_VTAB",
+        "ENABLE_FTS3",
+        "ENABLE_FTS3_PARENTHESIS",
+        "ENABLE_FTS5",
+        "ENABLE_LOAD_EXTENSION",
+        "ENABLE_MEMORY_MANAGEMENT",
+        "ENABLE_RTREE",
+        "ENABLE_STAT4",
+        "HAVE_ISNAN",
+        "MALLOC_SOFT_LIMIT=1024",
+        "MAX_ATTACHED=10",
+        "MAX_COLUMN=2000",
+        "MAX_COMPOUND_SELECT=500",
+        "MAX_DEFAULT_PAGE_SIZE=8192",
+        "MAX_EXPR_DEPTH=1000",
+        "MAX_FUNCTION_ARG=1000",
+        "MAX_LENGTH=1000000000",
+        "MAX_LIKE_PATTERN_LENGTH=50000",
+        "MAX_MMAP_SIZE=0x7fff0000",
+        "MAX_PAGE_COUNT=0xfffffffe",
+        "MAX_PAGE_SIZE=65536",
+        "MAX_SQL_LENGTH=1000000000",
+        "MAX_TRIGGER_DEPTH=1000",
+        "MAX_VARIABLE_NUMBER=32766",
+        "MAX_VDBE_OP=250000000",
+        "MAX_WORKER_THREADS=8",
+        "MUTEX_PTHREADS",
+        "SOUNDEX",
+        "SYSTEM_MALLOC",
+        "TEMP_STORE=1",
+        "THREADSAFE=1",
+        "USE_URI"
+      ],
+      "version": "3.53.2"
+    }
+  },
+  "fixture": {
+    "edges": 500,
+    "generator": {
+      "description": "500 active nodes and 500 body-bearing edges. Every body matches slice19needle; per-row payload is a SplitMix64-style deterministic transform of the seed and row index.",
+      "seed": 6492255685546868737,
+      "version": "slice19-deterministic-v1"
+    },
+    "nodes": 500,
+    "query": "slice19needle",
+    "query_api": "Engine::search_text_only_with_limit(query, 100)",
+    "write_batch_size": 250
+  },
+  "harness": {
+    "command": "FATHOMDB_SLICE19_MEASUREMENT_OUTPUT=/tmp/fathomdb-slice19-measurement.json ~/.cargo/bin/cargo test -p fathomdb-engine --test slice19_measurement write_cursor_join_index_measurement -- --ignored --exact",
+    "output_env": "FATHOMDB_SLICE19_MEASUREMENT_OUTPUT",
+    "test_name": "write_cursor_join_index_measurement",
+    "test_target": "slice19_measurement"
+  },
+  "limitations": [
+    "This is a deterministic synthetic fixture, not a corpus-scale, workload-representative benchmark.",
+    "The result does not assert a CI latency target, production throughput target, or generalized speedup.",
+    "Only the public Engine write and text-search paths are timed; the direct SQLite index removal exists solely to create the diagnostic no-index control."
+  ],
+  "raw_samples": {
+    "ingest_us": {
+      "with_indexes": [
+        137088,
+        137980,
+        137753
+      ],
+      "without_indexes": [
+        141896,
+        142784,
+        143567
+      ]
+    },
+    "migration_25_to_26_us": [
+      14775,
+      12716,
+      13838
+    ],
+    "migration_step_26_report_ms": [
+      7,
+      7,
+      8
+    ],
+    "query_us": {
+      "with_indexes": [
+        6543,
+        6577,
+        6802
+      ],
+      "without_indexes": [
+        38808,
+        40091,
+        39221
+      ]
+    },
+    "units": "microseconds"
+  },
+  "record_version": 1,
+  "schema": {
+    "construction": "Each migration sample opens an empty path with Engine::open_with_migrations_for_test and migrations 1..=25, ingests the deterministic fixture with Engine::write, closes it, then times Engine::open at head (step 26 only).",
+    "from": 25,
+    "to": 26
+  },
+  "scope": "fixture_scoped",
+  "semantic_equivalence": {
+    "method": "The full ordered public Engine::search_text_only_with_limit result signature (write cursor, kind, body, branch) is equal between controls and across repeats.",
+    "result_count": 100,
+    "verified": true
+  },
+  "source_revision": "500bbdca7155566918760bedcc7fa0712c8782d3"
+}

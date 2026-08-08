@@ -26,7 +26,7 @@
 | 17 | Pre-register 0.8.23 scale-measurement protocol | Landed — `5a7f2484`; protocol only, no scale run or scale claim. |
 | 15 | Native build and validation matrix | Landed — `13341688fca3d02d11c10bb10eb26232156f8032`; CI run #31186535382 passed the full heavy verifier, five-runner native runtime matrix, and five wheel-size gates. |
 | 18 | Ranked retrieval result limits and SDK parity | Landed — `8fdb27dbf00a0663772ffc8e27a243ac1e7dcd74`; default 10 and validated 1..=100 limits across Rust, Python, and TypeScript. |
-| 19 | Canonical FTS join indexes and planner proof | Closed on reviewed local integration commit `550c4b03`; pending protected-branch landing and closure measurement. |
+| 19 | Canonical FTS join indexes and planner proof | Closed on reviewed local integration commit `550c4b03`; fixture-scoped closure evidence is recorded in `0.8.22-slice-19-join-index-measurement-20260808.json`. Pending protected-branch landing. |
 | 21 | Truthful projection runtime state and safe boot graft | Closed on reviewed local integration commit `26bdd2ce`; FIX-1 through FIX-5 are closed and protected-branch landing remains pending. |
 | 22 | Governed pure projection-status read | Closed on reviewed local integration commit `6aeee48e`; C5 seq-247, RED→GREEN→FIX-1, all-tier isolated verification, and independent re-review are complete. Protected-branch landing remains pending. |
 | 20 | Ordered publication and registry smokes | Local preparation is closed at `2f94085c` after RED→GREEN→FIX-2 and independent reviews. Ordered publication and registry smokes remain explicitly held. |

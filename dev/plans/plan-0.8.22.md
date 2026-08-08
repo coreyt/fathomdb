@@ -94,8 +94,10 @@ governed-read decision; it is a pure status read, not a configuration echo.
 
 **Slice 19 is CLOSED on the reviewed local integration branch at `550c4b03`,
 but is not yet LANDED on `origin/main`.** The dependent local work inherits that
-exact reviewed base; the closure measurement and protected-branch landing
-remain required before publication.
+exact reviewed base. The fixture-scoped closure record at
+`dev/plans/runs/0.8.22-slice-19-join-index-measurement-20260808.json` retains
+the reproducible migration, ingest, and affected-query samples; protected-branch
+landing remains required before publication.
 
 **Slice 21 is CLOSED on the reviewed local integration branch at `26bdd2ce`,
 but is not yet LANDED on `origin/main`.** Its independent review closed FIX-1
