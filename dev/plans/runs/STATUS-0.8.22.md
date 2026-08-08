@@ -28,7 +28,7 @@
 | 18 | Ranked retrieval result limits and SDK parity | Landed — `8fdb27dbf00a0663772ffc8e27a243ac1e7dcd74`; default 10 and validated 1..=100 limits across Rust, Python, and TypeScript. |
 | 19 | Canonical FTS join indexes and planner proof | Closed on reviewed local integration commit `550c4b03`; pending protected-branch landing and closure measurement. |
 | 21 | Truthful projection runtime state and safe boot graft | Closed on reviewed local integration commit `26bdd2ce`; FIX-1 through FIX-5 are closed and protected-branch landing remains pending. |
-| 22 | Governed pure projection-status read | Not started; depends on Slice 21 and its governed-read decision. |
+| 22 | Governed pure projection-status read | Needs C5 preparation: pickup review passed the corrected plan/design except for the required new governed-surface signature and pin ceremony; no RED implementation may begin first. |
 | 20 | Ordered publication and registry smokes | Not started; now depends on Slice 22 as well as the prior release gates. |
 | 25 | `next` to `latest` promotion and release truth | Not started. |
 
@@ -37,3 +37,12 @@
 | | |
 | --- | --- |
 | **Immediate next action** | <!-- BEGIN GENERATED release-state:0.8.22:status-next-action -->**Commission Slice 22 (PROJ-STATUS)** — governed pure projection-status read. **Remaining ladder:** 22 → 20 → 25.<!-- END GENERATED release-state:0.8.22:status-next-action --> |
+
+## Slice 22 pickup gate
+
+The independent pickup review is recorded in
+`dev/plans/runs/0.8.22-slice-22-pickup-review-20260807.md`. It closed the
+plan/design gaps and found one remaining P1: an explicit C5 signature for the
+two new SDK spellings and their exact facade-type contract. On signature, make
+the governed-surface/pin preparation change, re-review it, transition the plan
+from draft to ready, and only then begin RED/TDD implementation.
