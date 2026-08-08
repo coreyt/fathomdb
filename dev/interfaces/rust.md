@@ -468,8 +468,8 @@ diff re-opens the gate (T1e pin).
 ⚠ **`ProjectionFts` and `ProjectionVector` are NOT part of that `seq-157`
 signature** — neither appears in the allowlist. `DenseReadiness` is separately
 **HITL-SIGNED 2026-08-07 (steward `seq-246`)** by Slice 21 F5/C1; this signs its
-closed vocabulary and no new command. It does not prematurely claim that the
-runtime has begun selecting `Unavailable`.
+closed vocabulary and no new command. Slice 21's runtime implementation now
+selects `Unavailable` when no usable dense runtime exists.
 
 Two net-new governed methods on `Engine` declare and inspect projections over
 interpretive attributes. The facade re-exports the five supporting
