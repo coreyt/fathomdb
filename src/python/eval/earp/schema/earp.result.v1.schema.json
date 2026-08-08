@@ -480,6 +480,22 @@
               "additionalProperties": {
                 "$ref": "#/$defs/metric_value"
               }
+            },
+            "negative_class": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "n": {
+                  "type": "integer"
+                },
+                "abstention_correct": {
+                  "type": "integer"
+                },
+                "abstention_rate": {
+                  "$ref": "#/$defs/metric_value"
+                }
+              },
+              "description": "Negative queries are scored by abstention correctness, never recall."
             }
           }
         },

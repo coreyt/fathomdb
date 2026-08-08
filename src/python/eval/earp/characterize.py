@@ -553,6 +553,41 @@ def _metrics_document(per_k: Mapping[int, KResult]) -> dict[str, Any]:
                 "reason": "nDCG requires graded relevance; no gold set carries it",
             }
         },
+        **_negative_class_document(per_k),
+    }
+
+
+def _negative_class_document(per_k: Mapping[int, KResult]) -> dict[str, Any]:
+    """The k-free `negative_class` aggregate (S0 declared the slot; nothing
+    wrote it until 2026-08-08 — Campaign 1 had to derive it by hand).
+
+    Abstention is K-independent — a non-empty ranked list is non-empty at
+    every K >= 1 — so every rung carries the identical `NegativeAgg`. That
+    invariant is asserted rather than assumed: divergence would mean the
+    rungs scored different query sets, a scoring bug, not a state to record
+    silently.
+    """
+    if not per_k:
+        return {}
+    aggs = {(r.negative.n, r.negative.abstained) for r in per_k.values()}
+    if len(aggs) != 1:
+        raise AssertionError(f"negative aggregates diverge across K rungs: {sorted(aggs)}")
+    n, abstained = next(iter(aggs))
+    rate: dict[str, Any] = (
+        {"status": "emitted", "value": abstained / n}
+        if n
+        else {
+            "status": "not_applicable",
+            "value": None,
+            "reason": "gold has no negative queries",
+        }
+    )
+    return {
+        "negative_class": {
+            "n": n,
+            "abstention_correct": abstained,
+            "abstention_rate": rate,
+        }
     }
 
 

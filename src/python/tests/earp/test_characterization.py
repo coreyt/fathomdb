@@ -325,3 +325,44 @@ def test_replay_does_not_rule_on_drift(tmp_path: Path) -> None:
     )
     assert not hasattr(report, "passed")
     assert not hasattr(report, "verdict")
+
+
+# --- negative_class aggregate (2026-08-08 fix: Campaign 1 had to derive it
+# --- by hand from per-query rows; the S0 schema block existed, unwritten) ---
+
+
+def test_metrics_document_carries_the_negative_class_aggregate(tmp_path: Path) -> None:
+    """The sidecar's metrics block must carry the k-free negative_class
+    aggregate: abstention is K-independent (a non-empty list is non-empty at
+    every K >= 1), so one block, not a per-K entry."""
+    result = run_characterization(**_bed(tmp_path))
+    assert result.verdict is RunVerdict.COMPLETE
+    sidecar = json.loads(
+        (tmp_path / "experiments" / "runs" / result.run_id / "earp.result.v1.json").read_text()
+    )
+    nc = sidecar["metrics"]["negative_class"]
+    agg = result.per_k[10].negative
+    assert nc["n"] == agg.n == 1
+    assert nc["abstention_correct"] == agg.abstained
+    assert nc["abstention_rate"]["status"] == "emitted"
+    assert nc["abstention_rate"]["value"] == agg.abstained / agg.n
+
+
+def test_negative_class_is_not_applicable_without_negatives(tmp_path: Path) -> None:
+    """A gold set with zero negatives reports not_applicable, never 0.0 --
+    an inapplicable diagnostic is not a failed one."""
+    bed = _bed(tmp_path)  # writes the standard gold; filter it AFTERWARD
+    gold_path = tmp_path / "gold.json"
+    doc = json.loads(gold_path.read_text())
+    doc["queries"] = [q for q in doc["queries"] if q["query_class"] != "negative"]
+    gold_path.write_text(json.dumps(doc))
+    bed["gold_sha256"] = hashlib.sha256(gold_path.read_bytes()).hexdigest()
+    result = run_characterization(**bed)
+    assert result.verdict is RunVerdict.COMPLETE
+    sidecar = json.loads(
+        (tmp_path / "experiments" / "runs" / result.run_id / "earp.result.v1.json").read_text()
+    )
+    nc = sidecar["metrics"]["negative_class"]
+    assert nc["n"] == 0
+    assert nc["abstention_rate"]["status"] == "not_applicable"
+    assert nc["abstention_rate"]["value"] is None
