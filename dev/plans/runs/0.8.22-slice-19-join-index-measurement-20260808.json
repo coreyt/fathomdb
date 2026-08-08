@@ -4,7 +4,7 @@
     "fixture_paths": "Every migration and ingest sample uses a fresh TempDir database path.",
     "migration": "A schema-25 database is closed before the timed schema-26 Engine::open. The harness does not attempt privileged OS page-cache eviction.",
     "os_page_cache_evicted": false,
-    "query": "1 unrecorded Engine::search_text_only_with_limit calls warm each scenario's reader/process path before 3 recorded calls."
+    "query": "1 unrecorded Engine::search_with_limit calls warm each scenario's reader/process path before 3 recorded calls."
   },
   "control": {
     "with_indexes": "Fresh schema-26 database with both Slice 19 indexes present.",
@@ -78,17 +78,17 @@
   "fixture": {
     "edges": 500,
     "generator": {
-      "description": "500 active nodes and 500 body-bearing edges. Every body matches slice19needle; per-row payload is a SplitMix64-style deterministic transform of the seed and row index.",
+      "description": "500 active nodes and 500 body-bearing edges. The first 50 node bodies and every edge body match slice19needle; per-row payload is a SplitMix64-style deterministic transform of the seed and row index.",
       "seed": 6492255685546868737,
       "version": "slice19-deterministic-v1"
     },
     "nodes": 500,
     "query": "slice19needle",
-    "query_api": "Engine::search_text_only_with_limit(query, 100)",
+    "query_api": "Engine::search_with_limit(query, 100)",
     "write_batch_size": 250
   },
   "harness": {
-    "command": "FATHOMDB_SLICE19_MEASUREMENT_OUTPUT=/tmp/fathomdb-slice19-measurement.json ~/.cargo/bin/cargo test -p fathomdb-engine --test slice19_measurement write_cursor_join_index_measurement -- --ignored --exact",
+    "command": "FATHOMDB_SLICE19_MEASUREMENT_OUTPUT=/tmp/fathomdb-slice19-measurement-fix1.json ~/.cargo/bin/cargo test -p fathomdb-engine --test slice19_measurement write_cursor_join_index_measurement -- --ignored --exact",
     "output_env": "FATHOMDB_SLICE19_MEASUREMENT_OUTPUT",
     "test_name": "write_cursor_join_index_measurement",
     "test_target": "slice19_measurement"
@@ -96,41 +96,41 @@
   "limitations": [
     "This is a deterministic synthetic fixture, not a corpus-scale, workload-representative benchmark.",
     "The result does not assert a CI latency target, production throughput target, or generalized speedup.",
-    "Only the public Engine write and text-search paths are timed; the direct SQLite index removal exists solely to create the diagnostic no-index control."
+    "Only the public Engine write and normal-search paths are timed; the direct SQLite index removal exists solely to create the diagnostic no-index control."
   ],
   "raw_samples": {
     "ingest_us": {
       "with_indexes": [
-        137088,
-        137980,
-        137753
+        158162,
+        160124,
+        146891
       ],
       "without_indexes": [
-        141896,
-        142784,
-        143567
+        163446,
+        152530,
+        145988
       ]
     },
     "migration_25_to_26_us": [
-      14775,
-      12716,
-      13838
+      11097,
+      9249,
+      9254
     ],
     "migration_step_26_report_ms": [
-      7,
-      7,
-      8
+      1,
+      2,
+      2
     ],
     "query_us": {
       "with_indexes": [
-        6543,
-        6577,
-        6802
+        7209,
+        7921,
+        5561
       ],
       "without_indexes": [
-        38808,
-        40091,
-        39221
+        11312,
+        10181,
+        10989
       ]
     },
     "units": "microseconds"
@@ -143,9 +143,10 @@
   },
   "scope": "fixture_scoped",
   "semantic_equivalence": {
-    "method": "The full ordered public Engine::search_text_only_with_limit result signature (write cursor, kind, body, branch) is equal between controls and across repeats.",
+    "method": "The full ordered public Engine::search_with_limit result signature (write cursor, kind, body, branch) is equal between controls and across repeats; the signature contains TextEdge results.",
     "result_count": 100,
+    "text_edge_result_count": 50,
     "verified": true
   },
-  "source_revision": "500bbdca7155566918760bedcc7fa0712c8782d3"
+  "source_revision": "31d35234a7caa35f42478a599d6e84c5560e15cf"
 }
