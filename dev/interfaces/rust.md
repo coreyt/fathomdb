@@ -67,9 +67,9 @@ which binds AC-074 — not a new AC id):
   `ProjectionFts` and `ProjectionVector` are not members of that `seq-157`
   governed-command signature. `DenseReadiness`'s closed vocabulary is instead
   **HITL-SIGNED 2026-08-07 (steward `seq-246`)** by the F5/C1 record and its
-  governed-surface signature. This static record makes the third spelling
-  typed and accept-inert; the later Slice 21 runtime GREEN still must make
-  `read_projections` select it for a no-usable-runtime session.
+  governed-surface signature. Caller input is accept-inert; Slice 21 runtime
+  selection makes `read_projections` select `Unavailable` for a no-usable-
+  runtime session.
   See § "Projection registry" below. The recovery /
   integrity / dump operator-seam report types in § "Recovery / operator seam
   re-exports" are deliberately **excluded** from this allowlist — they are
@@ -510,8 +510,8 @@ Types:
   `Ready`, with `as_str` / `from_str_opt` giving the
   `"unavailable" | "embedding" | "ready"` wire spellings. Slice 21's F5/C1
   ruling (`steward-ledger` seq-246) signs the vocabulary without adding a
-  governed command. The static F5 record accepts the spelling inertly; runtime
-  selection of `Unavailable` remains the later GREEN work.
+  governed command. Caller input accepts the spelling inertly; reads select
+  `Unavailable` when the session has no usable dense runtime.
 - `ProjectionDelta { built, dropped, deferred, unchanged, vector_unsupported_kinds }`.
   Cheap roles (`filterable`, `searchable→FTS`) build same-transaction; `rankable`
   and the `searchable→vector` sub-target are persisted-but-deferred (reported in
@@ -604,13 +604,11 @@ axis. It is `None` on every caller-authored spec.
   **`pending` is RESERVED for the orthogonal ADMISSION axis** (quarantine/trust
   — an app judgment) and is deliberately never an index-readiness value.
   `from_str_opt("pending")` is `None`.
-- **Static F5 record; runtime GREEN still pending.** The third spelling is now
-  closed, public, typed, and accepted inertly on input, but current
-  `read_projections` still selects only `Embedding` / `Ready` from outstanding
-  work. It does **not** yet select `Unavailable`; no-runtime → `Unavailable`
-  remains required later Slice 21 behavior. That runtime change must derive the
-  state from one usable-dense-runtime predicate plus the shared work predicate,
-  without a schema step or stored readiness field.
+- **Runtime selection.** `read_projections` first applies one
+  usable-dense-runtime predicate: no runtime or an equivalence refusal yields
+  `Unavailable`. With a usable runtime it derives `Embedding` / `Ready` from
+  the shared outstanding-work predicate. This adds no schema step or stored
+  readiness field.
 - **ACCEPT-INERT on the way in.** `Engine::configure_projections` neither stores
   nor honours a caller-supplied `dense_readiness` (`StoredProjection::from_spec`
   reads only `embedder`), so `read_projections` output re-applies as a no-op —
@@ -631,7 +629,7 @@ axis. It is `None` on every caller-authored spec.
   never changes what the engine reports.
 - **Additive.** Callers who never look at readiness see identical behaviour.
   The vocabulary is **HITL-SIGNED 2026-08-07 (steward `seq-246`)**; runtime
-  selection remains deliberately unimplemented in this static F5 record.
+  selection is derived rather than durable.
 
 **`drain` is the flush-to-readiness barrier (0.8.20 Slice 20c, R-20-DR /
 `api-surface.md` C4).** There is **no `flush_embeddings()` verb** — the shipped
@@ -693,23 +691,22 @@ in Rust, Python and TypeScript:
   drop does. `ProjectionDelta.deferred` still reports the stored-but-unbuilt
   `vector` sub-object however it was declared — the change is to what the engine
   DOES, not to what it reports.
-- **Graceful-absent without a live embedder.** Opened with `EmbedderChoice::None`
-  there is no dense arm, so the declaration persists and DEFERS rather than
-  queueing embeds that could only fail; it **grafts on** when the same spec is
-  re-applied in a session that has an embedder — the same Q6a contract as
-  `rankable`.
+- **Graceful-absent without a usable dense runtime.** The declaration persists
+  and DEFERS rather than queueing unsafe work. A later safe open atomically
+  grafts eligible durable work after identity and equivalence acceptance;
+  idempotent re-apply remains a repair door.
 - **…but graceful-absent stops at the enrolment boundary** (fix-4). Once a kind
   IS enrolled — i.e. some earlier session DID have an embedder — a write of that
-  kind is dense work the workspace has committed to, and a session with no
-  embedder cannot make it go away. Such a write is **accepted** and stays
+  kind is dense work the workspace has committed to, and a session with no usable
+  dense runtime cannot make it go away. Such a write is **accepted** and stays
   lexically searchable, but it stays **outstanding**: `dense_readiness` reads
-  `Embedding` and `drain` returns `EngineError::Scheduler` for the rest of that
+  `Unavailable` and `drain` returns `EngineError::Scheduler` for the rest of that
   session, however long you wait. It is **not** lost — no failure is recorded and
-  no terminal is written, so the next session opened WITH an embedder embeds it
-  through the ordinary scheduler, with no re-apply and no operator `rebuild`.
-  Callers who write to an enrolled corpus without an embedder should therefore
-  expect `drain` to time out and should not treat that as data loss. (Reporting
-  `Ready` there instead would be a torn `ready`-without-vector — the silent miss
+  no terminal is written, so the next session opened WITH an approved runtime
+  embeds it through the ordinary scheduler, with no re-apply and no operator
+  `rebuild`. Callers who write to an enrolled corpus without a usable runtime
+  should therefore expect `drain` to time out and should not treat that as data
+  loss. (Reporting `Ready` there instead would be a torn `ready`-without-vector — the silent miss
   this slice exists to eliminate.)
 - **`drain` remains bounded**, returning the typed timeout error rather than
   blocking; a caller sizes `timeout_ms` for the backfill it just asked for.

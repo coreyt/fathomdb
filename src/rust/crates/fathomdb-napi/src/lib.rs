@@ -554,12 +554,12 @@ pub struct ProjectionSpec {
     pub fts_tokenizer: Option<String>,
     pub vector: bool,
     pub vector_embedder: Option<String>,
-    /// 0.8.20 Slice 20 (R-20-DR) — READ METADATA, engine-set (`vectorDenseReadiness`
-    /// in JS): `"unavailable"` / `"embedding"` / `"ready"` on the way OUT of
-    /// `read.projections`,
-    /// omitted on every caller-authored spec. Inert on the way IN (the engine
-    /// reports the derived truth), so `read.projections` output still re-applies
-    /// as a no-op.
+    /// READ METADATA, engine-set (`vectorDenseReadiness` in JS):
+    /// `"unavailable"` / `"embedding"` / `"ready"` on the way OUT of
+    /// `read.projections`, omitted on every caller-authored spec.
+    /// `"unavailable"` means no usable dense runtime; the other values derive
+    /// from outstanding work under one. Inert on the way IN (the engine reports
+    /// the derived truth), so read output still re-applies as a no-op.
     pub vector_dense_readiness: Option<String>,
     /// Ordered literal object-member path; absent preserves top-level lookup.
     pub source: Option<Vec<String>>,

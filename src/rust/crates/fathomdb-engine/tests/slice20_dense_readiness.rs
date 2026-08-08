@@ -422,6 +422,9 @@ fn atomic_flip_never_exposes_ready_without_the_vector_under_concurrent_write() {
                 Some(DenseReadiness::Embedding) => {
                     saw_embedding.store(true, Ordering::SeqCst);
                 }
+                Some(DenseReadiness::Unavailable) => {
+                    panic!("the fixture has a usable dense runtime, so it cannot be unavailable")
+                }
                 None => panic!("a declared vector projection must always carry a readiness"),
             }
 

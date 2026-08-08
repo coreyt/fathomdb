@@ -597,7 +597,11 @@ test("fix-4 CONTROL — a consistent spec round-trips verbatim via read.projecti
     // the vector sub-object. `vectorDenseReadiness` is not a declaration, so it
     // is expected to differ from the sent spec (which never authors it); every
     // DECLARED field must still match byte-for-byte.
-    assert.equal(back[0].vectorDenseReadiness, "ready");
+    assert.equal(
+      back[0].vectorDenseReadiness,
+      "unavailable",
+      "this fixture opens without a runtime embedder, so no-work is not dense-ready",
+    );
     assert.deepEqual({ ...back[0], vectorDenseReadiness: undefined }, {
       ...sent,
       vectorDenseReadiness: undefined,

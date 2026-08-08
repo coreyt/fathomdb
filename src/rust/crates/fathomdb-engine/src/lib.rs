@@ -4102,10 +4102,9 @@ pub struct ProjectionFts {
 /// `Embedding`, never `Pending`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub enum DenseReadiness {
-    /// Signed, typed, accept-inert spelling for a session with no usable dense
-    /// runtime (absent embedder or refused vector equivalence). The static F5
-    /// record does not yet select this on reads; the later Slice 21 runtime
-    /// GREEN must do so through the shared usable-dense-runtime predicate.
+    /// Engine-selected state for a session with no usable dense runtime (an
+    /// absent embedder or refused vector equivalence). Caller input remains
+    /// accept-inert; reads select this through the shared runtime predicate.
     Unavailable,
     /// At least one row in the vector projection's row set has not yet reached a
     /// projection terminal — embedding is outstanding. This is the ONLY
@@ -4256,7 +4255,7 @@ pub struct ProjectionDelta {
     /// # Independent of the embedder
     ///
     /// Computed whenever a `searchable→vector` projection is declared, whether
-    /// or not this session has a live embedder. The vocabulary is static, so
+    /// or not this session has a usable dense runtime. The vocabulary is static, so
     /// "this kind can never be embedded" is true in a no-embedder session too —
     /// and must not be conflated with the Q6a graceful-absent deferral, which is
     /// transient and is reported through `deferred`.
@@ -4440,6 +4439,13 @@ impl Drop for Engine {
 }
 
 impl Engine {
+    fn usable_dense_runtime(&self) -> bool {
+        usable_dense_runtime(
+            self.runtime_embedder.as_deref(),
+            self.dense_disabled.load(Ordering::Acquire),
+        )
+    }
+
     pub fn open(path: impl Into<PathBuf>) -> Result<OpenedEngine, EngineOpenError> {
         Self::open_with_embedder_and_subscriber(
             path,
@@ -4671,23 +4677,47 @@ impl Engine {
                 // floor 0) and P2 (un-centered L2 ε). Divergence ⇒ degraded-open
                 // (`dense_disabled=true`), surfaced on the OpenReport (R-VEQ-6); the
                 // query-time refusal fires later at `search_inner_with_stats`.
+                // A durable declaration is a prospective dense arm even before
+                // it has enrolled a kind. Check it before the boot graft below:
+                // a refused backend may leave the declaration at rest, but must
+                // not enrol, requeue, dispatch, or write any dense work.
+                let prospective_dense_arm =
+                    vector_projection_declared(&connection).map_err(|_| EngineOpenError::Io {
+                        message: "could not inspect declared vector projection on open".to_string(),
+                    })?;
                 let veq = run_vector_equivalence_probe(
                     &connection,
                     runtime_embedder.as_deref(),
                     &embedder_identity,
                     report.embedder_mean_vec_pinned,
+                    prospective_dense_arm,
                 );
                 report.dense_disabled = veq.dense_disabled;
                 report.dense_disabled_reason = veq.reason.clone();
+
+                let dense_runtime_usable =
+                    usable_dense_runtime(runtime_embedder.as_deref(), veq.dense_disabled);
+                let boot_graft_enqueued = if dense_runtime_usable {
+                    boot_graft_declared_vector_backfill(&connection).map_err(|_| {
+                        EngineOpenError::Io {
+                            message: "could not graft declared vector projection on boot"
+                                .to_string(),
+                        }
+                    })?
+                } else {
+                    false
+                };
 
                 let next_cursor = load_next_cursor(&connection);
                 let subscribers = Arc::new(lifecycle::SubscriberRegistry::new());
                 let profiling_enabled = Arc::new(AtomicBool::new(false));
                 let slow_threshold_ms = Arc::new(AtomicU64::new(DEFAULT_SLOW_THRESHOLD_MS));
                 let mut profile_contexts: Vec<Box<ProfileContext>> = Vec::new();
+                let scheduler_embedder =
+                    if dense_runtime_usable { runtime_embedder.clone() } else { None };
                 let projection_runtime = ProjectionRuntime::new(
                     canonical_path.clone(),
-                    runtime_embedder.clone(),
+                    scheduler_embedder,
                     embedder_identity.clone(),
                     report.embedder_mean_vec_pinned,
                     Arc::clone(&subscribers),
@@ -4741,7 +4771,10 @@ impl Engine {
                 if let Some(subscriber) = initial_subscriber {
                     opened.engine.subscribers.attach_persistent(subscriber);
                 }
-                if database_has_pending_projection_work(&canonical_path).unwrap_or(false) {
+                if dense_runtime_usable
+                    && (boot_graft_enqueued
+                        || database_has_pending_projection_work(&canonical_path).unwrap_or(false))
+                {
                     opened.engine.projection_runtime.notify_new_work();
                 }
                 Ok(opened)
@@ -5066,15 +5099,13 @@ impl Engine {
     /// irrecoverably un-embedded — the identical false-ready barrier, reached by
     /// writing second instead of declaring second.
     ///
-    /// **Gated on a LIVE embedder** (`runtime_embedder`), which is exactly why
-    /// this lives on `Engine` and not inside the projector: with
-    /// `EmbedderChoice::None` there is no dense arm at all, so enrolling a kind
-    /// would only queue embeds that retry to a `failed` terminal and pollute
-    /// `projection_failures`. The declaration still PERSISTS without an embedder
-    /// — it simply defers, and grafts on the next idempotent apply in a session
-    /// that has one (the shipped Q6a graceful-absent/graceful-graft contract,
-    /// same as `rankable`). It mirrors the `run_vector_equivalence_probe` gate:
-    /// "no live embedder ⇒ no dense arm to guard".
+    /// **Gated on a usable dense runtime**, which is exactly why this lives on
+    /// `Engine` and not inside the projector: with `EmbedderChoice::None` or a
+    /// refused vector-equivalence guard there is no dense arm at all, so
+    /// enrolling a kind would only queue embeds that cannot safely run. The
+    /// declaration still PERSISTS without a usable runtime — it defers until a
+    /// later safe open grafts it, or until an idempotent apply in an approved
+    /// session. This mirrors the `run_vector_equivalence_probe` gate.
     ///
     /// Enrolment is an idempotent `INSERT OR IGNORE`, so running it on the writer
     /// connection just OUTSIDE the batch transaction is safe: if the batch then
@@ -5130,7 +5161,7 @@ impl Engine {
         connection: &Connection,
         batch: &[PreparedWrite],
     ) -> Result<bool, EngineError> {
-        if self.runtime_embedder.is_none() {
+        if !self.usable_dense_runtime() {
             return Ok(false);
         }
         // READ-ONLY pre-pass. Nothing is written here, so the overwhelmingly
@@ -7931,7 +7962,7 @@ impl Engine {
         // cannot diverge from the other one either. fix-5 (codex §9 round 4 [P2])
         // — and both halves commit as ONE transaction, via the same shared
         // `enrol_and_unstrand`.
-        let unstranded = if self.runtime_embedder.is_some()
+        let unstranded = if self.usable_dense_runtime()
             && self.vector_kind_needs_enrolment(connection, kind, row_kind)?
         {
             self.enrol_and_unstrand(connection, &[kind])?
@@ -8781,13 +8812,10 @@ impl Engine {
         // window would SQLITE_BUSY.
         self.drain(LIFECYCLE_DRAIN_TIMEOUT_MS)?;
 
-        // 0.8.20 Slice 20c (R-20-DR remainder) — the backfill is gated on a LIVE
-        // embedder. With `EmbedderChoice::None` there is no dense arm, so the
-        // declaration persists and DEFERS (Q6a graceful-absent, exactly like
-        // `rankable`) rather than queueing embeds that could only retry to a
-        // `failed` terminal. Re-applying the same spec in a session that HAS an
-        // embedder grafts the backfill on — the shipped graceful-graft contract.
-        let dense_arm_live = self.runtime_embedder.is_some();
+        // The backfill is gated on a usable dense runtime. Without one, the
+        // declaration persists and defers rather than queueing unsafe work. A
+        // later approved open grafts it; idempotent apply remains a repair door.
+        let dense_arm_live = self.usable_dense_runtime();
         let (delta, enqueued_backfill) = {
             let mut connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
             let connection = connection.as_mut().ok_or(EngineError::Closing)?;
@@ -8839,7 +8867,8 @@ impl Engine {
                 let value = match readiness {
                     Some(value) => value,
                     None => {
-                        let value = derive_dense_readiness(connection)?;
+                        let value =
+                            derive_dense_readiness(connection, self.usable_dense_runtime())?;
                         readiness = Some(value);
                         value
                     }
@@ -13127,8 +13156,8 @@ fn projection_dispatcher_loop(shared: Arc<ProjectionRuntimeShared>) {
             PROJECTION_INFLIGHT_LIMIT.saturating_sub(state.active_jobs + state.queued_jobs)
         };
         let fetch_cap = budget.clamp(1, PROJECTION_SCAN_FETCH);
-        // 0.8.20 Slice 20c fix-4 (codex §9 round 3 [P1]) — with no live embedder a
-        // NODE job can only come back DEFERRED (`ProjectionOutcome::Deferred`),
+        // With no usable dense runtime a NODE job can only come back DEFERRED
+        // (`ProjectionOutcome::Deferred`),
         // which by design records no terminal, so dispatching one would re-fetch
         // the SAME cursor forever. fix-5 (codex §9 round 4 [P1]) moved that
         // exclusion INSIDE the scan, so the `LIMIT` applies to the already-filtered
@@ -13753,7 +13782,7 @@ fn pending_edge_projection_from_where(now_idx: usize) -> String {
 ///
 /// # fix-5 (codex §9 round 4 [P1]) — why the node exclusion is IN the SQL
 ///
-/// With no live embedder a NODE job can only come back
+/// With no usable dense runtime a NODE job can only come back
 /// [`ProjectionOutcome::Deferred`], which by design records no terminal (fix-4),
 /// so dispatching one would re-fetch the SAME cursor forever: a hot loop for the
 /// whole life of the session. fix-4 suppressed that by filtering the vector this
@@ -13955,14 +13984,20 @@ fn connection_has_pending_projection_work(connection: &Connection) -> rusqlite::
 /// **Failure boundary.** A row whose embed FAILED terminally records a `failed`
 /// terminal (no vector row), so it stops being outstanding. With a usable dense
 /// runtime, readiness returns to `ready`: the row will never embed, so reporting
-/// `embedding` forever would be a lie. This current two-value derivation has no
-/// usable-runtime predicate and therefore still selects only `Embedding` /
-/// `Ready`. The later Slice 21 runtime GREEN must select `Unavailable` for no
-/// usable runtime without changing this failed-terminal boundary. Failures stay
+/// `embedding` forever would be a lie. The usable-runtime predicate takes
+/// precedence: when no usable runtime exists the state is `Unavailable`; when
+/// it exists this function selects `Embedding` / `Ready` without changing the
+/// failed-terminal boundary. Failures stay
 /// separately observable through the `projection_failures` collection. A
 /// `ready` corpus can therefore lack a vector row only for a failed terminal; it
 /// is NOT a torn write because no `up_to_date` terminal exists for it.
-fn derive_dense_readiness(connection: &Connection) -> Result<DenseReadiness, EngineError> {
+fn derive_dense_readiness(
+    connection: &Connection,
+    dense_runtime_usable: bool,
+) -> Result<DenseReadiness, EngineError> {
+    if !dense_runtime_usable {
+        return Ok(DenseReadiness::Unavailable);
+    }
     if connection_has_pending_projection_work(connection).map_err(|_| EngineError::Storage)? {
         Ok(DenseReadiness::Embedding)
     } else {
@@ -15861,6 +15896,12 @@ struct VectorEquivalenceOutcome {
     reason: Option<String>,
 }
 
+/// A dense runtime can schedule, repair, and report readiness only when an
+/// embedder is attached and the open-time equivalence guard accepted it.
+fn usable_dense_runtime(embedder: Option<&dyn Embedder>, dense_disabled: bool) -> bool {
+    embedder.is_some() && !dense_disabled
+}
+
 /// 0.8.18 Slice 5 — embed one probe under panic isolation. The probe runs at
 /// open time on the writer connection BEFORE the projection workers spawn, so a
 /// caller-supplied embedder that PANICS (or returns an error / a wrong-dimension
@@ -15916,20 +15957,23 @@ fn run_vector_equivalence_probe(
     embedder: Option<&dyn Embedder>,
     identity: &EmbedderIdentity,
     mean_pinned: bool,
+    prospective_dense_arm: bool,
 ) -> VectorEquivalenceOutcome {
     let not_disabled = VectorEquivalenceOutcome { dense_disabled: false, reason: None };
 
-    // No live embedder ⇒ no dense arm to guard (EmbedderChoice::None). The probe
-    // is inert; dense writes/queries already fail with EmbedderNotConfigured.
+    // No runtime embedder means no dense arm to guard (EmbedderChoice::None).
+    // The probe is inert; dense writes/queries already fail with
+    // EmbedderNotConfigured.
     let Some(embedder) = embedder else { return not_disabled };
 
-    // Gate: the probe only engages once the workspace has REGISTERED a vector
-    // kind (`_fathomdb_vector_kinds` non-empty). A fresh workspace that has never
-    // committed to vector indexing has no dense arm to guard yet, so the probe
-    // does ZERO embed work at that open — this keeps `Engine::open` free of the
-    // 45-probe re-embed on empty/vector-less workspaces (and inert for the
-    // pathological single-session hang/panic embedder tests, which register their
-    // kind AFTER open and never reopen).
+    // Gate: the probe engages once the workspace has either a REGISTERED vector
+    // kind (`_fathomdb_vector_kinds` non-empty) or a durable prospective vector
+    // declaration that the safe boot graft would otherwise enrol. A workspace
+    // with neither has no dense arm to guard, so the probe does ZERO embed work
+    // at that open — this keeps `Engine::open` free of the 45-probe re-embed on
+    // empty/vector-less workspaces (and inert for the pathological
+    // single-session hang/panic embedder tests, which register their kind AFTER
+    // open and never reopen).
     //
     // fix-1 DEFECT #4 — the baseline is established at OPEN, at the first open
     // where a vector kind already exists (population path below). This covers BOTH:
@@ -15953,7 +15997,7 @@ fn run_vector_equivalence_probe(
     let vector_kind_registered: bool = connection
         .query_row("SELECT EXISTS(SELECT 1 FROM _fathomdb_vector_kinds)", [], |r| r.get(0))
         .unwrap_or(false);
-    if !vector_kind_registered {
+    if !vector_kind_registered && !prospective_dense_arm {
         return not_disabled;
     }
 
@@ -18836,7 +18880,7 @@ fn vector_eligible_node_kinds(tx: &Connection) -> rusqlite::Result<Vec<String>> 
 ///
 /// **It is deliberately NOT gated on `dense_arm_live`.** The enrolment it mirrors
 /// is (`apply_projection_config` only calls `enqueue_declared_vector_backfill`
-/// with a live embedder, the Q6a graceful-absent path), but this answer does not
+/// with a usable dense runtime, the Q6a graceful-absent path), but this answer does not
 /// depend on the session: [`resolve_source_type`]'s vocabulary is a compile-time
 /// constant, so "this kind can never be embedded" is equally true with no
 /// embedder attached. Gating it would hide the permanent fact behind the
@@ -18872,6 +18916,27 @@ fn enqueue_declared_vector_backfill(tx: &Connection) -> rusqlite::Result<bool> {
 
     // (2)+(3) Un-strand the rows the new enrolment now covers.
     reenqueue_stranded_vector_rows(tx)
+}
+
+/// Enrol and requeue a durable vector declaration during a safe open. The
+/// prospective-equivalence guard runs before this function; this function owns
+/// the one durable transaction that makes a crash converge to either the old
+/// state or a fully queued repair.
+fn boot_graft_declared_vector_backfill(connection: &Connection) -> rusqlite::Result<bool> {
+    if !vector_projection_declared(connection)? {
+        return Ok(false);
+    }
+    connection.execute_batch("BEGIN IMMEDIATE")?;
+    match enqueue_declared_vector_backfill(connection) {
+        Ok(enqueued) => {
+            connection.execute_batch("COMMIT")?;
+            Ok(enqueued)
+        }
+        Err(error) => {
+            let _ = connection.execute_batch("ROLLBACK");
+            Err(error)
+        }
+    }
 }
 
 /// 0.8.20 Slice 20c — steps (2) and (3) of the declared-backfill above, as their
@@ -19091,9 +19156,9 @@ fn project_canonical_node_row(
     // 0.8.20 Slice 20c (R-20-DR remainder) — UNCHANGED, deliberately. Late
     // enrolment of a kind first written AFTER a `searchable→vector` declaration
     // happens in [`Engine::enrol_vector_kind_if_declared`], upstream of this
-    // transaction, NOT here: the decision needs the engine's LIVE embedder, which
-    // a free function holding only a `Connection` cannot see. Enrolling without
-    // one would queue embeds that can only retry-then-fail.
+    // transaction, NOT here: the decision needs the engine's usable-runtime
+    // predicate, which a free function holding only a `Connection` cannot see.
+    // Enrolling without one would queue embeds that cannot safely run.
     let enqueue_vector = targets.vector && kind_is_vector_indexed(tx, kind).unwrap_or(false);
     if pass.writes_vector_state() {
         if enqueue_vector {

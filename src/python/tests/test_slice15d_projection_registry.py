@@ -451,7 +451,9 @@ def test_consistent_fts_spec_round_trips(tmp_path) -> None:
         # to the vector sub-object. `vector_dense_readiness` is not a
         # declaration, so it is expected to differ from the sent spec (which
         # never authors it); every DECLARED field must still match exactly.
-        assert got.vector_dense_readiness == "ready"
+        assert got.vector_dense_readiness == "unavailable", (
+            "this fixture opens without a runtime embedder, so no-work is not dense-ready"
+        )
         assert dataclasses.replace(got, vector_dense_readiness=None) == sent
         assert got.fts is True and got.fts_tokenizer == "unicode61"
         assert got.vector is True and got.vector_embedder == "bge-small"

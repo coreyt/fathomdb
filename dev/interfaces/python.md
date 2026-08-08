@@ -269,9 +269,8 @@ attributes. The verbs, the `ProjectionSpec` / `ProjectionRole` /
 readiness field `vector_dense_readiness` is **NOT** part of that `seq-157`
 signature. Its closed `DenseReadiness` vocabulary is separately
 **HITL-SIGNED 2026-08-07 (steward `seq-246`)** by Slice 21 F5/C1, with a
-governed-surface signature. The static record makes its three spellings typed
-and accept-inert; the later runtime GREEN must still select `"unavailable"`
-when no usable dense runtime exists.
+  governed-surface signature. Caller input is accept-inert; Slice 21 runtime
+  selection emits `"unavailable"` when no usable dense runtime exists.
 
 - `engine.configure_projections(specs, drop=None)` → `ProjectionDelta`.
   Declarative, idempotent apply: the engine diffs `specs` against the durable
@@ -376,12 +375,11 @@ same-transaction (non-stale on commit) so they have no readiness axis at all;
   usable quiescent work, respectively. `"pending"` is
   DELIBERATELY not one of them — that token is RESERVED for the orthogonal
   **admission** axis (quarantine/trust, an app judgment). Do not reuse the word.
-- **Static F5 record; runtime GREEN still pending.** The third spelling is
-  public, typed, and accepted inertly on input, but current
-  `read.projections` still selects only `"embedding"` / `"ready"` from
-  outstanding work. It does **not** yet select `"unavailable"`; no-runtime →
-  `"unavailable"` remains required later Slice 21 behavior. That runtime change
-  must derive the state without a schema step or stored readiness field.
+- **Runtime selection.** `read.projections` first applies one usable-dense-
+  runtime predicate: no runtime or an equivalence refusal yields
+  `"unavailable"`. With a usable runtime it derives `"embedding"` /
+  `"ready"` from the shared outstanding-work predicate. This adds no schema
+  step or stored readiness field.
 - **Accept-inert on the way in.** Passing `vector_dense_readiness` to
   `engine.configure_projections` neither stores nor changes anything: it is not
   part of the declaration and the engine always reports the derived truth. That
@@ -463,18 +461,19 @@ commands. The pinned invariant, tested in Rust, Python and TypeScript:
   projection to `filterable + vector`, or dropping it while an inert
   `filterable + vector` sibling survives, now un-enrols exactly as a literal drop
   does. The name is still reported in `deferred`.
-- **Graceful-absent without a live embedder:** the declaration persists and
-  defers, then grafts on when re-applied in a session that has one.
+- **Graceful-absent without a usable dense runtime:** the declaration persists
+  and defers. A later safe open atomically grafts eligible durable work after
+  identity and equivalence acceptance; idempotent re-apply remains a repair door.
 - **…but graceful-absent stops at the enrolment boundary** (fix-4). Once a kind
   IS enrolled — i.e. some earlier session DID have an embedder — writing that
   kind from a session opened with `use_default_embedder=False` leaves real dense
   work outstanding, and this session cannot satisfy it. The write is **accepted**
   and stays lexically searchable, but `vector_dense_readiness` reads
-  `"embedding"` and `drain` raises `SchedulerError` for the rest of that session,
-  however long you wait. It is **not** lost: no failure is recorded and no
-  terminal is written, so the next session opened WITH an embedder embeds it
-  through the ordinary scheduler — no re-apply, no operator `rebuild`. Expect the
-  timeout there and do not read it as data loss.
+  `"unavailable"` and `drain` raises `SchedulerError` for the rest of that
+  session, however long you wait. It is **not** lost: no failure is recorded and
+  no terminal is written, so the next session opened WITH an approved runtime
+  embeds it through the ordinary scheduler — no re-apply, no operator `rebuild`.
+  Expect the timeout there and do not read it as data loss.
 - **`drain` stays bounded** and raises the existing timeout error rather than
   blocking; size `timeout_s` for the backfill you just asked for.
 

@@ -333,7 +333,8 @@ class ProjectionSpec:
     fts_tokenizer: str | None
     vector: bool
     vector_embedder: str | None
-    # 0.8.22 Slice 21 (F5) — engine-set READ METADATA.
+    # Engine-set READ METADATA: unavailable without a usable dense runtime;
+    # otherwise embedding or ready according to outstanding projection work.
     vector_dense_readiness: DenseReadiness | None
     source: list[str] | None
     def __init__(

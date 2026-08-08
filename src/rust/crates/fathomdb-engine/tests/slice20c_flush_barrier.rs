@@ -436,17 +436,17 @@ fn projection_failure_rows(conn: &rusqlite::Connection) -> i64 {
     .unwrap_or(0)
 }
 
-/// **The live-embedder gate, and the graceful-GRAFT that pays for it.**
+/// **The live-embedder gate, and the boot graft that pays for it.**
 ///
 /// With `EmbedderChoice::None` there is no dense arm at all, so declaring
 /// `searchable→vector` must PERSIST and DEFER (Q6a graceful-absent, exactly like
 /// `rankable`) rather than enqueue embeds that could only retry to a `failed`
 /// terminal and pollute `projection_failures`. That deferral is only honest if
 /// the work actually grafts on later — so the second half of this test reopens
-/// the SAME database WITH an embedder, re-applies the SAME spec, and requires the
-/// backfill to run and the vectors to land at rest.
+/// the SAME database WITH an approved embedder, requires the boot graft to run,
+/// then confirms a re-apply remains an idempotent no-op.
 #[test]
-fn a_declaration_without_a_live_embedder_defers_then_grafts_on_reapply() {
+fn a_declaration_without_a_live_embedder_defers_then_boot_grafts() {
     let dir = TempDir::new().unwrap();
     let path = db_path(&dir, "flush_barrier_no_embedder");
 
@@ -505,22 +505,26 @@ fn a_declaration_without_a_live_embedder_defers_then_grafts_on_reapply() {
     let opened = Engine::open_with_embedder_for_test(&path, Arc::new(embedder)).expect("reopen");
     let engine = &opened.engine;
 
-    // The identical spec — the shipped graceful-graft contract: re-applying an
-    // already-persisted declaration grafts the deferred build on.
+    // The boot path already atomically enrolled and notified the deferred work.
+    // The identical spec remains a no-op after that repair.
     engine.configure_projections(&[vector_spec("summary")], &[]).expect("re-apply");
     assert_eq!(
         readiness(engine, "summary"),
-        Some(DenseReadiness::Embedding),
-        "the deferred backfill grafts on in a session that HAS an embedder"
+        Some(DenseReadiness::Ready),
+        "the boot graft settles before an idempotent re-apply"
     );
 
-    engine.drain(30_000).expect("drain flushes the grafted backfill");
+    engine.drain(30_000).expect("drain confirms the boot-grafted backfill");
     assert_eq!(readiness(engine, "summary"), Some(DenseReadiness::Ready));
     let conn = ro(&path);
     let cursor = active_cursor(&conn, "N1");
     assert!(vector_row_exists(&conn, cursor), "the grafted backfill landed at rest");
     assert!(vec0_row_exists(&conn, cursor), "…including the vec0 row");
-    assert_eq!(calls.load(Ordering::SeqCst), 1, "exactly the one deferred row was embedded");
+    assert_eq!(
+        calls.load(Ordering::SeqCst),
+        91,
+        "90 prospective-arm probe calls plus exactly one deferred row"
+    );
 
     opened.engine.close().unwrap();
 }
@@ -1485,8 +1489,8 @@ fn a_pending_edge_body_survives_a_full_scan_window_of_no_embedder_node_rows() {
 }
 
 // ===========================================================================
-// Leg H (fix-5, codex §9 round 4 [P2]) — a LATE enrolment and the un-stranding
-//         it owes must commit as ONE transaction
+// Leg H (fix-5, codex §9 round 4 [P2]) — a BOOT graft and the un-stranding it
+//         owes must commit as ONE transaction
 // ===========================================================================
 
 /// A raw READ-WRITE connection to the live file, used to install the fault
@@ -1498,9 +1502,9 @@ fn rw(path: &Path) -> rusqlite::Connection {
     conn
 }
 
-/// **The crash window between the registry INSERT and the un-stranding.**
+/// **The crash window between the boot registry INSERT and the un-stranding.**
 ///
-/// A late enrolment does two things: it registers the kind in
+/// A boot graft does two things: it registers the kind in
 /// `_fathomdb_vector_kinds`, and it repairs the rows that kind stranded
 /// (`reenqueue_stranded_vector_rows` — delete their `'up_to_date'` terminals and
 /// rewind the watermark). While the INSERT autocommits ahead of the repair's own
@@ -1519,7 +1523,7 @@ fn rw(path: &Path) -> rusqlite::Connection {
 /// durable consequence (the second half of the test), which is what the finding
 /// is actually about.
 #[test]
-fn a_late_enrolment_whose_repair_fails_registers_nothing() {
+fn a_boot_graft_whose_repair_fails_registers_nothing() {
     let dir = TempDir::new().unwrap();
     let path = db_path(&dir, "flush_barrier_enrolment_atomicity");
 
@@ -1563,43 +1567,32 @@ fn a_late_enrolment_whose_repair_fails_registers_nothing() {
         )
         .expect("install the repair-failure injection");
 
-    // ---- session B: WITH an embedder. This write triggers the LATE enrolment:
-    // register `doc`, then repair N1/N2. The repair now fails.
-    {
-        let embedder = CountingEmbedder::with_identity(identity.clone());
-        let opened = Engine::open_with_embedder_for_test(&path, Arc::new(embedder)).expect("open");
-        let engine = &opened.engine;
-
-        let wrote = engine.write(&[node("doc", "N3", r#"{"summary":"the late write"}"#)]);
-        assert!(
-            matches!(wrote, Err(fathomdb_engine::EngineError::Storage)),
-            "fixture: the repair failed, so the write must surface Storage. Got: {wrote:?}"
-        );
-
-        // THE FINDING.
-        assert!(
-            !vector_kind_registered(&ro(&path), "doc"),
-            "TORN LATE ENROLMENT: the registry INSERT committed while the un-stranding it owes \
-             did not. `_fathomdb_vector_kinds` now holds `doc` with N1/N2 still carrying \
-             `'up_to_date'` terminals and no vectors — and because `kind_is_vector_indexed` is \
-             now true, every future write SKIPS the enrolment path and therefore skips the \
-             repair. The registry insert and the terminal/cursor repair must commit as ONE \
-             transaction"
-        );
-        opened.engine.close().unwrap();
-    }
+    // ---- session B: WITH an embedder. Open itself triggers the boot graft:
+    // register `doc`, then repair N1/N2. The repair now fails, so open must not
+    // expose a half-repaired runtime.
+    let failed_open = Engine::open_with_embedder_for_test(
+        &path,
+        Arc::new(CountingEmbedder::with_identity(identity.clone())),
+    );
+    assert!(
+        failed_open.is_err(),
+        "the faulted boot graft must fail open rather than expose half-repaired durable state"
+    );
+    assert!(
+        !vector_kind_registered(&ro(&path), "doc"),
+        "TORN BOOT GRAFT: the registry INSERT must roll back with the terminal/cursor repair"
+    );
 
     // ---- remove the injection and let the engine heal itself.
     rw(&path).execute_batch("DROP TRIGGER fix5_repair_fails").expect("remove the injection");
 
-    // ---- session C: the SAME database, WITH an embedder, no re-apply of the
-    // projection and no operator `rebuild` — one ordinary write must now enrol
-    // AND un-strand, because nothing was left half-done behind it.
+    // ---- session C: the SAME database, WITH an embedder, no re-apply and no
+    // ordinary write — the boot graft alone must enrol AND un-strand, because
+    // nothing was left half-done behind it.
     let embedder = CountingEmbedder::with_identity(identity);
     let opened = Engine::open_with_embedder_for_test(&path, Arc::new(embedder)).expect("reopen");
     let engine = &opened.engine;
-    engine.write(&[node("doc", "N4", r#"{"summary":"the healing write"}"#)]).expect("N4");
-    engine.drain(30_000).expect("drain flushes the late-enrolled backfill");
+    engine.drain(30_000).expect("drain flushes the boot-grafted backfill");
 
     assert_eq!(readiness(engine, "summary"), Some(DenseReadiness::Ready));
     let conn = ro(&path);
@@ -1611,7 +1604,7 @@ fn a_late_enrolment_whose_repair_fails_registers_nothing() {
          every later write precisely BECAUSE the kind is already registered — which is why the \
          two statements have to be atomic"
     );
-    for id in ["N1", "N2", "N4"] {
+    for id in ["N1", "N2"] {
         let cursor = active_cursor(&conn, id);
         assert!(vector_row_exists(&conn, cursor), "{id}'s vector must exist at rest");
         assert!(vec0_row_exists(&conn, cursor), "{id}'s vec0 row must exist at rest");

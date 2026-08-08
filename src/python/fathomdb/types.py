@@ -15,8 +15,10 @@ from typing import Literal, TypedDict, TypeGuard, Union
 #: ``PerHitExplain.arm`` (and, for graph-arm hits, ``SearchHit.branch``).
 SoftFallbackBranch = Literal["vector", "text", "text_edge", "graph_arm"]
 
-#: Engine-set dense-projection readiness values. ``"pending"`` is deliberately
-#: absent: it belongs to the orthogonal admission axis, not readiness.
+#: Engine-set dense-projection readiness values. ``"unavailable"`` means an
+#: absent or equivalence-refused runtime; ``"embedding"`` / ``"ready"`` apply
+#: only with a usable runtime. ``"pending"`` is deliberately absent: it belongs
+#: to the orthogonal admission axis, not readiness.
 DenseReadiness = Literal["unavailable", "embedding", "ready"]
 
 
@@ -176,8 +178,9 @@ class ProjectionSpec:
     #:
     #: ``filterable`` / ``searchable→FTS`` are same-transaction (non-stale on
     #: commit) so they carry no readiness; ``searchable→vector`` is async and
-    #: rebuild-durable, so it does. The value is DERIVED from outstanding
-    #: projection work, never stored — which is what makes
+    #: rebuild-durable, so it does. With no usable dense runtime (absent or
+    #: equivalence-refused), it is ``"unavailable"``. Otherwise the value is
+    #: DERIVED from outstanding projection work, never stored — which is what makes
     #: ``{vector-insert ∧ readiness := ready}`` atomic by construction: a
     #: ``"ready"`` reading can never be observed with the vector row absent.
     #:

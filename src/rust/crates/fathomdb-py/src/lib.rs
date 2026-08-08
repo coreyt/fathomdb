@@ -850,10 +850,11 @@ struct PyProjectionSpec {
     fts_tokenizer: Option<String>,
     vector: bool,
     vector_embedder: Option<String>,
-    /// 0.8.22 Slice 21 (F5) — READ METADATA, engine-set: `"unavailable"` /
-    /// `"embedding"` / `"ready"` on the way OUT of `read.projections`, `None` on every
-    /// caller-authored spec. Inert on the way IN (the engine reports the derived
-    /// truth), so `read.projections` output still re-applies as a no-op.
+    /// READ METADATA, engine-set: `"unavailable"` / `"embedding"` / `"ready"`
+    /// on the way OUT of `read.projections`, `None` on every caller-authored
+    /// spec. `"unavailable"` means no usable dense runtime; the other values
+    /// derive from outstanding work under one. Inert on the way IN (the engine
+    /// reports the derived truth), so read output still re-applies as a no-op.
     vector_dense_readiness: Option<String>,
     source: Option<Vec<String>>,
 }
