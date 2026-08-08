@@ -6,7 +6,7 @@
 
 ## Current state
 
-<!-- BEGIN GENERATED release-state:0.8.22:status-current-state -->**Next is Slice 23 (FTS-PREFIX), REVIEWED_PENDING_INTEGRATION.** Landed on `origin/main`: 0 (`55792858b2adce00d3d87193d02b23a5d8d52dd7`) · 5 (`55792858b2adce00d3d87193d02b23a5d8d52dd7`) · 10 (`4c7bb26b`) · 12 (`72a83049`) · 17 (`5a7f2484`) · 15 (`13341688fca3d02d11c10bb10eb26232156f8032`) · 18 (`8fdb27dbf00a0663772ffc8e27a243ac1e7dcd74`) · 19 (`e95afd292561d203d1001ea992ecbc191e129536`) · 21 (`e95afd292561d203d1001ea992ecbc191e129536`) · 22 (`e95afd292561d203d1001ea992ecbc191e129536`) — verified reachable, not asserted.<!-- END GENERATED release-state:0.8.22:status-current-state -->
+<!-- BEGIN GENERATED release-state:0.8.22:status-current-state -->**Next is Slice 20 (PUBLISH), PREP_COMPLETE_PUBLISH_HELD.** Landed on `origin/main`: 0 (`55792858b2adce00d3d87193d02b23a5d8d52dd7`) · 5 (`55792858b2adce00d3d87193d02b23a5d8d52dd7`) · 10 (`4c7bb26b`) · 12 (`72a83049`) · 17 (`5a7f2484`) · 15 (`13341688fca3d02d11c10bb10eb26232156f8032`) · 18 (`8fdb27dbf00a0663772ffc8e27a243ac1e7dcd74`) · 19 (`e95afd292561d203d1001ea992ecbc191e129536`) · 21 (`e95afd292561d203d1001ea992ecbc191e129536`) · 22 (`e95afd292561d203d1001ea992ecbc191e129536`) · 23 (`f1ccf2694087e1da4cee2204fe7b80389420a4b0`) — verified reachable, not asserted.<!-- END GENERATED release-state:0.8.22:status-current-state -->
 
 | | |
 | --- | --- |
@@ -29,15 +29,15 @@
 | 19 | Canonical FTS join indexes and planner proof | Landed in PR #207 at `e95afd292561d203d1001ea992ecbc191e129536`; reviewed source ends at `550c4b03`, and fixture-scoped closure evidence is recorded in `0.8.22-slice-19-join-index-measurement-20260808.json`. |
 | 21 | Truthful projection runtime state and safe boot graft | Landed in PR #207 at `e95afd292561d203d1001ea992ecbc191e129536`; FIX-1 through FIX-5 and the post-integration test-only FIX-1 through FIX-3 correction are closed. |
 | 22 | Governed pure projection-status read | Landed in PR #207 at `e95afd292561d203d1001ea992ecbc191e129536`; C5 seq-247, RED→GREEN→FIX-1, isolated verification, independent re-review, and refreshed CI are complete. |
-| 23 | Direct FTS result-prefix stability | Reviewed integration candidate: direct `search_text_only` only; RED→GREEN, cross-SDK verification, and independent FIX-1 closure are complete. Landing and repeat documentation-correctness review remain before publication resumes. |
-| 20 | Ordered publication and registry smokes | Local preparation is closed at `2f94085c` after RED→GREEN→FIX-2 and independent reviews. Ordered publication and registry smokes remain explicitly held pending Slice 23. |
+| 23 | Direct FTS result-prefix stability | Landed in PR #209 at `f1ccf2694087e1da4cee2204fe7b80389420a4b0`; RED→GREEN, cross-SDK verification, independent FIX-1 closure, repeat documentation review, and CI run #31265399431 are complete. |
+| 20 | Ordered publication and registry smokes | Local preparation is closed at `2f94085c` after RED→GREEN→FIX-2 and independent reviews. Ordered publication and registry smokes remain explicitly held pending new explicit authorization. |
 | 25 | `next` to `latest` promotion and release truth | Not started. |
 
 ## Immediate next action
 
 | | |
 | --- | --- |
-| **Immediate next action** | <!-- BEGIN GENERATED release-state:0.8.22:status-next-action -->**Land reviewed Slice 23 (FTS-PREFIX)** — direct FTS limit-prefix stability. **Remaining ladder:** 23 → 20 → 25.<!-- END GENERATED release-state:0.8.22:status-next-action --> |
+| **Immediate next action** | <!-- BEGIN GENERATED release-state:0.8.22:status-next-action -->**Await explicit publication authorization for Slice 20 (PUBLISH)** — ordered platform publication and registry smokes. **Remaining ladder:** 20 → 25.<!-- END GENERATED release-state:0.8.22:status-next-action --> |
 
 ## Slice 22 pickup gate
 
@@ -54,10 +54,9 @@ implementation ended at `6aeee48e` and landed through PR #207 at `e95afd29`.
 The local release-safety preparation is closed at `2f94085c`; its pickup and
 three review records document the RED→GREEN→FIX-2 closure. No production
 workflow changed. The remaining Slice 20 action is real ordered publication and
-registry smoke, which remains held pending Slice 23 and explicit release
-authorization.
+registry smoke, which remains held pending new explicit release authorization.
 
-## Slice 23 reviewed P2 repair
+## Slice 23 landed P2 repair
 
 HITL ruling seq-248 required a direct FTS-only result-prefix repair before
 publication. The completed design and executable plan are
@@ -68,8 +67,9 @@ separate 0.8.23 architecture/documentation follow-up. The independent design
 review and FIX-1 closure are recorded in
 `dev/plans/runs/0.8.22-slice-23-design-review-20260808.md`.
 Its pickup review, RED→GREEN proof, cross-SDK verification, and independent
-FIX-1 review closure are recorded in `dev/plans/runs/`; the reviewed
-integration candidate is ready to land on `origin/main`.
+FIX-1 review closure are recorded in `dev/plans/runs/`. PR #209 landed the
+repair at `f1ccf2694087e1da4cee2204fe7b80389420a4b0` after CI run #31265399431
+passed; the repeat documentation-correctness review is approved.
 
 ## Completion documentation gate
 
@@ -93,7 +93,8 @@ views, prompts, designs, developer indexes, and public-document indexes now
 record Slices 19, 21, and 22 as landed in PR #207. Two P2 stale-status rounds
 were corrected and the final independent re-review found no P1/P2.
 
-**Reopened for Slice 23 (2026-08-08).** The pre-publication P2 repair changes
-the release candidate and requires a repeat documentation-correctness review
-after Slice 23 lands. Slice 20 publication/registry smokes and Slice 25
-promotion remain held.
+**Slice 23 repeat review (2026-08-08): PASSED.** The independent review of
+the Slice 23 candidate found no P1/P2 in its lifecycle/status documentation,
+rendered views, developer indexes, or public contracts. Its durable record is
+`dev/plans/runs/0.8.22-slice-23-documentation-correctness-review-20260808.md`.
+Slice 20 publication/registry smokes and Slice 25 promotion remain held.

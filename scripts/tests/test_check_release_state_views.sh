@@ -908,6 +908,36 @@ else
   fail "arm 10d2 (ordinary commission action): rc=$RC out=$OUT"
 fi
 
+# --- Arm 10d3: prepared publication waits for explicit authority ---------
+# Local preparation is not an authorization to tag or publish. A held
+# publication slice therefore must not be re-commissioned, and must not be
+# rendered as though registry work can proceed autonomously.
+setup_fixture
+python3 - "$FIX/dev/plans/release-state-9.9.9.json" <<'PY'
+import json, sys
+p = sys.argv[1]
+s = json.load(open(p))
+for entry in s["ladder"]:
+    if entry["slice"] == 10:
+        entry["title"] = "the held fixture publication"
+        entry["status"] = "PREP_COMPLETE_PUBLISH_HELD"
+s["generated_views"].append({"id": "status-next-action",
+                             "file": "dev/plans/runs/board.md"})
+json.dump(s, open(p, "w"), indent=2)
+PY
+cat >>"$FIX/dev/plans/runs/board.md" <<'EOF'
+
+## Immediate next action
+
+<!-- BEGIN GENERATED release-state:9.9.9:status-next-action -->**Await explicit publication authorization for Slice 10 (R-B)** — the held fixture publication. **Remaining ladder:** 10 → 20 → 30 → 40.<!-- END GENERATED release-state:9.9.9:status-next-action -->
+EOF
+run_gate
+if [ "$RC" -eq 0 ]; then
+  pass "status-next-action — held publication does not render a commission"
+else
+  fail "arm 10d3 (held publication action): rc=$RC out=$OUT"
+fi
+
 # --- Arm 10e: END OF LADDER — the renderer REFUSES, it does not blank ------
 # `next_slice: null` is a real end-of-release state. A renderer that emitted
 # "Slice None" would put a fabricated pointer in front of the next orchestrator
