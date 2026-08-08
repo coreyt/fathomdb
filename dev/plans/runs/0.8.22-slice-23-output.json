@@ -1,0 +1,120 @@
+{
+  "schema_version": 1,
+  "slice": "0.8.22-slice-23",
+  "status": "IMPLEMENTED_PENDING_INDEPENDENT_REVIEW",
+  "baseline": {
+    "origin_main": "056ffe57f7f83b7240e4decbbb4b2ce97e65cc3a",
+    "pickup_head": "76c3c6e8d5c3cb71d73e07a0198cf8d788d37d32",
+    "red_engine_and_sdk_revision": "cb8a0539dd0dd4b44dae02457a6969d8661eb8c0"
+  },
+  "head_before_closure_artifact": "8b86cc0542e8344e5a05be9b22bf01ebd642c8ba",
+  "commits": [
+    {
+      "sha": "38438e8c162ac12bb5a0cdb9c160108f65ea4d82",
+      "subject": "test(0.8.22): add direct FTS prefix regression",
+      "kind": "RED Rust"
+    },
+    {
+      "sha": "cb8a0539dd0dd4b44dae02457a6969d8661eb8c0",
+      "subject": "test(0.8.22): cover direct FTS prefix in SDKs",
+      "kind": "RED Python and TypeScript"
+    },
+    {
+      "sha": "9ba52e323ba0af5ed9b4acc245fe64cad55693f4",
+      "subject": "fix(0.8.22): stabilize direct FTS result prefixes",
+      "kind": "GREEN implementation and contract documentation"
+    },
+    {
+      "sha": "8b86cc0542e8344e5a05be9b22bf01ebd642c8ba",
+      "subject": "docs(0.8.22): record direct FTS candidate evidence",
+      "kind": "S23-AC7 evidence"
+    }
+  ],
+  "implementation": {
+    "private_change": "ReaderRequest::Search carries direct_text_candidate_limit: Some(100) only for search_text_only_view_with_limit.",
+    "preserved_behavior": "Hybrid requests pass None and retain their prior query_vector.is_none() final-limit fallback candidate behavior.",
+    "unchanged": [
+      "public Rust/Python/TypeScript method signatures",
+      "schema and migrations",
+      "edge-body FTS collection",
+      "body deduplication/ranking and final result truncation",
+      "hybrid/vector/rerank/graph candidate-fanout policy"
+    ]
+  },
+  "tdd": {
+    "red": [
+      {
+        "layer": "Rust engine",
+        "command": "~/.cargo/bin/cargo test -p fathomdb-engine --test slice23_text_limit_prefix_stability -- --nocapture",
+        "result": "FAILED as expected on the baseline: both direct and fixed-ReadView tests showed N10 absent from limit=10 but first in the limit=50 prefix."
+      },
+      {
+        "layer": "Python SDK",
+        "command": "/tmp/fathomdb-slice23-py-baseline-venv/bin/python -m pytest -c /dev/null /tmp/fathomdb-0.8.22-slice-23-impl/src/python/tests/test_slice23_text_limit_prefix_stability.py -q",
+        "result": "FAILED as expected on an isolated non-editable baseline wheel: both calls differed at the first result."
+      },
+      {
+        "layer": "TypeScript SDK",
+        "command": "node dist/tests/slice23-text-limit-prefix-stability.test.js",
+        "result": "FAILED as expected against the isolated baseline native binding: both direct and fixed-validAsOf tests differed at the first result."
+      }
+    ],
+    "green": [
+      {
+        "layer": "Rust engine",
+        "command": "~/.cargo/bin/cargo test -p fathomdb-engine --test slice18_retrieval_result_limits --test slice23_text_limit_prefix_stability",
+        "result": "PASS: 6 tests."
+      },
+      {
+        "layer": "Python SDK",
+        "command": "/tmp/fathomdb-slice23-py-measure-candidate-venv/bin/python -m pytest -c /dev/null /tmp/fathomdb-0.8.22-slice-23-impl/src/python/tests/test_slice18_retrieval_result_limits.py /tmp/fathomdb-0.8.22-slice-23-impl/src/python/tests/test_slice23_text_limit_prefix_stability.py -q",
+        "result": "PASS: 6 tests."
+      },
+      {
+        "layer": "TypeScript SDK",
+        "command": "npm run build:debug; npx tsc -p tsconfig.json; node dist/tests/slice18-retrieval-result-limits.test.js; node dist/tests/slice23-text-limit-prefix-stability.test.js",
+        "result": "PASS: 4 tests after rebuilding the isolated native binding."
+      }
+    ]
+  },
+  "ac7_measurement": {
+    "record": "dev/plans/runs/0.8.22-slice-23-measurement-20260808.json",
+    "result": "Five warm limit-10/limit-50 pairs per baseline and candidate revision. Every candidate pair has identical limit-10 IDs and limit-50 prefix IDs. The record contains the fixture, revisions, host, SQLite/schema, raw timings, and raw IDs; it makes no generalized performance claim."
+  },
+  "verification": [
+    {
+      "command": "./scripts/agent-lint-md.sh",
+      "result": "PASS"
+    },
+    {
+      "command": "./scripts/agent-lint-docs.sh",
+      "result": "PASS"
+    },
+    {
+      "command": "./scripts/check-release-state-views.sh",
+      "result": "PASS"
+    },
+    {
+      "command": "./scripts/agent-verify.sh",
+      "result": "PASS"
+    },
+    {
+      "command": "~/.cargo/bin/cargo clippy --workspace --all-targets -- -D warnings -A missing-docs",
+      "result": "PASS"
+    },
+    {
+      "command": "~/.cargo/bin/cargo check --workspace --all-targets",
+      "result": "PASS"
+    },
+    {
+      "command": "git diff --check",
+      "result": "PASS before this artifact; rerun after committing it."
+    }
+  ],
+  "environment_notes": [
+    "The shared Python extension exposed an obsolete 0.8.0 surface without the released limit keyword. RED/GREEN Python tests therefore used locally built, non-editable wheels installed only into temporary virtual environments; no shared editable binding was changed.",
+    "The TypeScript native build required sandbox escalation because napi-rs invokes /bin/sh. It built only in this isolated worktree."
+  ],
+  "blockers": [],
+  "next_step": "Independent code review. Apply named FIX-n commits for every P1/P2 finding, then let the release orchestrator decide integration and update release state; do not tag or publish here."
+}
