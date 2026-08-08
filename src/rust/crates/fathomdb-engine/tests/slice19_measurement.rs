@@ -374,7 +374,7 @@ fn write_cursor_join_index_measurement() {
         "cache_treatment": {
             "fixture_paths": "Every migration and ingest sample uses a fresh TempDir database path.",
             "migration": "A schema-25 database is closed before the timed schema-26 Engine::open. The harness does not attempt privileged OS page-cache eviction.",
-            "query": "Three unrecorded Engine::search_text_only_with_limit calls warm each scenario's reader/process path before seven recorded calls.",
+            "query": format!("{QUERY_WARMUPS} unrecorded Engine::search_text_only_with_limit calls warm each scenario's reader/process path before {QUERY_SAMPLES} recorded calls."),
             "os_page_cache_evicted": false,
             "caveat": "Samples are not classified as cold-cache measurements; host filesystem-cache state is uncontrolled."
         },
