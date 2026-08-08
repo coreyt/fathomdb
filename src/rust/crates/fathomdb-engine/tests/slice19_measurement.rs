@@ -381,7 +381,7 @@ fn write_cursor_join_index_measurement() {
             "generator": {
                 "version": FIXTURE_VERSION,
                 "seed": FIXTURE_SEED,
-                "500 active nodes and 500 body-bearing edges. The first 50 node bodies and every edge body match slice19needle; per-row payload is a SplitMix64-style deterministic transform of the seed and row index."
+                "description": "500 active nodes and 500 body-bearing edges. The first 50 node bodies and every edge body match slice19needle; per-row payload is a SplitMix64-style deterministic transform of the seed and row index."
             },
             "nodes": FIXTURE_NODES,
             "edges": FIXTURE_EDGES,
