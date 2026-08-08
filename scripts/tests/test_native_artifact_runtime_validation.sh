@@ -30,8 +30,81 @@ named_step() {
   ' <<<"$block"
 }
 
-normalized_step() {
-  tr '\n' ' ' <<<"$1" | sed -E 's/[[:space:]]+/ /g; s/ \\ / /g; s/ ` / /g'
+step_run_command() {
+  awk '
+    /^[[:space:]]*run:[[:space:]]*/ {
+      command = $0
+      sub(/^[[:space:]]*run:[[:space:]]*/, "", command)
+      if (command ~ /^[|>][-+]?([[:space:]]*(#.*)?)?$/) {
+        in_run = 1
+        next
+      }
+      print command
+      exit
+    }
+    in_run {
+      if ($0 == "") {
+        print
+        next
+      }
+      if ($0 ~ /^          /) {
+        command = $0
+        sub(/^          /, "", command)
+        print command
+        next
+      }
+      exit
+    }
+  ' <<<"$1"
+}
+
+run_contains_invocation() {
+  local command="$1"
+  local required="$2"
+  local continuation="$3"
+  awk -v required="$required" -v continuation="$continuation" '
+    function trim(value) {
+      sub(/^[[:space:]]+/, "", value)
+      sub(/[[:space:]]+$/, "", value)
+      return value
+    }
+    function check_invocation(value, suffix) {
+      value = trim(value)
+      gsub(/[[:space:]]+/, " ", value)
+      if (substr(value, 1, length(required)) != required) {
+        return
+      }
+      suffix = substr(value, length(required) + 1)
+      if (suffix == "" || suffix ~ /^ (#[[:space:]]*|&&[[:space:]]+|\|\|[[:space:]]+|;[[:space:]]*)/) {
+        found = 1
+      }
+    }
+    {
+      line = trim($0)
+      if (line == "" || line ~ /^#/) {
+        next
+      }
+      continues = 0
+      if (continuation == "backslash" && line ~ /\\[[:space:]]*$/) {
+        sub(/\\[[:space:]]*$/, "", line)
+        continues = 1
+      } else if (continuation == "backtick" && line ~ /`[[:space:]]*$/) {
+        sub(/`[[:space:]]*$/, "", line)
+        continues = 1
+      }
+      pending = pending (pending == "" ? "" : " ") line
+      if (!continues) {
+        check_invocation(pending)
+        pending = ""
+      }
+    }
+    END {
+      if (pending != "") {
+        check_invocation(pending)
+      }
+      exit !found
+    }
+  ' <<<"$command"
 }
 
 block="$(job_block)" || fail 'missing native-artifact-runtime-validation job'
@@ -96,9 +169,13 @@ grep -Fqx "        if: matrix.runner != 'windows-latest'" <<<"$unix_validation_s
   || fail 'Unix local-artifact validation must exclude the Windows runner'
 grep -Fqx '        shell: bash' <<<"$unix_validation_step" \
   || fail 'Unix local-artifact validation must use bash'
-unix_validation_command="$(normalized_step "$unix_validation_step")"
-grep -Fq 'bash scripts/release/smoke/smoke-local-native-artifacts.sh "$PWD/src/python/dist" "$PWD/src/ts" "$PWD/src/ts/npm/${{ matrix.label }}" "${{ matrix.label }}"' \
-  <<<"$unix_validation_command" \
+unix_validation_command="$(step_run_command "$unix_validation_step")"
+[ -n "$unix_validation_command" ] \
+  || fail 'Unix local-artifact validation must define an executable run command'
+run_contains_invocation \
+  "$unix_validation_command" \
+  "bash scripts/release/smoke/smoke-local-native-artifacts.sh \"\$PWD/src/python/dist\" \"\$PWD/src/ts\" \"\$PWD/src/ts/npm/\${{ matrix.label }}\" \"\${{ matrix.label }}\"" \
+  backslash \
   || fail 'Unix local-artifact validation must pass the wheel, TypeScript, platform-package, and N-API label arguments'
 
 windows_validation_step="$(named_step 'Validate local wheel and N-API package (Windows)')" \
@@ -107,9 +184,13 @@ grep -Fqx "        if: matrix.runner == 'windows-latest'" <<<"$windows_validatio
   || fail 'Windows local-artifact validation must select only the Windows runner'
 grep -Fqx '        shell: pwsh' <<<"$windows_validation_step" \
   || fail 'Windows local-artifact validation must use PowerShell'
-windows_validation_command="$(normalized_step "$windows_validation_step")"
-grep -Fq './scripts/release/smoke/smoke-local-native-artifacts.ps1 -WheelDirectory "$PWD/src/python/dist" -TsDirectory "$PWD/src/ts" -PlatformPackageDirectory "$PWD/src/ts/npm/${{ matrix.label }}" -NapiLabel "${{ matrix.label }}"' \
-  <<<"$windows_validation_command" \
+windows_validation_command="$(step_run_command "$windows_validation_step")"
+[ -n "$windows_validation_command" ] \
+  || fail 'Windows local-artifact validation must define an executable run command'
+run_contains_invocation \
+  "$windows_validation_command" \
+  "./scripts/release/smoke/smoke-local-native-artifacts.ps1 -WheelDirectory \"\$PWD/src/python/dist\" -TsDirectory \"\$PWD/src/ts\" -PlatformPackageDirectory \"\$PWD/src/ts/npm/\${{ matrix.label }}\" -NapiLabel \"\${{ matrix.label }}\"" \
+  backtick \
   || fail 'Windows local-artifact validation must pass the wheel, TypeScript, platform-package, and N-API label arguments'
 
 for helper_and_command in \
@@ -220,6 +301,38 @@ if [ "${NATIVE_RUNTIME_VALIDATION_FIXTURE:-0}" != "1" ]; then
       ' > "$fixture"
   if NATIVE_RUNTIME_VALIDATION_FIXTURE=1 CI_YML="$fixture" bash "$0" >/dev/null 2>&1; then
     fail 'native validation guard accepted canonical invocations present only in comments'
+  fi
+
+  awk '
+    $0 == "        run: ./scripts/release/smoke/smoke-local-native-artifacts.ps1 -WheelDirectory \"$PWD/src/python/dist\" -TsDirectory \"$PWD/src/ts\" -PlatformPackageDirectory \"$PWD/src/ts/npm/${{ matrix.label }}\" -NapiLabel \"${{ matrix.label }}\"" {
+      print "        run: |"
+      print "          Write-Output '\''./scripts/release/smoke/smoke-local-native-artifacts.ps1 -WheelDirectory \"$PWD/src/python/dist\" -TsDirectory \"$PWD/src/ts\" -PlatformPackageDirectory \"$PWD/src/ts/npm/${{ matrix.label }}\" -NapiLabel \"${{ matrix.label }}\"'\''"
+      print "          ./scripts/release/smoke/smoke-local-native-artifacts.ps1 -WheelDirectory \"$PWD/src/python/dist\" -TsDirectory \"$PWD/src/ts\" -PlatformPackageDirectory \"$PWD/src/ts/npm/not-the-matrix-label\" -NapiLabel \"wrong-napi-label\""
+      replaced = 1
+      next
+    }
+    { print }
+    END { exit !replaced }
+  ' "$CI_YML" > "$fixture"
+  if NATIVE_RUNTIME_VALIDATION_FIXTURE=1 CI_YML="$fixture" bash "$0" >/dev/null 2>&1; then
+    fail 'native validation guard accepted a PowerShell string spoof'
+  fi
+
+  awk '
+    $0 == "        run: ./scripts/release/smoke/smoke-local-native-artifacts.ps1 -WheelDirectory \"$PWD/src/python/dist\" -TsDirectory \"$PWD/src/ts\" -PlatformPackageDirectory \"$PWD/src/ts/npm/${{ matrix.label }}\" -NapiLabel \"${{ matrix.label }}\"" {
+      print "        run: |"
+      print "          ./scripts/release/smoke/smoke-local-native-artifacts.ps1 -WheelDirectory \"$PWD/src/python/dist\" `"
+      print "            -TsDirectory \"$PWD/src/ts\" `"
+      print "            -PlatformPackageDirectory \"$PWD/src/ts/npm/${{ matrix.label }}\" `"
+      print "            -NapiLabel \"${{ matrix.label }}\""
+      replaced = 1
+      next
+    }
+    { print }
+    END { exit !replaced }
+  ' "$CI_YML" > "$fixture"
+  if ! NATIVE_RUNTIME_VALIDATION_FIXTURE=1 CI_YML="$fixture" bash "$0" >/dev/null 2>&1; then
+    fail 'native validation guard rejected a PowerShell backtick continuation'
   fi
 
   sed 's/default-embedder/default-embedder-removed/' "$CI_YML" > "$fixture"
