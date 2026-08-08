@@ -19,8 +19,8 @@
 | `docs/install/typescript.md` | TypeScript install | — | 2026-05-30 |
 | `docs/install/rust.md` | Rust install | — | 2026-05-17 |
 | `docs/reference/index.md` | API-reference overview; distinguishes published 0.8.21 from the held 0.8.22 candidate | 0.8.22 documentation correctness | 2026-08-08 |
-| `docs/reference/python-api.md` | Python API reference, including governed `read.*`, projection configuration/derived readiness, and the pure `read.projection_status` candidate API | Slice 21/22 locally complete pending landing; earlier public API history remains in Git | 2026-08-08 |
-| `docs/reference/typescript-api.md` | TypeScript API reference, including governed `read.*`, projection configuration/derived readiness, and the pure `read.projectionStatus` candidate API | Slice 21/22 locally complete pending landing; earlier public API history remains in Git | 2026-08-08 |
+| `docs/reference/python-api.md` | Python API reference, including governed `read.*`, projection configuration/derived readiness, and the pure `read.projection_status` 0.8.22 candidate API | Slices 21/22 landed in PR #207; public release held; earlier API history remains in Git | 2026-08-08 |
+| `docs/reference/typescript-api.md` | TypeScript API reference, including governed `read.*`, projection configuration/derived readiness, and the pure `read.projectionStatus` 0.8.22 candidate API | Slices 21/22 landed in PR #207; public release held; earlier API history remains in Git | 2026-08-08 |
 | `docs/reference/cli.md` | CLI reference (recovery verbs CLI-only); 34 documents the `doctor dump-mutations` op-store read-back diagnostic + `--json` example; 0.8.20 Slice 5d adds `doctor orphan-provenance` (read-only per-`source_id` census; exit 65 on `unerasable_rows > 0`) | 34 (dump-mutations); 0.8.20 Slice 5d (R-20-E8) | 2026-07-19 |
 | `docs/reference/errors.md` | Error reference (taxonomy) | per-binding error-class adds | 2026-05-17 |
 | `docs/reference/config.md` | Config reference | — | 2026-05-17 |

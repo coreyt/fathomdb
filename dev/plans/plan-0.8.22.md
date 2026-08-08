@@ -92,24 +92,21 @@ behavior change and begins only after its readiness decision record and pickup
 review; it adds no schema step. Slice 22 begins only after Slice 21 and its own
 governed-read decision; it is a pure status read, not a configuration echo.
 
-**Slice 19 is CLOSED on the reviewed local integration branch at `550c4b03`,
-but is not yet LANDED on `origin/main`.** The dependent local work inherits that
-exact reviewed base. The fixture-scoped closure record at
+**Slices 19, 21, and 22 LANDED on `origin/main` at `e95afd29` through PR #207.**
+Slice 19's reviewed source range ends at `550c4b03`. The fixture-scoped closure record at
 `dev/plans/runs/0.8.22-slice-19-join-index-measurement-20260808.json` retains
 the reproducible migration, ingest, and affected-query samples; protected-branch
-landing remains required before publication.
+landing is complete, while publication remains held.
 
-**Slice 21 is CLOSED on the reviewed local integration branch at `26bdd2ce`,
-but is not yet LANDED on `origin/main`.** Its independent review closed FIX-1
-through FIX-5, and the isolated ordinary clone passed the all-tier local gate.
-The dependent local work inherits that exact reviewed base; protected-branch
-landing remains required before publication.
+**Slice 21's reviewed implementation ends at `26bdd2ce`, followed by the
+test-only cross-SDK contract correction ending at `ae873e1a`.** Its independent
+review closed FIX-1 through FIX-5, the correction closed through FIX-3, and the
+refreshed default-embedder and full verify CI jobs passed before landing.
 
-**Slice 22 is CLOSED on the reviewed local integration branch at `6aeee48e`,
-but is not yet LANDED on `origin/main`.** Its signed C5 preparation, RED and
-GREEN implementation, and FIX-1 re-review closed all P1/P2. An isolated
-ordinary clone passed the all-tier agent gate and full workspace clippy/check.
-Protected-branch landing remains required before publication.
+**Slice 22's reviewed implementation ends at `6aeee48e`.** Its signed C5
+preparation, RED and GREEN implementation, and FIX-1 re-review closed all
+P1/P2. Isolated all-tier verification, full workspace clippy/check, and the
+refreshed protected-branch CI passed before landing.
 
 The corresponding plans require RED→GREEN evidence, cross-SDK conformance
 where the public contract changes, an independent review, and the normal local
@@ -161,7 +158,7 @@ their own policies.
 ## Landed release state
 
 <!-- BEGIN GENERATED release-state:0.8.22:plan-landed-roll-up -->
-**LANDED on `origin/main`, in full:** Slices 0 (`55792858b2adce00d3d87193d02b23a5d8d52dd7`) · 5 (`55792858b2adce00d3d87193d02b23a5d8d52dd7`) · 10 (`4c7bb26b`) · 12 (`72a83049`) · 15 (`13341688fca3d02d11c10bb10eb26232156f8032`) · 17 (`5a7f2484`) · 18 (`8fdb27dbf00a0663772ffc8e27a243ac1e7dcd74`). local candidate SCHEMA is 26; `origin/main` remains at 25 until the candidate's unlanded schema migration lands; remaining ladder = 20 → 25.<!-- END GENERATED release-state:0.8.22:plan-landed-roll-up -->
+**LANDED on `origin/main`, in full:** Slices 0 (`55792858b2adce00d3d87193d02b23a5d8d52dd7`) · 5 (`55792858b2adce00d3d87193d02b23a5d8d52dd7`) · 10 (`4c7bb26b`) · 12 (`72a83049`) · 15 (`13341688fca3d02d11c10bb10eb26232156f8032`) · 17 (`5a7f2484`) · 18 (`8fdb27dbf00a0663772ffc8e27a243ac1e7dcd74`) · 19 (`e95afd292561d203d1001ea992ecbc191e129536`) · 21 (`e95afd292561d203d1001ea992ecbc191e129536`) · 22 (`e95afd292561d203d1001ea992ecbc191e129536`). SCHEMA is 26; remaining ladder = 20 → 25.<!-- END GENERATED release-state:0.8.22:plan-landed-roll-up -->
 
 ## Reserved-gap policy
 

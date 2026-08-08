@@ -6,7 +6,7 @@
 
 ## Current state
 
-<!-- BEGIN GENERATED release-state:0.8.22:status-current-state -->**Next is Slice 20 (PUBLISH), PREP_COMPLETE_PUBLISH_HELD.** Landed on `origin/main`: 0 (`55792858b2adce00d3d87193d02b23a5d8d52dd7`) · 5 (`55792858b2adce00d3d87193d02b23a5d8d52dd7`) · 10 (`4c7bb26b`) · 12 (`72a83049`) · 17 (`5a7f2484`) · 15 (`13341688fca3d02d11c10bb10eb26232156f8032`) · 18 (`8fdb27dbf00a0663772ffc8e27a243ac1e7dcd74`) — verified reachable, not asserted.<!-- END GENERATED release-state:0.8.22:status-current-state -->
+<!-- BEGIN GENERATED release-state:0.8.22:status-current-state -->**Next is Slice 20 (PUBLISH), PREP_COMPLETE_PUBLISH_HELD.** Landed on `origin/main`: 0 (`55792858b2adce00d3d87193d02b23a5d8d52dd7`) · 5 (`55792858b2adce00d3d87193d02b23a5d8d52dd7`) · 10 (`4c7bb26b`) · 12 (`72a83049`) · 17 (`5a7f2484`) · 15 (`13341688fca3d02d11c10bb10eb26232156f8032`) · 18 (`8fdb27dbf00a0663772ffc8e27a243ac1e7dcd74`) · 19 (`e95afd292561d203d1001ea992ecbc191e129536`) · 21 (`e95afd292561d203d1001ea992ecbc191e129536`) · 22 (`e95afd292561d203d1001ea992ecbc191e129536`) — verified reachable, not asserted.<!-- END GENERATED release-state:0.8.22:status-current-state -->
 
 | | |
 | --- | --- |
@@ -26,9 +26,9 @@
 | 17 | Pre-register 0.8.23 scale-measurement protocol | Landed — `5a7f2484`; protocol only, no scale run or scale claim. |
 | 15 | Native build and validation matrix | Landed — `13341688fca3d02d11c10bb10eb26232156f8032`; CI run #31186535382 passed the full heavy verifier, five-runner native runtime matrix, and five wheel-size gates. |
 | 18 | Ranked retrieval result limits and SDK parity | Landed — `8fdb27dbf00a0663772ffc8e27a243ac1e7dcd74`; default 10 and validated 1..=100 limits across Rust, Python, and TypeScript. |
-| 19 | Canonical FTS join indexes and planner proof | Closed on reviewed local integration commit `550c4b03`; fixture-scoped closure evidence is recorded in `0.8.22-slice-19-join-index-measurement-20260808.json`. Pending protected-branch landing. |
-| 21 | Truthful projection runtime state and safe boot graft | Closed on reviewed local integration commit `26bdd2ce`; FIX-1 through FIX-5 are closed and protected-branch landing remains pending. |
-| 22 | Governed pure projection-status read | Closed on reviewed local integration commit `6aeee48e`; C5 seq-247, RED→GREEN→FIX-1, all-tier isolated verification, and independent re-review are complete. Protected-branch landing remains pending. |
+| 19 | Canonical FTS join indexes and planner proof | Landed in PR #207 at `e95afd292561d203d1001ea992ecbc191e129536`; reviewed source ends at `550c4b03`, and fixture-scoped closure evidence is recorded in `0.8.22-slice-19-join-index-measurement-20260808.json`. |
+| 21 | Truthful projection runtime state and safe boot graft | Landed in PR #207 at `e95afd292561d203d1001ea992ecbc191e129536`; FIX-1 through FIX-5 and the post-integration test-only FIX-1 through FIX-3 correction are closed. |
+| 22 | Governed pure projection-status read | Landed in PR #207 at `e95afd292561d203d1001ea992ecbc191e129536`; C5 seq-247, RED→GREEN→FIX-1, isolated verification, independent re-review, and refreshed CI are complete. |
 | 20 | Ordered publication and registry smokes | Local preparation is closed at `2f94085c` after RED→GREEN→FIX-2 and independent reviews. Ordered publication and registry smokes remain explicitly held. |
 | 25 | `next` to `latest` promotion and release truth | Not started. |
 
@@ -46,8 +46,7 @@ is recorded at steward-ledger seq-247, and the independently approved
 governed-surface preparation is recorded in
 `dev/plans/runs/0.8.22-slice-22-c5-prep-review-20260808.md`. Runtime review
 and FIX-1 re-review are recorded in their paired Slice 22 review files. The
-locally integrated implementation is closed at `6aeee48e` and awaits protected
-branch landing.
+implementation ended at `6aeee48e` and landed through PR #207 at `e95afd29`.
 
 ## Slice 20 publish hold
 
@@ -70,5 +69,11 @@ does not bypass this gate.
 correction review. Final-FIX-1 at `c68016b9` corrected that state, and its
 focused independent re-review found no P1/P2. Release-state rendering,
 developer Markdown checks, and public-doc checks passed. This is a local
-integration result only: protected-branch landing and the explicitly held real
-publication/smokes remain outstanding.
+integration and landing result: the explicitly held real publication/smokes
+remain outstanding.
+
+**Post-landing reconciliation (2026-08-08): PASSED.** The state JSON, rendered
+views, prompts, designs, developer indexes, and public-document indexes now
+record Slices 19, 21, and 22 as landed in PR #207. Two P2 stale-status rounds
+were corrected and the final independent re-review found no P1/P2. Slice 20
+publication/registry smokes and Slice 25 promotion remain held.
