@@ -121,7 +121,7 @@ struct DurableSnapshot {
     vector_kinds: i64,
     terminals: i64,
     vector_rows: i64,
-    projection_cursor: i64,
+    projection_state: Vec<(String, i64, i64)>,
 }
 
 fn durable_snapshot(path: &Path) -> DurableSnapshot {
@@ -131,16 +131,22 @@ fn durable_snapshot(path: &Path) -> DurableSnapshot {
             .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| row.get(0))
             .expect("table count")
     };
+    let projection_state = connection
+        .prepare(
+            "SELECT kind, last_enqueued_cursor, updated_at
+             FROM _fathomdb_projection_state ORDER BY kind",
+        )
+        .expect("prepare projection-state snapshot")
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+        .expect("query projection-state snapshot")
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .expect("collect projection-state snapshot");
     DurableSnapshot {
         registry: count("_fathomdb_projection_registry"),
         vector_kinds: count("_fathomdb_vector_kinds"),
         terminals: count("_fathomdb_projection_terminal"),
         vector_rows: count("_fathomdb_vector_rows"),
-        projection_cursor: connection
-            .query_row("SELECT cursor FROM _fathomdb_projection_state WHERE id = 1", [], |row| {
-                row.get(0)
-            })
-            .expect("projection cursor"),
+        projection_state,
     }
 }
 
@@ -163,6 +169,16 @@ fn seed_legacy_non_searchable_vector(path: &Path, name: &str) {
             [name],
         )
         .expect("seed pre-Slice-23 legacy vector row");
+}
+
+fn force_probe_verdict_rerun(path: &Path) {
+    let connection = rusqlite::Connection::open(path).expect("open probe-cache mutation");
+    connection
+        .execute(
+            "DELETE FROM _fathomdb_open_state WHERE key = 'vector_equivalence_verified_fingerprint'",
+            [],
+        )
+        .expect("clear passing cache so the next open verifies its backend");
 }
 
 #[test]
@@ -247,6 +263,15 @@ fn status_covers_embedding_ready_and_the_equivalence_refusal_reason() {
         ProjectionStatusDenseReadiness::Ready
     );
     opened.engine.close().expect("close usable runtime");
+
+    let accepted = Engine::open_with_embedder_for_test(
+        &path,
+        Arc::new(DelayEmbedder::faithful(identity.clone(), Duration::ZERO)),
+    )
+    .expect("reopen to persist an accepted equivalence baseline");
+    assert!(!accepted.report.dense_disabled, "fixture: faithful runtime is accepted");
+    accepted.engine.close().expect("close accepted baseline");
+    force_probe_verdict_rerun(&path);
 
     let rejected =
         Engine::open_with_embedder_for_test(&path, Arc::new(DelayEmbedder::divergent(identity)))

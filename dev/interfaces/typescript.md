@@ -26,8 +26,9 @@ The full governed set is pinned by
 `src/conformance/governed-surface-allowlist.json`, which `surface.test.ts`
 loads: the core five plus `engine.searchTextOnly`, `engine.embed`, `rerank`,
 the `read.*` namespace (`get`, `getMany`, `collection`, `mutations`, `list`,
-`crossedBoundarySince`, `projections`), the `graph.*` namespace (`neighbors`,
-`searchExpand`), the BYO-LLM verbs (`engine.ingestWithExtractor`,
+`crossedBoundarySince`, `projections`, `projectionStatus`), the `graph.*`
+namespace (`neighbors`, `searchExpand`), the BYO-LLM verbs
+(`engine.ingestWithExtractor`,
 `engine.consolidateWithProvider`), `engine.configureProjections`, and the
 lifecycle/erasure verbs below. Verb NAMES are camelCase in TS; the governed
 allowlist entries stay dotted snake_case where the two differ
@@ -279,8 +280,8 @@ Fields-only delta, **PROPOSED, NOT SIGNED**.
 
 ## Projection registry (0.8.20 Slice 15d, R-20-PR / C-1)
 
-Two net-new governed verbs declare and inspect projections over interpretive
-attributes. The verbs, the `ProjectionSpec` / `ProjectionRole` /
+The registry pair declares and inspects projections over interpretive
+attributes. Its verbs, the `ProjectionSpec` / `ProjectionRole` /
 `ProjectionDelta` types and the typed `ProjectionDestructiveError` are
 **HITL-SIGNED 2026-07-29 (steward `seq-157`)**. ⚠ The Slice-20 (R-20-DR)
 readiness additions — the exported `DenseReadiness` union and
@@ -300,6 +301,24 @@ signature. Their closed `DenseReadiness` vocabulary is separately
   Re-applying an unchanged spec resolves to `{ unchanged: true }`.
 - `read.projections(engine)` → `Promise<ProjectionSpec[]>`, sorted by name — the
   registry introspection (folded into `read.*`).
+- `read.projectionStatus(engine)` → `Promise<ProjectionRuntimeStatus>` —
+  **HITL-SIGNED 2026-08-07 (steward `seq-247`)** C5 status read. It is a pure
+  facade over durable declarations and this open engine session's dense runtime;
+  it does not configure projections or schedule, wake, or drain work. It is not
+  a decorated `ProjectionSpec` or the internal lifecycle `ProjectionStatus`.
+
+`ProjectionRuntimeStatus` is
+`{ runtimeEmbedderAvailable, runtimeUnavailabilityReason, projections,
+vectorUnsupportedKinds }`. `ProjectionRuntimeUnavailabilityReason` is exactly
+`"none" | "no_runtime" | "vector_equivalence_disabled"`; `"none"` occurs
+exactly when the runtime is available. Each sorted
+`ProjectionRuntimeStatusEntry` is `{ name, denseReadiness }`, with
+`ProjectionStatusDenseReadiness` exactly `"not_declared" | "unavailable" |
+"embedding" | "ready"`. `not_declared` means no effective vector arm
+(`searchable` plus a vector sub-object); a legacy non-searchable vector
+sub-object therefore remains `not_declared`. The other values are corpus-wide
+shared-pipeline facts, not per-projection progress. `vectorUnsupportedKinds` is
+sorted/deduplicated and is `[]` unless an effective vector arm exists.
 
 `ProjectionSpec` is
 `{ name, roles: ProjectionRole[], fts, ftsTokenizer?, vector, vectorEmbedder?,

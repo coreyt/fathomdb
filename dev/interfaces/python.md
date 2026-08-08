@@ -26,8 +26,9 @@ The full governed set is pinned by
 `src/conformance/governed-surface-allowlist.json`, which `test_surface.py`
 loads: the core five plus `engine.search_text_only`, `engine.embed`,
 `rerank`, the `read.*` namespace (`get`, `get_many`, `collection`,
-`mutations`, `list`, `crossed_boundary_since`, `projections`), the `graph.*`
-namespace (`neighbors`, `search_expand`), the BYO-LLM verbs
+`mutations`, `list`, `crossed_boundary_since`, `projections`,
+`projection_status`), the `graph.*` namespace (`neighbors`, `search_expand`),
+the BYO-LLM verbs
 (`engine.ingest_with_extractor`, `engine.consolidate_with_provider`),
 `engine.configure_projections`, and the lifecycle/erasure verbs below.
 
@@ -262,8 +263,8 @@ invalidated edge. Fields-only delta, **PROPOSED, NOT SIGNED**.
 
 ## Projection registry (0.8.20 Slice 15d, R-20-PR / C-1)
 
-Two net-new governed verbs declare and inspect projections over interpretive
-attributes. The verbs, the `ProjectionSpec` / `ProjectionRole` /
+The registry pair declares and inspects projections over interpretive
+attributes. Its verbs, the `ProjectionSpec` / `ProjectionRole` /
 `ProjectionDelta` types and the typed `ProjectionDestructiveError` are
 **HITL-SIGNED 2026-07-29 (steward `seq-157`)**. ⚠ The Slice-20 (R-20-DR)
 readiness field `vector_dense_readiness` is **NOT** part of that `seq-157`
@@ -282,6 +283,24 @@ signature. Its closed `DenseReadiness` vocabulary is separately
   `ProjectionDelta(unchanged=True)`.
 - `read.projections(engine)` → `list[ProjectionSpec]`, sorted by name — the
   registry introspection (folded into `read.*`).
+- `read.projection_status(engine)` → `ProjectionRuntimeStatus` —
+  **HITL-SIGNED 2026-08-07 (steward `seq-247`)** C5 status read. It is a pure
+  facade over durable declarations and this open engine session's dense runtime;
+  it does not configure projections or schedule, wake, or drain work. It is not
+  a decorated `ProjectionSpec` or the internal lifecycle `ProjectionStatus`.
+
+`ProjectionRuntimeStatus` is a frozen record with
+`runtime_embedder_available`, `runtime_unavailability_reason`, `projections`,
+and `vector_unsupported_kinds`. The reason Literal is exactly
+`"none" | "no_runtime" | "vector_equivalence_disabled"`; `"none"` occurs
+exactly when the runtime is available. Each sorted
+`ProjectionRuntimeStatusEntry` has `name` and `dense_readiness`, whose Literal
+is exactly `"not_declared" | "unavailable" | "embedding" | "ready"`.
+`not_declared` means no effective vector arm (`searchable` plus a vector
+sub-object); a legacy non-searchable vector sub-object therefore remains
+`not_declared`. The other values are corpus-wide shared-pipeline facts, not
+per-projection progress. `vector_unsupported_kinds` is sorted/deduplicated and
+is `[]` unless an effective vector arm exists.
 
 `ProjectionSpec` (`fathomdb.types.ProjectionSpec`) is
 `{ name, roles: frozenset[str], fts, fts_tokenizer, vector, vector_embedder,

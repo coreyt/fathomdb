@@ -98,6 +98,20 @@ export interface NativeProjectionDelta {
   vectorUnsupportedKinds: string[];
 }
 
+/** Native shape of the pure Slice 22 projection-status facade. */
+export interface NativeProjectionRuntimeStatusEntry {
+  name: string;
+  denseReadiness: string;
+}
+
+/** Native shape before the TypeScript wrapper narrows the closed wire unions. */
+export interface NativeProjectionRuntimeStatus {
+  runtimeEmbedderAvailable: boolean;
+  runtimeUnavailabilityReason: string;
+  projections: NativeProjectionRuntimeStatusEntry[];
+  vectorUnsupportedKinds: string[];
+}
+
 interface NativeSoftFallback {
   branch: string;
 }
@@ -375,6 +389,7 @@ export interface NativeEngine {
     drop?: string[] | null,
   ): Promise<NativeProjectionDelta>;
   readProjections(): Promise<NativeProjectionSpec[]>;
+  readProjectionStatus(): Promise<NativeProjectionRuntimeStatus>;
   search(
     query: string,
     filter?: NativeSearchFilter,

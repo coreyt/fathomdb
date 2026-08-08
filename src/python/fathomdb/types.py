@@ -21,6 +21,48 @@ SoftFallbackBranch = Literal["vector", "text", "text_edge", "graph_arm"]
 #: to the orthogonal admission axis, not readiness.
 DenseReadiness = Literal["unavailable", "embedding", "ready"]
 
+#: Reason an open engine session cannot use the shared dense runtime. ``"none"``
+#: occurs exactly when :attr:`ProjectionRuntimeStatus.runtime_embedder_available`
+#: is true.
+ProjectionRuntimeUnavailabilityReason = Literal[
+    "none", "no_runtime", "vector_equivalence_disabled"
+]
+
+#: Projection-status dense readiness. ``"not_declared"`` is distinct from
+#: ``"unavailable"``: it means the declaration has no effective
+#: ``searchable→vector`` arm at all.
+ProjectionStatusDenseReadiness = Literal[
+    "not_declared", "unavailable", "embedding", "ready"
+]
+
+
+@dataclass(frozen=True)
+class ProjectionRuntimeStatusEntry:
+    """One declared projection's current dense status.
+
+    Entries are sorted by ``name``. The engine currently has a shared dense
+    pipeline, so effective vector declarations repeat its corpus-wide readiness
+    rather than claiming unsupported per-projection progress.
+    """
+
+    name: str
+    dense_readiness: ProjectionStatusDenseReadiness
+
+
+@dataclass(frozen=True)
+class ProjectionRuntimeStatus:
+    """Pure current projection-runtime facts for one open :class:`Engine`.
+
+    This is not a configuration echo and does not mutate the registry, storage,
+    enrollment, queue, or scheduler. ``vector_unsupported_kinds`` is empty
+    unless a declaration has an effective ``searchable→vector`` arm.
+    """
+
+    runtime_embedder_available: bool
+    runtime_unavailability_reason: ProjectionRuntimeUnavailabilityReason
+    projections: tuple[ProjectionRuntimeStatusEntry, ...]
+    vector_unsupported_kinds: tuple[str, ...]
+
 
 @dataclass(frozen=True)
 class WriteReceipt:

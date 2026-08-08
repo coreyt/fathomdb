@@ -7,7 +7,12 @@ Hand-maintained — keep in sync with the binding's `#[pyclass]` /
 
 from typing import Any, Iterable
 
-from fathomdb.types import DenseReadiness, EmbedderEvent
+from fathomdb.types import (
+    DenseReadiness,
+    EmbedderEvent,
+    ProjectionRuntimeUnavailabilityReason,
+    ProjectionStatusDenseReadiness,
+)
 
 class WriteReceipt:
     cursor: int
@@ -358,10 +363,21 @@ class ProjectionDelta:
     # vector writer can never commit. Empty, never absent.
     vector_unsupported_kinds: list[str]
 
+class ProjectionRuntimeStatusEntry:
+    name: str
+    dense_readiness: ProjectionStatusDenseReadiness
+
+class ProjectionRuntimeStatus:
+    runtime_embedder_available: bool
+    runtime_unavailability_reason: ProjectionRuntimeUnavailabilityReason
+    projections: list[ProjectionRuntimeStatusEntry]
+    vector_unsupported_kinds: list[str]
+
 def configure_projections(
     engine: Engine, specs: list[ProjectionSpec], drop: list[str] | None = ...
 ) -> ProjectionDelta: ...
 def read_projections(engine: Engine) -> list[ProjectionSpec]: ...
+def read_projection_status(engine: Engine) -> ProjectionRuntimeStatus: ...
 def read_get(
     engine: Engine, logical_id: str, view: ReadView | None = None
 ) -> NodeRecord | None: ...

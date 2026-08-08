@@ -201,6 +201,7 @@ DEFAULT facade, not behind the `operator` feature.
 
 - `Engine::configure_projections(...) -> Result<ProjectionDelta, EngineError>`
 - `Engine::read_projections() -> Result<Vec<ProjectionSpec>, EngineError>`
+- `Engine::read_projection_status() -> Result<ProjectionRuntimeStatus, EngineError>`
 
 See § "Projection registry" below.
 
@@ -471,10 +472,11 @@ signature** — neither appears in the allowlist. `DenseReadiness` is separately
 closed vocabulary and no new command. Slice 21's runtime implementation now
 selects `Unavailable` when no usable dense runtime exists.
 
-Two net-new governed methods on `Engine` declare and inspect projections over
-interpretive attributes. The facade re-exports the five supporting
-`Projection*` types — plus `DenseReadiness` since 0.8.20 Slice 20 (R-20-DR) —
-all part of the public Rust surface:
+The registry pair declares and inspects projections over interpretive
+attributes. The Slice-22 C5 read separately reports current dense runtime
+status. The facade re-exports the five supporting `Projection*` types — plus
+`DenseReadiness` since 0.8.20 Slice 20 (R-20-DR) — all part of the public Rust
+surface:
 
 - `Engine::configure_projections(specs: &[ProjectionSpec], drop: &[String]) ->
   Result<ProjectionDelta, EngineError>` — declarative, idempotent apply: the
@@ -491,6 +493,30 @@ all part of the public Rust surface:
   name. Pure read; never mutates. Since 0.8.20 Slice 20 (R-20-DR) it is also the
   surface that populates the engine-set `ProjectionVector::dense_readiness`
   READ METADATA (derived on the way out; see below).
+- `Engine::read_projection_status() -> Result<ProjectionRuntimeStatus,
+  EngineError>` — **HITL-SIGNED 2026-08-07 (steward `seq-247`)** C5 status
+  read. It is a separate, pure facade over the durable declaration registry and
+  this open session's dense-runtime facts; it neither configures projections nor
+  schedules, wakes, or drains projection work. Its result is not a decorated
+  `ProjectionSpec` or the internal lifecycle `ProjectionStatus`.
+
+`ProjectionRuntimeStatus` has `runtime_embedder_available`, its closed
+`ProjectionRuntimeUnavailabilityReason` (`"none" | "no_runtime" |
+"vector_equivalence_disabled"`), sorted `ProjectionRuntimeStatusEntry` values,
+and sorted/deduplicated `vector_unsupported_kinds`. Each entry has its name and
+closed `ProjectionStatusDenseReadiness` (`"not_declared" | "unavailable" |
+"embedding" | "ready"`). `not_declared` means the stored declaration has no
+effective vector arm — exactly `StoredProjection::wants_vector`, so a legacy
+non-searchable vector sub-object remains `not_declared`. The other readiness
+states are corpus-wide shared-pipeline facts and therefore can repeat across
+effective vector declarations; they do not assert per-projection progress.
+`vector_unsupported_kinds` is `[]` unless an effective vector arm exists.
+
+The C5 facade types are also public Rust surface:
+`ProjectionRuntimeStatus`, `ProjectionRuntimeStatusEntry`,
+`ProjectionRuntimeUnavailabilityReason`, and
+`ProjectionStatusDenseReadiness`. They are deliberately distinct from the
+internal lifecycle `ProjectionStatus` enum.
 
 Types:
 

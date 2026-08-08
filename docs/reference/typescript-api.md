@@ -33,6 +33,10 @@ import {
   type ProjectionSpec,
   type ProjectionDelta,
   type ProjectionRole,
+  type ProjectionRuntimeStatus,
+  type ProjectionRuntimeStatusEntry,
+  type ProjectionRuntimeUnavailabilityReason,
+  type ProjectionStatusDenseReadiness,
   type SubscriberCallback,
   type AttachSubscriberOptions,
   type AdminConfigureOptions,
@@ -311,7 +315,7 @@ const receipt = await admin.configure(engine, { name: "my-schema", body: schemaJ
 Promise<WriteReceipt>` where `AdminConfigureOptions = { name:
 string; body: string }`.
 
-## `read.*` — governed read verbs (Slice 30 / G2 + G3)
+## `read.*` — governed read verbs (including 0.8.22 Slice 22)
 
 ```ts
 import { read } from "fathomdb";
@@ -379,6 +383,36 @@ const openHigh = await read.list(engine, "task", [
   { type: "gt",  path: "$.priority", value: 5 },
 ]);
 ```
+
+### `read.projectionStatus(engine): Promise<ProjectionRuntimeStatus>`
+
+Read current projection-runtime status without configuring projections or
+changing the registry, storage, scheduler, or work queue. It is a status facade,
+not a decorated `ProjectionSpec` and not a per-projection completion report.
+
+```ts
+interface ProjectionRuntimeStatus {
+  runtimeEmbedderAvailable: boolean;
+  runtimeUnavailabilityReason:
+    | "none"
+    | "no_runtime"
+    | "vector_equivalence_disabled";
+  projections: ProjectionRuntimeStatusEntry[];
+  vectorUnsupportedKinds: string[];
+}
+interface ProjectionRuntimeStatusEntry {
+  name: string;
+  denseReadiness: "not_declared" | "unavailable" | "embedding" | "ready";
+}
+```
+
+`"none"` is returned exactly when `runtimeEmbedderAvailable` is true. Entries
+are sorted by name. `"not_declared"` means the declaration has no effective
+vector arm (it needs both `searchable` and a vector sub-object), so a legacy
+non-searchable vector sub-object remains `"not_declared"`. The other readiness
+values are corpus-wide shared-pipeline facts and can repeat across effective
+vector declarations. `vectorUnsupportedKinds` is sorted and deduplicated; it is
+`[]` when no effective vector arm exists.
 
 ## Data shapes
 

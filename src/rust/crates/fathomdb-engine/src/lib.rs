@@ -4142,6 +4142,89 @@ impl DenseReadiness {
     }
 }
 
+/// The reason [`ProjectionRuntimeStatus::runtime_embedder_available`] is false.
+///
+/// This facade is deliberately distinct from the internal lifecycle
+/// `ProjectionStatus`: it describes this open engine session's ability to run
+/// the shared dense pipeline, not the terminal state of a canonical row.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ProjectionRuntimeUnavailabilityReason {
+    /// A usable dense runtime is attached, so there is no unavailability.
+    None,
+    /// This engine session was opened without an attached embedder.
+    NoRuntime,
+    /// The attached embedder failed the existing vector-equivalence guard.
+    VectorEquivalenceDisabled,
+}
+
+impl ProjectionRuntimeUnavailabilityReason {
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::NoRuntime => "no_runtime",
+            Self::VectorEquivalenceDisabled => "vector_equivalence_disabled",
+        }
+    }
+}
+
+/// The dense-readiness projection of [`ProjectionRuntimeStatusEntry`].
+///
+/// `NotDeclared` means that the declaration has no *effective* vector arm.
+/// The remaining states reuse the shared runtime/readiness facts, which are
+/// corpus-wide until the engine gains per-projection dense work tracking.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ProjectionStatusDenseReadiness {
+    /// The declaration has no `searchable` + vector sub-object pair.
+    NotDeclared,
+    /// An effective vector arm exists but this session has no usable runtime.
+    Unavailable,
+    /// An effective vector arm has eligible outstanding shared dense work.
+    Embedding,
+    /// An effective vector arm's shared dense work is quiescent.
+    Ready,
+}
+
+impl ProjectionStatusDenseReadiness {
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::NotDeclared => "not_declared",
+            Self::Unavailable => "unavailable",
+            Self::Embedding => "embedding",
+            Self::Ready => "ready",
+        }
+    }
+}
+
+/// One declaration's current dense status in [`ProjectionRuntimeStatus`].
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProjectionRuntimeStatusEntry {
+    /// Declared projection name. Entries are returned in ascending name order.
+    pub name: String,
+    /// Current dense state for this declaration's effective vector arm.
+    pub dense_readiness: ProjectionStatusDenseReadiness,
+}
+
+/// A pure, current view of projection-runtime facts for one open engine session.
+///
+/// `runtime_embedder_available` and its reason describe the dense runtime, not
+/// whether any projection is declared. `projections` contains one entry per
+/// durable declaration, sorted by name. `vector_unsupported_kinds` is current
+/// and declaration-scoped: it is empty unless at least one declaration has an
+/// effective (`searchable` + vector) arm.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProjectionRuntimeStatus {
+    /// Whether an attached embedder passed the identity/equivalence safeguards.
+    pub runtime_embedder_available: bool,
+    /// `None` exactly when `runtime_embedder_available` is true.
+    pub runtime_unavailability_reason: ProjectionRuntimeUnavailabilityReason,
+    /// One sorted entry for every durable declaration.
+    pub projections: Vec<ProjectionRuntimeStatusEntry>,
+    /// Sorted, deduplicated permanently non-committable kinds for an effective arm.
+    pub vector_unsupported_kinds: Vec<String>,
+}
+
 /// 0.8.20 Slice 15d (R-20-PR) — the `searchable→vector` sub-target selector.
 ///
 /// **Slice 20 (R-20-DR) attached `dense_readiness` HERE, additively:** this
@@ -8877,6 +8960,64 @@ impl Engine {
             }
         }
         Ok(specs)
+    }
+
+    /// Read the current projection-runtime status without changing the engine.
+    ///
+    /// Unlike [`read_projections`][Self::read_projections], this returns a
+    /// purpose-built status facade rather than a decorated caller declaration.
+    /// It reads the durable registry plus current session facts only: it does
+    /// not configure projections, enroll kinds, enqueue work, call `drain`, or
+    /// notify the projection scheduler. A legacy stored vector sub-object that
+    /// is not `searchable` is `NotDeclared`, because the effective-arm predicate
+    /// is the engine's `StoredProjection::wants_vector` predicate.
+    pub fn read_projection_status(&self) -> Result<ProjectionRuntimeStatus, EngineError> {
+        self.ensure_open()?;
+        let runtime_embedder_available = self.usable_dense_runtime();
+        let runtime_unavailability_reason = if runtime_embedder_available {
+            ProjectionRuntimeUnavailabilityReason::None
+        } else if self.dense_disabled.load(Ordering::Acquire) {
+            ProjectionRuntimeUnavailabilityReason::VectorEquivalenceDisabled
+        } else {
+            ProjectionRuntimeUnavailabilityReason::NoRuntime
+        };
+
+        let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+        let registry = load_projection_registry(connection).map_err(|_| EngineError::Storage)?;
+        let has_effective_vector_arm = registry.values().any(StoredProjection::wants_vector);
+        let effective_dense_readiness = if has_effective_vector_arm {
+            match derive_dense_readiness(connection, runtime_embedder_available)? {
+                DenseReadiness::Unavailable => ProjectionStatusDenseReadiness::Unavailable,
+                DenseReadiness::Embedding => ProjectionStatusDenseReadiness::Embedding,
+                DenseReadiness::Ready => ProjectionStatusDenseReadiness::Ready,
+            }
+        } else {
+            ProjectionStatusDenseReadiness::NotDeclared
+        };
+        let projections = registry
+            .into_iter()
+            .map(|(name, stored)| {
+                let dense_readiness = if stored.wants_vector() {
+                    effective_dense_readiness
+                } else {
+                    ProjectionStatusDenseReadiness::NotDeclared
+                };
+                ProjectionRuntimeStatusEntry { name, dense_readiness }
+            })
+            .collect();
+        let vector_unsupported_kinds = if has_effective_vector_arm {
+            unsupported_vector_kinds(connection).map_err(|_| EngineError::Storage)?
+        } else {
+            Vec::new()
+        };
+
+        Ok(ProjectionRuntimeStatus {
+            runtime_embedder_available,
+            runtime_unavailability_reason,
+            projections,
+            vector_unsupported_kinds,
+        })
     }
 
     /// OPP-12 Phase-1 (0.8.19 Slice 10, R-PG-1/2) — irreversibly hard-erase a

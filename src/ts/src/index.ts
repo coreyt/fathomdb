@@ -201,6 +201,39 @@ export interface ProjectionDelta {
   vectorUnsupportedKinds: string[];
 }
 
+/** Reason an open engine session has no usable dense runtime. */
+export type ProjectionRuntimeUnavailabilityReason =
+  | "none"
+  | "no_runtime"
+  | "vector_equivalence_disabled";
+
+/** Dense status for one declared projection in {@link ProjectionRuntimeStatus}. */
+export type ProjectionStatusDenseReadiness =
+  | "not_declared"
+  | "unavailable"
+  | "embedding"
+  | "ready";
+
+/** One declared projection's current dense status. */
+export interface ProjectionRuntimeStatusEntry {
+  name: string;
+  denseReadiness: ProjectionStatusDenseReadiness;
+}
+
+/**
+ * Pure current projection-runtime facts for an open {@link Engine}.
+ *
+ * This is not a configuration echo. `projections` contains every declaration
+ * in ascending name order. `vectorUnsupportedKinds` is empty unless a
+ * declaration has an effective `searchable→vector` arm.
+ */
+export interface ProjectionRuntimeStatus {
+  runtimeEmbedderAvailable: boolean;
+  runtimeUnavailabilityReason: ProjectionRuntimeUnavailabilityReason;
+  projections: ProjectionRuntimeStatusEntry[];
+  vectorUnsupportedKinds: string[];
+}
+
 /** G11 (Slice 15) — BYO-LLM ingest receipt. */
 export interface IngestWithExtractorReceipt {
   /** Number of `canonical_nodes` rows written (new insertions only). */

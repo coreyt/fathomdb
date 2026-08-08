@@ -137,14 +137,21 @@
 //   flag the engine hangs off `ProjectionSpec.vector` (`read.projections`
 //   populates it; it is never a caller declaration). ZERO net-new commands;
 //   the vocabulary was HITL-signed in steward-ledger seq-246.
+// + 4 new types from 0.8.22 Slice 22 C5: `ProjectionRuntimeStatus`,
+//   `ProjectionRuntimeStatusEntry`, `ProjectionRuntimeUnavailabilityReason`,
+//   and `ProjectionStatusDenseReadiness` — the pure status facade for the
+//   current projection runtime. Its command spelling is binding-specific;
+//   these types were HITL-signed in steward-ledger seq-247.
 pub use fathomdb_engine::{
     BoundaryCrossing, ComparisonOp, CorruptionDetail, CorruptionKind, CorruptionLocator,
     CounterSnapshot, DenseReadiness, Engine, EngineError, EngineOpenError, ExciseReport,
     Explanation, ExtractDocument, IngestWithExtractorReceipt, InitialState, LifecycleState,
     NodeRecord, OpenReport, OpenStage, OpenedEngine, PerHitExplain, Predicate, PreparedWrite,
-    ProjectionDelta, ProjectionFts, ProjectionRole, ProjectionSpec, ProjectionVector, QueryTrace,
-    ReadView, RecoveryHint, ScalarValue, SearchExpandResult, SearchFilter, SearchResult,
-    SoftFallback, SoftFallbackBranch, SourceId, Subscription, TraversalDirection, WriteReceipt,
+    ProjectionDelta, ProjectionFts, ProjectionRole, ProjectionRuntimeStatus,
+    ProjectionRuntimeStatusEntry, ProjectionRuntimeUnavailabilityReason, ProjectionSpec,
+    ProjectionStatusDenseReadiness, ProjectionVector, QueryTrace, ReadView, RecoveryHint,
+    ScalarValue, SearchExpandResult, SearchFilter, SearchResult, SoftFallback, SoftFallbackBranch,
+    SourceId, Subscription, TraversalDirection, WriteReceipt,
 };
 
 // The operator-seam report types (`dev/interfaces/rust.md` § 2b) — CLI-only,

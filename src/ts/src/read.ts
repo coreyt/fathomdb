@@ -11,6 +11,8 @@
 //   * read.list (G4 / Slice 35) — list active canonical nodes of a given `kind`,
 //     optionally filtered by typed predicates (AND-combined), up to `limit` rows.
 //     Injection-safe: values are bound parameters; paths must be from the allowlist.
+//   * read.projectionStatus (0.8.22 Slice 22) — pure current dense-runtime
+//     status for declared projections, distinct from `read.projections`.
 //
 // The runtime is the napi-rs binding in `fathomdb-napi`; this module funnels
 // every native error through `rethrowTyped` and converts native rows into the
@@ -23,6 +25,7 @@ import {
   type NativeNodeRecord,
   type NativeOpStoreRow,
   type NativePredicateInput,
+  type NativeProjectionRuntimeStatus,
 } from "./binding.js";
 import { InvalidArgumentError, rethrowTyped } from "./errors.js";
 import { validateFfiString } from "./validation.js";
@@ -32,6 +35,7 @@ import type {
   Filter,
   FilterTerm,
   ProjectionRole,
+  ProjectionRuntimeStatus,
   ProjectionSpec,
 } from "./index.js";
 
@@ -147,6 +151,18 @@ function toOpStoreRow(n: NativeOpStoreRow): OpStoreRow {
     payload: n.payload,
     schemaId: n.schemaId,
     writeCursor: n.writeCursor,
+  };
+}
+
+function toProjectionRuntimeStatus(n: NativeProjectionRuntimeStatus): ProjectionRuntimeStatus {
+  return {
+    runtimeEmbedderAvailable: n.runtimeEmbedderAvailable,
+    runtimeUnavailabilityReason: n.runtimeUnavailabilityReason as ProjectionRuntimeStatus["runtimeUnavailabilityReason"],
+    projections: n.projections.map((entry) => ({
+      name: entry.name,
+      denseReadiness: entry.denseReadiness as ProjectionRuntimeStatus["projections"][number]["denseReadiness"],
+    })),
+    vectorUnsupportedKinds: n.vectorUnsupportedKinds,
   };
 }
 
@@ -367,5 +383,16 @@ export const read = {
       // sub-object).
       vectorDenseReadiness: (s.vectorDenseReadiness ?? null) as DenseReadiness | null,
     }));
+  },
+
+  /**
+   * Return current dense-runtime facts without changing projection configuration
+   * or scheduling work. This is distinct from the decorated declaration returned
+   * by {@link projections}.
+   */
+  async projectionStatus(engine: Engine): Promise<ProjectionRuntimeStatus> {
+    return toProjectionRuntimeStatus(
+      await intercept(() => engine._native.readProjectionStatus()),
+    );
   },
 };

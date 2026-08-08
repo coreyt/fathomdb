@@ -14,7 +14,11 @@ from fathomdb import (
     OpStoreRow,
     ProjectionDelta,
     ProjectionRole,
+    ProjectionRuntimeStatus,
+    ProjectionRuntimeStatusEntry,
+    ProjectionRuntimeUnavailabilityReason,
     ProjectionSpec,
+    ProjectionStatusDenseReadiness,
     SearchFilter,
     SearchHit,
     SearchResult,
@@ -304,7 +308,7 @@ receipt = admin.configure(engine, name="my-schema", body=schema_json)
 Submit an admin schema configuration. The writer thread applies
 it; the returned cursor places the apply in the global write order.
 
-## `read.*` — governed read verbs (Slice 30 / G2 + G3)
+## `read.*` — governed read verbs (including 0.8.22 Slice 22)
 
 ```python
 from fathomdb import read
@@ -370,6 +374,37 @@ open_high = read.list(engine, "task", predicates=[
     {"type": "gt",  "path": "$.priority", "value": 5},
 ])
 ```
+
+### `read.projection_status(engine) -> ProjectionRuntimeStatus`
+
+Read the current projection-runtime status without configuring projections or
+changing the registry, storage, scheduler, or work queue. It is a status facade,
+not a decorated `ProjectionSpec` and not a per-projection completion report.
+
+The frozen result has these fields:
+
+```python
+ProjectionRuntimeStatus(
+    runtime_embedder_available: bool,
+    runtime_unavailability_reason: (
+        "none" | "no_runtime" | "vector_equivalence_disabled"
+    ),
+    projections: tuple[ProjectionRuntimeStatusEntry, ...],
+    vector_unsupported_kinds: tuple[str, ...],
+)
+ProjectionRuntimeStatusEntry(
+    name: str,
+    dense_readiness: "not_declared" | "unavailable" | "embedding" | "ready",
+)
+```
+
+`"none"` is returned exactly when `runtime_embedder_available` is true.
+Entries are sorted by name. `"not_declared"` means the declaration has no
+effective vector arm (it needs both `searchable` and a vector sub-object), so a
+legacy non-searchable vector sub-object remains `"not_declared"`. The other
+readiness values are corpus-wide shared-pipeline facts and can repeat across
+effective vector declarations. `vector_unsupported_kinds` is sorted and
+deduplicated; it is `()` when no effective vector arm exists.
 
 ## `graph.*` — graph traversal (Slice 20 / G5 + G6)
 

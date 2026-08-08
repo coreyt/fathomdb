@@ -47,9 +47,10 @@ use fathomdb_engine::{
     OpStoreRow as RustOpStoreRow, OpenReport as RustOpenReport, OpenStage,
     PerHitExplain as RustPerHitExplain, Predicate as RustPredicate, PreparedWrite,
     ProjectionDelta as RustProjectionDelta, ProjectionFts as RustProjectionFts,
-    ProjectionRole as RustProjectionRole, ProjectionSpec as RustProjectionSpec,
-    ProjectionVector as RustProjectionVector, QueryTrace as RustQueryTrace,
-    ReadView as RustReadView, ScalarValue as RustScalarValue,
+    ProjectionRole as RustProjectionRole, ProjectionRuntimeStatus as RustProjectionRuntimeStatus,
+    ProjectionRuntimeStatusEntry as RustProjectionRuntimeStatusEntry,
+    ProjectionSpec as RustProjectionSpec, ProjectionVector as RustProjectionVector,
+    QueryTrace as RustQueryTrace, ReadView as RustReadView, ScalarValue as RustScalarValue,
     SearchExpandResult as RustSearchExpandResult, SearchFilter as RustSearchFilter,
     SearchHit as RustSearchHit, SearchResult as RustSearchResult, SoftFallback as RustSoftFallback,
     SoftFallbackBranch, SourceId, TraversalDirection as RustTraversalDirection,
@@ -1059,6 +1060,63 @@ impl PyProjectionDelta {
     }
 }
 
+/// The Python-native form of one entry in the pure projection-status facade.
+#[pyclass(
+    module = "fathomdb._fathomdb",
+    name = "ProjectionRuntimeStatusEntry",
+    frozen,
+    get_all,
+    skip_from_py_object
+)]
+#[derive(Clone)]
+struct PyProjectionRuntimeStatusEntry {
+    name: String,
+    dense_readiness: String,
+}
+
+impl PyProjectionRuntimeStatusEntry {
+    fn from_rust(entry: &RustProjectionRuntimeStatusEntry) -> Self {
+        Self {
+            name: entry.name.clone(),
+            dense_readiness: entry.dense_readiness.as_str().to_string(),
+        }
+    }
+}
+
+/// The Python-native form of the pure projection-runtime status facade.
+#[pyclass(
+    module = "fathomdb._fathomdb",
+    name = "ProjectionRuntimeStatus",
+    frozen,
+    get_all,
+    skip_from_py_object
+)]
+#[derive(Clone)]
+struct PyProjectionRuntimeStatus {
+    runtime_embedder_available: bool,
+    runtime_unavailability_reason: String,
+    projections: Vec<PyProjectionRuntimeStatusEntry>,
+    vector_unsupported_kinds: Vec<String>,
+}
+
+impl PyProjectionRuntimeStatus {
+    fn from_rust(status: &RustProjectionRuntimeStatus) -> Self {
+        Self {
+            runtime_embedder_available: status.runtime_embedder_available,
+            runtime_unavailability_reason: status
+                .runtime_unavailability_reason
+                .as_str()
+                .to_string(),
+            projections: status
+                .projections
+                .iter()
+                .map(PyProjectionRuntimeStatusEntry::from_rust)
+                .collect(),
+            vector_unsupported_kinds: status.vector_unsupported_kinds.clone(),
+        }
+    }
+}
+
 #[pyclass(module = "fathomdb._fathomdb", name = "OpStoreRow", frozen, get_all, skip_from_py_object)]
 #[derive(Clone)]
 struct PyOpStoreRow {
@@ -1844,6 +1902,20 @@ fn read_projections(py: Python<'_>, engine: &PyEngine) -> PyResult<Vec<PyProject
     let inner = Arc::clone(&engine.inner);
     let specs = call_engine(py, move || inner.read_projections())?;
     Ok(specs.iter().map(PyProjectionSpec::from_rust).collect())
+}
+
+/// Read the current projection-runtime status without changing configuration or
+/// scheduling work. The public Python wrapper converts this native value into
+/// frozen SDK dataclasses with closed Literal wire vocabularies.
+#[pyfunction]
+#[pyo3(signature = (engine))]
+fn read_projection_status(
+    py: Python<'_>,
+    engine: &PyEngine,
+) -> PyResult<PyProjectionRuntimeStatus> {
+    let inner = Arc::clone(&engine.inner);
+    let status = call_engine(py, move || inner.read_projection_status())?;
+    Ok(PyProjectionRuntimeStatus::from_rust(&status))
 }
 
 #[pyfunction]
@@ -2634,8 +2706,11 @@ fn _fathomdb(py: Python<'_>, m: Bound<'_, PyModule>) -> PyResult<()> {
     // 0.8.20 Slice 15d — projection registry (R-20-PR).
     m.add_function(wrap_pyfunction!(configure_projections, &m)?)?;
     m.add_function(wrap_pyfunction!(read_projections, &m)?)?;
+    m.add_function(wrap_pyfunction!(read_projection_status, &m)?)?;
     m.add_class::<PyProjectionSpec>()?;
     m.add_class::<PyProjectionDelta>()?;
+    m.add_class::<PyProjectionRuntimeStatusEntry>()?;
+    m.add_class::<PyProjectionRuntimeStatus>()?;
     // Slice 30 — governed read.* native fns (G2/G3).
     m.add_function(wrap_pyfunction!(read_get, &m)?)?;
     m.add_function(wrap_pyfunction!(read_get_many, &m)?)?;
