@@ -266,8 +266,12 @@ Two net-new governed verbs declare and inspect projections over interpretive
 attributes. The verbs, the `ProjectionSpec` / `ProjectionRole` /
 `ProjectionDelta` types and the typed `ProjectionDestructiveError` are
 **HITL-SIGNED 2026-07-29 (steward `seq-157`)**. ⚠ The Slice-20 (R-20-DR)
-readiness field `vector_dense_readiness` is **NOT** part of that signature and
-remains **PROPOSED, NOT SIGNED**.
+readiness field `vector_dense_readiness` is **NOT** part of that `seq-157`
+signature. Its closed `DenseReadiness` vocabulary is separately
+**HITL-SIGNED 2026-08-07 (steward `seq-246`)** by Slice 21 F5/C1, with a
+governed-surface signature. The static record makes its three spellings typed
+and accept-inert; the later runtime GREEN must still select `"unavailable"`
+when no usable dense runtime exists.
 
 - `engine.configure_projections(specs, drop=None)` → `ProjectionDelta`.
   Declarative, idempotent apply: the engine diffs `specs` against the durable
@@ -367,16 +371,17 @@ same-transaction (non-stale on commit) so they have no readiness axis at all;
 `searchable→vector` is async and rebuild-durable, so it carries one.
 
 - **Exactly three spellings: `"unavailable"`, `"embedding"`, and `"ready"`.**
-  `"unavailable"` means no usable dense runtime (absent or
-  equivalence-refused); `"embedding"` means a usable runtime has eligible
-  outstanding work; and `"ready"` means it is quiescent. `"pending"` is
+  Their signed target meanings are no usable dense runtime (absent or
+  equivalence-refused), usable runtime with eligible outstanding work, and
+  usable quiescent work, respectively. `"pending"` is
   DELIBERATELY not one of them — that token is RESERVED for the orthogonal
   **admission** axis (quarantine/trust, an app judgment). Do not reuse the word.
-- **Derived, never stored.** There is no schema step and no `SCHEMA_VERSION`
-  bump; the value is computed per `read.projections` call from outstanding
-  projection work (the same predicate `drain` uses), which is what makes
-  `{vector-insert ∧ readiness := ready}` atomic by construction — `"ready"` can
-  never be observed with the vector row absent.
+- **Static F5 record; runtime GREEN still pending.** The third spelling is
+  public, typed, and accepted inertly on input, but current
+  `read.projections` still selects only `"embedding"` / `"ready"` from
+  outstanding work. It does **not** yet select `"unavailable"`; no-runtime →
+  `"unavailable"` remains required later Slice 21 behavior. That runtime change
+  must derive the state without a schema step or stored readiness field.
 - **Accept-inert on the way in.** Passing `vector_dense_readiness` to
   `engine.configure_projections` neither stores nor changes anything: it is not
   part of the declaration and the engine always reports the derived truth. That

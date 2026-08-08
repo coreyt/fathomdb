@@ -140,9 +140,12 @@ export interface ProjectionSpec {
   /** Literal canonical-body member path; omitted retains top-level `name`. */
   source?: string[] | null;
   /**
-   * 0.8.20 Slice 20 (R-20-DR) — **READ METADATA, engine-set.** `"ready"` or
-   * `"embedding"` when returned by `read.projections` for a spec with
-   * `vector: true`; `null` on every caller-authored spec.
+   * 0.8.22 Slice 21 F5 — **READ METADATA, engine-set.** The signed closed
+   * vocabulary is `"unavailable"` / `"embedding"` / `"ready"`; `null` is on
+   * every caller-authored spec. This static F5 record accepts the three values
+   * inertly, but current `read.projections` still selects only `"embedding"` /
+   * `"ready"`. The later runtime GREEN must select `"unavailable"` when no
+   * usable dense runtime exists.
    *
    * `filterable` / `searchable→FTS` are same-transaction (non-stale on commit)
    * so they carry no readiness; `searchable→vector` is async and
@@ -165,10 +168,10 @@ export interface ProjectionSpec {
 }
 
 /**
- * 0.8.22 Slice 21 (F5) — the three engine-set readiness values of the
- * `searchable→vector` projection. Mirrors the Rust `DenseReadiness` and the
- * Python string literals. `"pending"` is deliberately absent — that token is
- * reserved for the orthogonal admission axis.
+ * 0.8.22 Slice 21 F5 — the signed, closed readiness vocabulary of the
+ * `searchable→vector` projection. It is typed and accept-inert before the
+ * later runtime GREEN begins selecting `"unavailable"`. Mirrors Rust and
+ * Python; `"pending"` is deliberately absent because it is admission-only.
  */
 export type DenseReadiness = "unavailable" | "embedding" | "ready";
 

@@ -4102,9 +4102,10 @@ pub struct ProjectionFts {
 /// `Embedding`, never `Pending`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub enum DenseReadiness {
-    /// No usable dense runtime is available for this session. The Slice 21
-    /// runtime implementation selects this when the embedder is absent or
-    /// vector equivalence refuses dense work.
+    /// Signed, typed, accept-inert spelling for a session with no usable dense
+    /// runtime (absent embedder or refused vector equivalence). The static F5
+    /// record does not yet select this on reads; the later Slice 21 runtime
+    /// GREEN must do so through the shared usable-dense-runtime predicate.
     Unavailable,
     /// At least one row in the vector projection's row set has not yet reached a
     /// projection terminal — embedding is outstanding. This is the ONLY

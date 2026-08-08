@@ -64,9 +64,12 @@ which binds AC-074 — not a new AC id):
   projection-registry types `ProjectionSpec`, `ProjectionRole` and
   `ProjectionDelta` are **HITL-SIGNED 2026-07-29 (steward `seq-157`)** — the
   signed delta names exactly those three. Their sub-object types
-  `ProjectionFts` and `ProjectionVector`, and the 0.8.20 Slice 20 (R-20-DR)
-  readiness enum `DenseReadiness`, are **PROPOSED, NOT SIGNED**: none of the
-  three appears in `src/conformance/governed-surface-allowlist.json`.
+  `ProjectionFts` and `ProjectionVector` are not members of that `seq-157`
+  governed-command signature. `DenseReadiness`'s closed vocabulary is instead
+  **HITL-SIGNED 2026-08-07 (steward `seq-246`)** by the F5/C1 record and its
+  governed-surface signature. This static record makes the third spelling
+  typed and accept-inert; the later Slice 21 runtime GREEN still must make
+  `read_projections` select it for a no-usable-runtime session.
   See § "Projection registry" below. The recovery /
   integrity / dump operator-seam report types in § "Recovery / operator seam
   re-exports" are deliberately **excluded** from this allowlist — they are
@@ -462,9 +465,11 @@ commands (`configure_projections`, `read.projections`), the types
 (it mints at Slice 40); the signature is pinned to that file's content, so any
 diff re-opens the gate (T1e pin).
 
-⚠ **`ProjectionFts`, `ProjectionVector` and `DenseReadiness` are NOT part of
-that signature** — none appears in the allowlist. They remain **PROPOSED, NOT
-SIGNED**.
+⚠ **`ProjectionFts` and `ProjectionVector` are NOT part of that `seq-157`
+signature** — neither appears in the allowlist. `DenseReadiness` is separately
+**HITL-SIGNED 2026-08-07 (steward `seq-246`)** by Slice 21 F5/C1; this signs its
+closed vocabulary and no new command. It does not prematurely claim that the
+runtime has begun selecting `Unavailable`.
 
 Two net-new governed methods on `Engine` declare and inspect projections over
 interpretive attributes. The facade re-exports the five supporting
@@ -505,7 +510,8 @@ Types:
   `Ready`, with `as_str` / `from_str_opt` giving the
   `"unavailable" | "embedding" | "ready"` wire spellings. Slice 21's F5/C1
   ruling (`steward-ledger` seq-246) signs the vocabulary without adding a
-  governed command.
+  governed command. The static F5 record accepts the spelling inertly; runtime
+  selection of `Unavailable` remains the later GREEN work.
 - `ProjectionDelta { built, dropped, deferred, unchanged, vector_unsupported_kinds }`.
   Cheap roles (`filterable`, `searchable→FTS`) build same-transaction; `rankable`
   and the `searchable→vector` sub-target are persisted-but-deferred (reported in
@@ -592,21 +598,19 @@ axis. It is `None` on every caller-authored spec.
 
 - **`DenseReadiness` has exactly three variants**, `Unavailable`, `Embedding`,
   and `Ready`, wire spellings `"unavailable"` / `"embedding"` / `"ready"`.
-  `Unavailable` means the declared vector projection lacks a usable dense
-  runtime (absent or equivalence-refused); `Embedding` means such a runtime has
-  eligible outstanding work; `Ready` means it has none. **`pending` is RESERVED
-  for the orthogonal ADMISSION axis** (quarantine/trust — an app judgment) and
-  is deliberately never an index-readiness value. `from_str_opt("pending")` is
-  `None`.
-- **DERIVED, never stored.** No schema step, no `MIGRATIONS` change,
-  `SCHEMA_VERSION` stays 24. The value is computed on the way out of
-  `read_projections` from the same outstanding-work predicate `drain` /
-  `wait_for_idle` use, qualified by the usable-dense-runtime predicate. That is
-  what makes `{ vector-insert ∧ readiness := ready }` atomic BY CONSTRUCTION:
-  `Ready` can never be observed with the vector row absent (only the tolerated
-  torn state — `Embedding` with the vector absent — is reachable). The predicate
-  is corpus-wide rather than per-attribute while Slice 15d still defers
-  per-attribute embedding.
+  The signed target meaning is: `Unavailable` for no usable dense runtime
+  (absent or equivalence-refused), `Embedding` for a usable runtime with
+  eligible outstanding work, and `Ready` for usable, quiescent work.
+  **`pending` is RESERVED for the orthogonal ADMISSION axis** (quarantine/trust
+  — an app judgment) and is deliberately never an index-readiness value.
+  `from_str_opt("pending")` is `None`.
+- **Static F5 record; runtime GREEN still pending.** The third spelling is now
+  closed, public, typed, and accepted inertly on input, but current
+  `read_projections` still selects only `Embedding` / `Ready` from outstanding
+  work. It does **not** yet select `Unavailable`; no-runtime → `Unavailable`
+  remains required later Slice 21 behavior. That runtime change must derive the
+  state from one usable-dense-runtime predicate plus the shared work predicate,
+  without a schema step or stored readiness field.
 - **ACCEPT-INERT on the way in.** `Engine::configure_projections` neither stores
   nor honours a caller-supplied `dense_readiness` (`StoredProjection::from_spec`
   reads only `embedder`), so `read_projections` output re-applies as a no-op —
@@ -626,7 +630,8 @@ axis. It is `None` on every caller-authored spec.
   `FDB_INVALID_ARGUMENT` — **no new error type is minted.** A declared readiness
   never changes what the engine reports.
 - **Additive.** Callers who never look at readiness see identical behaviour.
-  **PROPOSED, NOT SIGNED.**
+  The vocabulary is **HITL-SIGNED 2026-08-07 (steward `seq-246`)**; runtime
+  selection remains deliberately unimplemented in this static F5 record.
 
 **`drain` is the flush-to-readiness barrier (0.8.20 Slice 20c, R-20-DR /
 `api-surface.md` C4).** There is **no `flush_embeddings()` verb** — the shipped
